@@ -1,12 +1,13 @@
 {
   "name": "dsh-shiguang",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "拾光：跨 QQ 与 B 站的 AI 伙伴，使用当天优先、历史按需检索的共享记忆。",
   "type": "module",
   "main": "./dist/plugin.js",
   "exports": {
     ".": "./dist/plugin.js",
-    "./memory": "./dist/memory.js"
+    "./memory": "./dist/memory.js",
+    "./client": "./dist/client.js"
   },
   "files": [
     "dist",
@@ -18,11 +19,23 @@
     "config.example.json",
     "README.md",
     "VALIDATION.md",
-    "LICENSE"
+    "LICENSE",
+    "tsconfig.client.json",
+    "client",
+    "playwright.config.ts",
+    "docs",
+    "CHANGELOG.md"
   ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-connection"
+      ]
     }
   },
   "engines": {
@@ -30,15 +43,16 @@
     "dsh": ">=0.2.2-rc.1 <0.3.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts",
+    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "test": "node scripts/build-client.mjs && node --import tsx --test tests/*.test.ts",
     "setup": "node scripts/setup.mjs",
     "bili:login": "node dist/cli.js login",
     "memory:today": "node dist/cli.js today",
     "memory:search": "node dist/cli.js search",
     "benchmark": "node --import tsx scripts/benchmark.ts",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test:ui": "playwright test --config playwright.config.ts"
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "0.2.2-rc.1",
@@ -50,6 +64,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
     "@deepseek-ai/dsh-agent": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-connection": "0.2.2-rc.1",
     "@deepseek-ai/dsh-llm": "0.2.2-rc.1",
     "@deepseek-ai/dsh-session": "0.2.2-rc.1",
     "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1",
@@ -59,14 +74,24 @@
     "@deepseek-ai/cordis": "4.1.0",
     "@deepseek-ai/dsh-agent": "0.2.2-rc.1",
     "@deepseek-ai/dsh-agent-loop-testkit": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-connection": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.2-rc.1",
     "@deepseek-ai/dsh-llm": "0.2.2-rc.1",
     "@deepseek-ai/dsh-session": "0.2.2-rc.1",
     "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1",
     "@deepseek-ai/dsh-tool-testkit": "^0.2.2-rc.1",
     "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
+    "@playwright/test": "1.56.1",
     "@types/node": "24.10.0",
     "@types/qrcode": "1.5.6",
+    "@types/react": "18.3.27",
+    "@types/react-dom": "18.3.7",
     "@types/ws": "8.18.1",
+    "esbuild": "0.25.12",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "tsx": "4.20.6",
     "typescript": "5.9.3"
   },
@@ -77,5 +102,10 @@
   "homepage": "https://github.com/Lyuu508/dsh-shiguang#readme",
   "bugs": {
     "url": "https://github.com/Lyuu508/dsh-shiguang/issues"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-client-connection": {
+      "optional": true
+    }
   }
 }

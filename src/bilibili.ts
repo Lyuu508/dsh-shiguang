@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Settings } from './config.js';
@@ -30,6 +30,17 @@ export class BilibiliClient {
   private readonly cookiesPath: string;
   constructor(readonly settings: Settings, readonly memory: MemoryStore, readonly fetcher: typeof fetch = fetch) {
     this.cookiesPath = join(settings.dataDir, 'bilibili.cookies.json');
+  }
+  hasLogin(): boolean {
+    try { const cookies = this.cookies(); return Boolean(cookies.SESSDATA && cookies.bili_jct); } catch { return false; }
+  }
+  logout(): void {
+    if (existsSync(this.cookiesPath)) renameSync(this.cookiesPath, `${this.cookiesPath}.logout-${Date.now()}`);
+  }
+  async account(signal?: AbortSignal): Promise<{ loggedIn: boolean; name: string; userId: string }> {
+    const cookies = this.cookies();
+    const { data } = await this.request('https://api.bilibili.com/x/web-interface/nav', { headers: { Cookie: Object.entries(cookies).map(([k,v]) => `${k}=${v}`).join('; ') } }, signal);
+    return { loggedIn: data.isLogin === true, name: String(data.uname || ''), userId: String(data.mid || '') };
   }
   private cookies(): Record<string, string> {
     let value: unknown;

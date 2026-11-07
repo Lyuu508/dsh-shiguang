@@ -1,8 +1,23 @@
 # 拾光 Shiguang：个人 QQ × B 站 × 当天优先记忆
 
-拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。第一版面向 Windows 本机运行。角色名和人格可自行修改。
+拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.0 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.0) 页面进入下载。访问私有仓库及下载文件需要登录获授权的 GitHub 账号。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.2.0 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.2.0) 页面进入下载。访问私有仓库及下载文件需要登录获授权的 GitHub 账号。
+
+## 在哪里打开面板
+
+安装或升级插件后，**重启 DSH 并刷新页面 → 设置 → 拾光**。面板随插件启停，不需要另开浏览器端口。
+
+- **角色与回复**：名字、人设、时区、模型选择、回复等待时间和字数。
+- **QQ 连接**：连接地址、主人号、白名单、仅 @ 回复、Token 保存和在线检测。
+- **B 站账号**：页面二维码登录、登录检测、评论开关和额度。
+- **记忆**：读取预算、当天记录、历史搜索、分页原文、移入回收站与撤销。
+
+**点击“保存设置”即可生效，无需重启 DSH。** 保存会等待正在处理的消息完成，再应用新的配置；QQ 连接参数更新时会重新连接。其他窗口同时修改配置时会提示冲突，保留当前编辑内容。
+
+首次加载会自动生成默认配置，QQ 和 B 站互动默认关闭，可以直接在面板开始设置。
+
+![拾光在真实 DSH 0.2.2-rc.1 设置中的入口与面板](docs/settings-dsh-native.png)
 
 ## 已实现
 
@@ -14,7 +29,7 @@
 - 按本机配置时区划分“今天”。过零点后昨天的内容不再自动注入，但仍可检索。
 - 使用 DSH 自己的模型连接；插件不需要额外的模型 API Key。
 
-首版未包含：自主刷推荐流、定时自主评论、视频画面/音频理解、B 站私信或动态、QQ 图片语音、断线历史补拉、图形设置面板、语义向量搜索。视频简介读取不等于观看或理解视频内容。
+首版未包含：自主刷推荐流、定时自主评论、视频画面/音频理解、B 站私信或动态、QQ 图片语音、断线历史补拉、语义向量搜索。视频简介读取不等于观看或理解视频内容。
 
 ## 环境
 
@@ -46,13 +61,15 @@ dsh plugin --profile web add (Get-Location).Path
 $env:DSH_SHIGUANG_CONFIG = "D:\ShiguangData\config.json"
 ```
 
-修改 JSON 后重启 DSH。`dataDir` 的相对路径按**配置文件目录**解析，与打开终端的位置无关。不同角色如需完全独立的数据文件，可以使用不同配置和数据目录。
+面板保存会即时生效；如果手动修改 JSON，仍需重启 DSH。`dataDir` 的相对路径按**配置文件目录**解析，与打开终端的位置无关。不同角色如需完全独立的数据文件，可以使用不同配置和数据目录。
 
 ## 连接个人 QQ
 
 1. 在 NapCat 本机界面完成个人 QQ 扫码登录。
 2. 在网络设置添加 **WebSocket 服务端（正向 WS）**，例如 `127.0.0.1:3001`，配置访问 Token，消息上报格式选择 **Array**，启用后保存。Token 不是 NapCat WebUI 密码。
-3. 编辑 Shiguang 配置中的 `qq`：
+3. 推荐在 **设置 → 拾光 → QQ 连接** 填写地址、Token、主人 QQ 号和白名单，开启 QQ 回复后保存。Token 存入本机 `dataDir/onebot.token`，不会回显到页面或发送给模型。
+
+如果你更习惯手动配置，也可以编辑配置中的 `qq`：
 
 ```json
 {
@@ -70,14 +87,14 @@ $env:DSH_SHIGUANG_CONFIG = "D:\ShiguangData\config.json"
 
 所有 QQ 号、群号都用**字符串**填写。`ownerQQ` 是向机器人发消息的主人账号，不是 NapCat 登录的机器人账号。其他允许私聊的人放入 `allowedPrivate`，群号放入 `allowedGroups`。
 
-4. 启动 DSH 的同一 PowerShell 窗口中设置访问 Token：
+4. 如果已通过面板保存 Token，不必设置环境变量。沿用旧版环境变量方式时，在启动 DSH 的同一 PowerShell 窗口中设置：
 
 ```powershell
 $env:SHIGUANG_ONEBOT_TOKEN = "你在NapCat设置的Token"
 dsh web
 ```
 
-如果使用 DSH Desktop，需要给其启动进程配置同名环境变量，再退出并重新打开 Desktop。不要在聊天窗口粘贴 Token、密码或 Cookie。
+面板保存的本机 Token 优先，未保存时才读取备用环境变量。使用 DSH Desktop 时也可以直接通过面板配置；如沿用环境变量，则需要给其启动进程配置同名变量，再退出并重新打开 Desktop。不要在聊天窗口粘贴 Token、密码或 Cookie。
 
 ### 模型路由
 
@@ -89,7 +106,9 @@ dsh web
 
 ## 连接 B 站
 
-先在配置中将 `bilibili.enabled` 设为 `true`，再在**你的本机终端**执行：
+推荐在 **设置 → 拾光 → B 站账号** 点击“生成登录二维码”，用手机确认后启用 B 站工具并保存。想发表评论时，再开启“允许发表评论”并设置额度。
+
+终端登录方式仍然保留，在**你的本机终端**执行：
 
 ```powershell
 npm run bili:login
@@ -97,7 +116,7 @@ npm run bili:login
 
 使用 B 站手机 App 扫描终端二维码并确认。Cookie 保存在 `dataDir/bilibili.cookies.json`，不会作为工具结果传给模型。数据目录继承 Windows 当前用户目录权限；不要把目录放进公共共享或公开仓库。
 
-需要发表评论时，设 `bilibili.allowComments=true`，重启 DSH。默认每日最多尝试 10 次、间隔至少 60 秒；成功与结果不明的请求都会占用额度。配额和去重记录保存在 SQLite 中，重启不会清空。
+通过面板开启评论后保存即可生效；如果手动改 `bilibili.allowComments=true`，则重启 DSH。默认每日最多尝试 10 次、间隔至少 60 秒；成功与结果不明的请求都会占用额度。配额和去重记录保存在 SQLite 中，重启不会清空。
 
 然后可在主人 QQ 私聊中说：
 
@@ -134,17 +153,19 @@ npm run memory:today
 npm run memory:search -- 吉他
 ```
 
-默认不自动删除历史记录，也不永久记住每个过去事实。固定人格 `persona` 另行配置，不把过去的私人档案作为人格常驻注入。
+面板中的“移入回收站”会同时从正常聊天和检索结果中移除该记录；“撤销移除”可恢复原文与索引。回收站位于本机数据库中，移入回收站不等于物理擦除。默认不自动删除历史记录，也不永久记住每个过去事实。固定人格 `persona` 另行配置，不把过去的私人档案作为人格常驻注入。
 
 ## 验证与排错
 
 ```powershell
 npm run check
 npm test
+npx playwright install chromium
+npm run test:ui
 npm run benchmark
 ```
 
-测试使用真实的 DSH AgentLoop 和模拟模型、本地 OneBot WebSocket、模拟 B 站 API；不会登录真实账号或发送真实消息。Windows、真实 QQ/B站账号以及真实模型网络仍需本机联调。压测只测数据库读取，不代表 AI 的总回复时间；结果见 `VALIDATION.md`。
+测试使用真实的 DSH AgentLoop 和 Connection 路由、模拟模型、本地 OneBot WebSocket、模拟 B 站 API，并用 Chromium 检查设置面板的实际交互；不会登录真实账号或发送真实消息。Windows、真实 QQ/B站账号以及真实模型网络仍需本机联调。压测只测数据库读取，不代表 AI 的总回复时间；结果见 `VALIDATION.md`。
 
 常见情况：
 
@@ -161,11 +182,24 @@ npm run benchmark
 
 外部聊天只开放当前角色的记忆与授权平台工具，不向 QQ 群友开放 DSH 的终端或文件读取能力。模型输入属于你所配置模型服务的数据处理范围；本机存档不意味着模型调用离线。
 
+## 从 0.1.0 升级
+
+从 `downloads/` 下载 `dsh-shiguang-0.2.0.tgz`，再安装到原来的 profile：
+
+```powershell
+dsh plugin --profile web add "你的文件夹\dsh-shiguang-0.2.0.tgz"
+```
+
+重启 DSH 并刷新页面后打开 **设置 → 拾光**。原来的配置、Cookie 和记忆在用户数据目录中，升级安装包不会覆盖；数据库会先生成 `memory.sqlite.v1-backup`，再兼容添加回收站表，不清空原记录。数据库版本升为 2，旧版插件无法直接打开升级后的库；回退前需停用插件并使用备份。首次保存旧配置时会补入角色名字字段。
+
 ## 工程结构
 
 | 文件 | 作用 |
 |---|---|
-| `src/plugin.ts` | 独立 DSH bundle 入口、生命周期、消息队列 |
+| `src/plugin.ts` | 独立 DSH bundle 入口与生命周期 |
+| `src/runtime.ts` | 消息队列、配置热应用、凭据与扫码会话 |
+| `src/panel-api.ts` | DSH 认证保护下的设置面板接口 |
+| `client/` | DSH 原生设置入口、四个设置页与响应式布局 |
 | `src/agent.ts` | 短会话、当天上下文和受限工具 |
 | `src/memory.ts` | SQLite、中文双字检索、分页、操作账本 |
 | `src/onebot.ts` | QQ 事件校验、WS 连接、发送回执 |

@@ -1,11 +1,13 @@
-# 下载拾光 Shiguang v0.1.0
+# 下载拾光 Shiguang v0.2.0
 
-适配 DeepSeek Harness 0.2.2-rc.1，需要 Node.js 24.9 或更新。
+适配 DeepSeek Harness 0.2.2-rc.1，需要 Node.js 24.9 或更新。新增 **DSH 设置 → 拾光** 可视化面板，配置保存后即时生效。
 
-- **第一次安装推荐：** `dsh-shiguang-0.1.0-source.zip`，含源码、已构建文件、中文说明和 Windows 安装脚本。下载后解压，先阅读根目录 README.md。
-- **预构建 DSH 包：** `dsh-shiguang-0.1.0.tgz`，用于通过 DSH 的插件安装命令安装。账号配置和登录仍需在本机完成。
-- **校验：** `SHA256SUMS.txt`。
+- **首次安装推荐：** `dsh-shiguang-0.2.0-source.zip`，含源码、已构建客户端与 Host 文件、中文说明和 Windows 安装脚本。
+- **预构建 DSH 包：** `dsh-shiguang-0.2.0.tgz`，可通过 DSH 插件安装命令安装或升级。
+- **校验：** `SHA256SUMS-0.2.0.txt`。
 
-点击对应文件，然后使用 GitHub 的 **Download raw file / 下载原始文件** 按钮。私有仓库需要先登录获授权的 GitHub 账号。
+点击对应文件，再点 GitHub 的 **Download raw file / 下载原始文件**。私有仓库需要先登录获授权的 GitHub 账号。
 
-预览版通过了类型检查、构建和 19 项测试；真实 Windows 环境及 QQ/B站账号仍需本机联调。
+首次安装或升级后重启 DSH 并刷新页面，进入 **设置 → 拾光**。QQ 与 B 站账号仍需在你自己的本机登录。
+
+已通过 28 项核心测试、1 项浏览器综合交互测试，以及真实 DSH 0.2.2-rc.1 Web 的安装、设置入口和保存检查；真实 Windows 与账号仍需本机联调。原 0.1.0 文件保留供查阅。

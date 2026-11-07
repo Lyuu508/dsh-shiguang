@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { MemoryStore, dayKey, searchTokens } from '../src/memory.js';
 import { historyRequested } from '../src/policy.js';
 import { fixture } from './helpers.js';
@@ -93,4 +94,14 @@ test('日常聊天不开放历史，明确追问和回忆指令才开放', () =>
   assert.equal(historyRequested('上周我们聊的吉他型号是什么'), true);
   assert.equal(historyRequested('/回忆 吉他'), true);
   assert.equal(historyRequested('Do you remember my guitar?'), true);
+});
+test('升级 v1 记忆库只添加回收站，保留旧记忆和操作账本',()=>{
+ const f=fixture(),path=join(f.dir,'legacy.sqlite');let store=new MemoryStore(path,'a','UTC',f.settings.memory);
+ try{
+  const id=store.append('owner','qq','p','note','旧版本记忆')!;store.reserveComment('legacy-action',5,1000);
+  store.db.exec('DROP TABLE memory_trash; PRAGMA user_version=1');store.close();store=new MemoryStore(path,'a','UTC',f.settings.memory);
+  assert.ok(existsSync(path+'.v1-backup'));
+  assert.equal(store.detail('owner',id).text,'旧版本记忆');assert.equal(store.overview().commentsToday,1);
+  store.remove('owner',id);store.restore('owner',id);assert.equal(store.detail('owner',id).text,'旧版本记忆');
+ }finally{store.close();f.cleanup();}
 });

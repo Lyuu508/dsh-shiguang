@@ -6,3 +6,5 @@ config.local.json
 !downloads/*.tgz
 *.sqlite*
 *.cookies.json
+test-results/
+playwright-report/

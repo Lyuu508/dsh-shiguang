@@ -37,16 +37,21 @@ export class OneBotClient {
   private socket?: WebSocket;
   private stopped = false;
   private retry?: NodeJS.Timeout;
+  private state: 'connecting' | 'connected' | 'disconnected' = 'disconnected';
+  private statusMessage = '尚未连接';
   private pending = new Map<string, { resolve: (v: JsonObject) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
-  constructor(readonly config: Settings['qq'], readonly onMessage: (message: QQMessage) => void, readonly log: (message: string) => void) {}
+  constructor(readonly config: Settings['qq'], readonly onMessage: (message: QQMessage) => void, readonly log: (message: string) => void, readonly token = () => process.env[config.tokenEnv] || '') {}
+  status(): { state: string; message: string } { return { state: this.state, message: this.statusMessage }; }
   start(): void {
     if (this.stopped) return;
+    if (!this.token()) { this.statusMessage = '请先在设置面板填写 OneBot Token'; return; }
+    this.state = 'connecting'; this.statusMessage = '正在连接 NapCat';
     const socket = new WebSocket(this.config.wsUrl, {
-      headers: { Authorization: `Bearer ${process.env[this.config.tokenEnv] || ''}` },
+      headers: { Authorization: `Bearer ${this.token()}` },
       maxPayload: 1024 * 1024, handshakeTimeout: this.config.actionTimeoutMs,
     });
     this.socket = socket;
-    socket.on('open', () => this.log('QQ OneBot 已连接'));
+    socket.on('open', () => { this.state = 'connected'; this.statusMessage = 'OneBot 桥接已连接'; this.log('QQ OneBot 已连接'); });
     socket.on('message', raw => {
       let value: unknown;
       try { value = JSON.parse(raw.toString()); } catch { this.log('忽略无效的 OneBot JSON'); return; }
@@ -62,12 +67,13 @@ export class OneBotClient {
     });
     socket.on('error', () => this.log('QQ 连接异常，请检查 NapCat 地址、Token 和登录状态'));
     socket.on('close', () => {
+      this.state = 'disconnected'; this.statusMessage = this.stopped ? '连接已停止' : '连接断开，正在等待重连';
       for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new Error('QQ 连接断开，发送结果未知；请到 QQ 核实，插件不会自动重发')); }
       this.pending.clear();
       if (!this.stopped) this.retry = setTimeout(() => this.start(), this.config.reconnectMs);
     });
   }
-  send(message: QQMessage, text: string): Promise<JsonObject> {
+  action(action: string, params: JsonObject): Promise<JsonObject> {
     const socket = this.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error('QQ 尚未连接，回复未发送'));
     const echo = randomUUID();
@@ -76,11 +82,18 @@ export class OneBotClient {
         this.pending.delete(echo); reject(new Error('QQ 发送超时，结果未知；请到 QQ 核实，插件不会自动重发'));
       }, this.config.actionTimeoutMs);
       this.pending.set(echo, { resolve, reject, timer });
-      const params = message.groupId ? { group_id: message.groupId, message: [{ type: 'text', data: { text } }] } : { user_id: message.userId, message: [{ type: 'text', data: { text } }] };
-      socket.send(JSON.stringify({ action: message.groupId ? 'send_group_msg' : 'send_private_msg', params, echo }), error => {
+      socket.send(JSON.stringify({ action, params, echo }), error => {
         if (error) { clearTimeout(timer); this.pending.delete(echo); reject(new Error('QQ 写入失败，结果待核实；请检查连接')); }
       });
     });
+  }
+  send(message: QQMessage, text: string): Promise<JsonObject> {
+    const params = message.groupId ? { group_id: message.groupId, message: [{ type: 'text', data: { text } }] } : { user_id: message.userId, message: [{ type: 'text', data: { text } }] };
+    return this.action(message.groupId ? 'send_group_msg' : 'send_private_msg', params);
+  }
+  async check(): Promise<{ online: boolean; nickname: string; userId: string }> {
+    const [status, info] = await Promise.all([this.action('get_status', {}), this.action('get_login_info', {})]);
+    return { online: status.online === true, nickname: typeof info.nickname === 'string' ? info.nickname : '', userId: id(info.user_id) || '' };
   }
   stop(): void {
     this.stopped = true; clearTimeout(this.retry);

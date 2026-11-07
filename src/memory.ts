@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import type { Settings } from './config.js';
 
 export interface MemoryRow { id: string; day: string; time: number; platform: string; kind: string; body: string }
@@ -40,7 +41,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 1) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if (Number(version) > 2) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if (Number(version) === 1 && path !== ':memory:' && !existsSync(`${path}.v1-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v1-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -55,7 +57,8 @@ export class MemoryStore {
         kind TEXT NOT NULL, status TEXT NOT NULL, result TEXT
       );
       CREATE INDEX IF NOT EXISTS actions_quota ON actions(role,kind,day,time DESC);
-      PRAGMA user_version=1;
+      CREATE TABLE IF NOT EXISTS memory_trash (id TEXT PRIMARY KEY,role TEXT NOT NULL,scope TEXT NOT NULL,payload TEXT NOT NULL,deleted_at INTEGER NOT NULL);
+      PRAGMA user_version=2;
     `);
   }
   today(): string { return dayKey(this.clock(), this.timezone); }
@@ -124,6 +127,41 @@ export class MemoryStore {
   }
   settleAction(key: string, status: 'sent' | 'failed' | 'unknown', result: string): void {
     this.db.prepare('UPDATE actions SET status=?,result=? WHERE key=?').run(status, result.slice(0, 500), key);
+  }
+  overview(): { total: number; today: number; scopes: string[]; commentsToday: number } {
+    const total = this.db.prepare('SELECT count(*) AS n FROM memories WHERE role=?').get(this.roleId)!;
+    const today = this.db.prepare('SELECT count(*) AS n FROM memories WHERE role=? AND day=?').get(this.roleId, this.today())!;
+    const comments = this.db.prepare("SELECT count(*) AS n FROM actions WHERE role=? AND day=? AND kind='bili-comment'").get(this.roleId, this.today())!;
+    return { total: Number(total.n), today: Number(today.n), scopes: [...new Set(['owner', ...this.db.prepare('SELECT DISTINCT scope FROM memories WHERE role=?').all(this.roleId).map(r => String(r.scope))])], commentsToday: Number(comments.n) };
+  }
+  list(scope: string, day: string, before = 0): { rows: (MemoryRow & { cursor: number })[]; nextCursor: number | null } {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isSafeInteger(before) || before < 0) throw new Error('日期或分页参数无效');
+    const rows = this.db.prepare('SELECT rowid,id,day,time,platform,kind,substr(body,1,240) AS body FROM memories WHERE role=? AND scope=? AND day=? AND (?=0 OR rowid<?) ORDER BY rowid DESC LIMIT 21').all(this.roleId, scope, day, before, before);
+    const items = rows.slice(0,20).map(r => ({ id: String(r.id), day: String(r.day), time: Number(r.time), platform: String(r.platform), kind: String(r.kind), body: String(r.body), cursor: Number(r.rowid) }));
+    return { rows: items, nextCursor: rows.length > 20 ? items.at(-1)!.cursor : null };
+  }
+  remove(scope: string, id: string): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const row = this.db.prepare('SELECT * FROM memories WHERE role=? AND scope=? AND id=?').get(this.roleId, scope, id);
+      if (!row) throw new Error('记忆不存在或不属于当前角色');
+      this.db.prepare('INSERT INTO memory_trash(id,role,scope,payload,deleted_at) VALUES(?,?,?,?,?)').run(id,this.roleId,scope,JSON.stringify(row),this.clock());
+      this.db.prepare('DELETE FROM memory_fts WHERE rowid=?').run(row.rowid!);
+      this.db.prepare('DELETE FROM memories WHERE id=?').run(id);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  restore(scope: string, id: string): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const trashed = this.db.prepare('SELECT payload FROM memory_trash WHERE id=? AND role=? AND scope=?').get(id,this.roleId,scope);
+      if (!trashed) throw new Error('回收站中没有这条记忆');
+      const row = JSON.parse(String(trashed.payload)) as Record<string, string | number | null>;
+      const inserted = this.db.prepare('INSERT INTO memories(id,role,scope,day,time,platform,thread,kind,body,external_key) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,this.roleId,scope,row.day!,row.time!,row.platform!,row.thread!,row.kind!,row.body!,row.external_key!);
+      this.db.prepare('INSERT INTO memory_fts(rowid,tokens,namespace,day) VALUES(?,?,?,?)').run(inserted.lastInsertRowid,searchTokens(String(row.body)).join(' '),this.namespace(scope),row.day!);
+      this.db.prepare('DELETE FROM memory_trash WHERE id=?').run(id);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   close(): void { this.db.close(); }
 }

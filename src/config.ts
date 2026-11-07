@@ -1,9 +1,9 @@
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
 export interface Settings {
-  roleId: string; persona: string; timezone: string; dataDir: string;
+  roleId: string; displayName: string; persona: string; timezone: string; dataDir: string;
   provider: string; model: string; replyTimeoutMs: number; maxReplyChars: number; maxQueue: number;
   memory: { todayMaxChars: number; recentMessages: number; recentMaxChars: number; searchLimit: number; snippetChars: number; detailMaxChars: number };
   qq: { enabled: boolean; wsUrl: string; tokenEnv: string; ownerQQ: string; allowedPrivate: string[]; allowedGroups: string[]; groupMentionOnly: boolean; actionTimeoutMs: number; reconnectMs: number };
@@ -40,7 +40,7 @@ export function parseSettings(value: unknown, file: string): Settings {
   new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
   const dataPath = string(c.dataDir, 'dataDir');
   const s: Settings = {
-    roleId: string(c.roleId, 'roleId'), persona: string(c.persona, 'persona'), timezone,
+    roleId: string(c.roleId, 'roleId'), displayName: string(c.displayName ?? '拾光', 'displayName'), persona: string(c.persona, 'persona'), timezone,
     dataDir: isAbsolute(dataPath) ? dataPath : resolve(dirname(file), dataPath),
     provider: string(c.provider, 'provider'), model: string(c.model, 'model'),
     replyTimeoutMs: integer(c.replyTimeoutMs, 'replyTimeoutMs', 1000, 600000),
@@ -67,11 +67,21 @@ export function parseSettings(value: unknown, file: string): Settings {
     },
   };
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(s.roleId)) throw new Error('roleId 只能使用字母、数字、下划线和连字符');
+  if (!s.displayName.trim() || s.displayName.length > 40 || s.persona.length > 20000) throw new Error('角色名称应为 1–40 字，人设最多 20000 字');
   if (Boolean(s.provider) !== Boolean(s.model)) throw new Error('provider 和 model 必须同时填写或同时留空，留空使用 DSH 默认模型');
   const u = new URL(s.qq.wsUrl);
   if (!['ws:', 'wss:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) throw new Error('qq.wsUrl 必须为不带凭据或查询参数的 ws/wss 地址');
-  if (s.qq.enabled && (!/^\d+$/.test(s.qq.ownerQQ) || !s.qq.tokenEnv || !process.env[s.qq.tokenEnv])) throw new Error('启用 QQ 前，请设置 ownerQQ 和 tokenEnv 指向的本机环境变量');
+  if (s.qq.enabled && !/^\d+$/.test(s.qq.ownerQQ)) throw new Error('启用 QQ 前，请设置 ownerQQ');
+  if (s.qq.tokenEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(s.qq.tokenEnv)) throw new Error('Token 环境变量名称无效');
   return s;
+}
+export function ensureSettings(path = ''): string {
+  const file = configFile(path);
+  if (!existsSync(file)) {
+    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+    writeFileSync(file, readFileSync(new URL('../config.example.json', import.meta.url)), { flag: 'wx', mode: 0o600 });
+  }
+  return file;
 }
 export function loadSettings(path = ''): Settings {
   const file = configFile(path);

@@ -1,5 +1,6 @@
 {
   "roleId": "companion",
+  "displayName": "拾光",
   "persona": "你是一个自然、真诚的 AI 伙伴。保持一致的性格，不假装有未发生的经历。",
   "timezone": "system",
   "dataDir": "./state",
