@@ -5,10 +5,21 @@ import type { Settings } from './config.js';
 export interface QQMessage {
   id: string; selfId: string; userId: string; groupId?: string;
   thread: string; scope: string; owner: boolean; text: string;
+  media?: QQMediaRef[]; replyId?: string;
 }
+export interface QQMediaRef { type: 'video' | 'image'; file?: string; url?: string }
 type JsonObject = Record<string, unknown>;
 function record(v: unknown): v is JsonObject { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function id(v: unknown): string | null { return (typeof v === 'string' && /^\d+$/.test(v)) || (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) ? String(v) : null; }
+export function mediaSegments(segments: unknown): QQMediaRef[] {
+  if(!Array.isArray(segments))return [];
+  return segments.flatMap(segment=>{
+    if(!record(segment)||!record(segment.data)||!['video','image'].includes(String(segment.type)))return [];
+    const file=typeof segment.data.file==='string'&&segment.data.file.length<=1024?segment.data.file:undefined;
+    const url=typeof segment.data.url==='string'&&segment.data.url.length<=4096?segment.data.url:undefined;
+    return file||url?[{type:segment.type as QQMediaRef['type'],file,url}]:[];
+  }).slice(0,4);
+}
 export function parseMessage(value: unknown, config: Settings['qq']): QQMessage | null {
   if (!record(value) || value.post_type !== 'message' || !['private', 'group'].includes(String(value.message_type))) return null;
   const userId = id(value.user_id), selfId = id(value.self_id);
@@ -20,17 +31,19 @@ export function parseMessage(value: unknown, config: Settings['qq']): QQMessage 
   if (groupId ? !config.allowedGroups.includes(groupId) : !owner && !config.allowedPrivate.includes(userId)) return null;
   // Array format prevents untrusted CQ text from being interpreted as a command.
   if (!Array.isArray(value.message)) return null;
-  let mentioned = false; const parts: string[] = [];
+  let mentioned = false; const parts: string[] = []; let replyId: string | undefined;
   for (const segment of value.message) {
     if (!record(segment) || !record(segment.data)) continue;
     if (segment.type === 'text' && typeof segment.data.text === 'string') parts.push(segment.data.text);
     if (segment.type === 'at' && String(segment.data.qq) === selfId) mentioned = true;
+    if (segment.type === 'reply' && /^-?\d{1,24}$/.test(String(segment.data.id))) replyId=String(segment.data.id);
   }
   if (groupId && config.groupMentionOnly && !mentioned) return null;
   const text = parts.join('').trim();
-  if (!text || text.length > 10000) return null;
+  const media=mediaSegments(value.message);
+  if ((!text && !media.length) || text.length > 10000) return null;
   const thread = groupId ? `qq:group:${groupId}` : `qq:private:${userId}`;
-  return { id: `${selfId}:${thread}:${messageId}`, selfId, userId, groupId: groupId || undefined, thread, scope: owner ? 'owner' : thread, owner, text };
+  return { id: `${selfId}:${thread}:${messageId}`, selfId, userId, groupId: groupId || undefined, thread, scope: owner ? 'owner' : thread, owner, text, media, replyId };
 }
 
 export class OneBotClient {
@@ -90,6 +103,19 @@ export class OneBotClient {
   send(message: QQMessage, text: string): Promise<JsonObject> {
     const params = message.groupId ? { group_id: message.groupId, message: [{ type: 'text', data: { text } }] } : { user_id: message.userId, message: [{ type: 'text', data: { text } }] };
     return this.action(message.groupId ? 'send_group_msg' : 'send_private_msg', params);
+  }
+  async quotedMedia(message: QQMessage): Promise<QQMediaRef[]> {
+    if(!message.replyId)return [];
+    const result=await this.action('get_msg',{message_id:message.replyId});
+    const same=message.groupId
+      ? result.message_type==='group' && String(result.group_id)===message.groupId
+      : result.message_type==='private' && String(result.user_id ?? (record(result.sender)?result.sender.user_id:''))===message.userId;
+    if(!same)throw new Error('引用的媒体不属于当前会话，无法读取');
+    return mediaSegments(result.message);
+  }
+  async mediaInfo(media: QQMediaRef): Promise<JsonObject> {
+    if(!media.file || !/^[a-zA-Z0-9_.-]{1,1024}$/.test(media.file) || media.file.includes('..'))return {};
+    return this.action(media.type==='image'?'get_image':'get_file',{file:media.file});
   }
   async check(): Promise<{ online: boolean; nickname: string; userId: string }> {
     const [status, info] = await Promise.all([this.action('get_status', {}), this.action('get_login_info', {})]);

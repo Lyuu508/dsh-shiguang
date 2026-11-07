@@ -9,11 +9,13 @@ import { BilibiliClient } from './bilibili.js';
 import { OneBotClient } from './onebot.js';
 import { ChatDriver } from './agent.js';
 import { UpdateManager } from './updates.js';
+import { MediaReader, MediaError, wantsMedia } from './media.js';
 
 export class ShiguangRuntime {
   readonly file: string;
   readonly updates: UpdateManager;
   settings!: Settings; memory!: MemoryStore; bili!: BilibiliClient; driver!: ChatDriver; qq!: OneBotClient;
+  media!: MediaReader;
   private stopped = false; private queued = 0; private tail = Promise.resolve();
   private login?: { ticket: string; key: string; expires: number };
   private lastError = '';
@@ -33,11 +35,27 @@ export class ShiguangRuntime {
     this.memory = new MemoryStore(join(settings.dataDir,'memory.sqlite'),settings.roleId,settings.timezone,settings.memory);
     this.bili = new BilibiliClient(settings,this.memory,this.fetcher);
     this.driver = new ChatDriver(this.ctx,settings,this.memory,this.bili);
+    this.media = new MediaReader(this.ctx,settings,this.memory,this.fetcher);
     this.qq = new OneBotClient(settings.qq, message => {
       void this.enqueue(async () => {
         const q=this.settings.qq,owner=!message.groupId && message.userId===q.ownerQQ;
         if (!q.enabled || (message.groupId ? !q.allowedGroups.includes(message.groupId) : !owner && !q.allowedPrivate.includes(message.userId))) return;
         const scope=owner?'owner':message.thread;
+        if(this.memory.seen(message.id))return;
+        let media=message.media||[];
+        const mediaQuote=!!message.replyId&&wantsMedia(message.text,'ask');
+        if(media.length||mediaQuote){
+          const previous=this.memory.fastContext(scope,message.thread);
+          if(!this.memory.append(scope,'qq',message.thread,'user',`${message.text||'发送媒体'} [QQ 媒体请求]`,message.id))return;
+          let reply:string;
+          try{
+            if(mediaQuote&&!media.length){
+              if(!this.settings.media.enabled)reply='视频和动图识别还没开启，可先在 DSH 设置 → 拾光 → QQ 识图中打开。';
+              else{media=await this.qq.quotedMedia(message);reply=media.length?await this.media.reply({...message,owner,scope},this.qq,media,previous):'引用消息中没有可读取的视频、GIF 或图片，请直接发送媒体或引用包含媒体的消息。';}
+            }else reply=await this.media.reply({...message,owner,scope},this.qq,media,previous);
+          }catch(error){this.log(error instanceof Error?error.message:'媒体读取失败');reply=error instanceof MediaError?error.message:'媒体识别未完成，请在拾光面板检查模型、FFmpeg 和下载状态。';}
+          await this.qq.send(message,reply);this.memory.append(scope,'qq',message.thread,'assistant',reply);return;
+        }
         const reply = await this.driver.reply({ scope, thread: message.thread, owner, platform: 'qq', text: message.text, externalKey: message.id });
         if (!reply) return;
         await this.qq.send(message,reply);
@@ -82,7 +100,7 @@ export class ShiguangRuntime {
         if (newToken.trim()) this.atomicWrite(secretPath,previousToken || '');
         throw error;
       }
-      await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
+      this.media.stop(); await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
       return this.view();
     });
   }
@@ -106,6 +124,7 @@ export class ShiguangRuntime {
   logoutBili(): void { this.login=undefined; this.bili.logout(); }
   async stop(): Promise<void> {
     this.stopped = true;
+    this.media.stop();
     try { await this.driver.stop(); await this.tail; } finally { this.qq.stop(); this.memory.close(); this.login=undefined; }
   }
 }

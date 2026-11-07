@@ -23,6 +23,14 @@ test('角色保存、QQ 连接、B站扫码、记忆检索和撤销移除',async
  await page.getByRole('button',{name:'移入回收站'}).click();await expect(page.getByText('已移入回收站，不再用于聊天。',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'撤销移除'}).click();await page.getByRole('button',{name:'搜索往事'}).click();await expect(page.getByText('上周选了雅马哈吉他',{exact:true})).toBeVisible();
  await page.screenshot({path:'docs/settings-memory.png',fullPage:true});
+ await page.getByRole('tab',{name:'QQ 识图',exact:true}).click();await expect(page.getByLabel('启用 QQ 视频与动图识别',{exact:true})).not.toBeChecked();
+ await page.getByLabel('启用 QQ 视频与动图识别',{exact:true}).check();await page.getByLabel('视觉模型提供方',{exact:true}).fill('vision-test');await page.getByLabel('视觉模型名称',{exact:true}).fill('image-model');
+ await page.getByRole('button',{name:'使用清晰预设',exact:true}).click();await expect(page.getByLabel('最多关键帧',{exact:true})).toHaveValue('6');
+ await page.getByRole('button',{name:'使用省量预设',exact:true}).click();await expect(page.getByLabel('最多关键帧',{exact:true})).toHaveValue('3');
+ await page.getByRole('button',{name:'保存设置',exact:true}).click();await expect(page.getByRole('status').first()).toContainText('已保存并生效');
+ await page.getByRole('button',{name:'检测已保存的媒体工具',exact:true}).click();await expect(page.getByRole('status').last()).toContainText('可用');
+ await page.screenshot({path:'docs/settings-media.png',fullPage:true});await page.reload();await expect(page.getByLabel('启用 QQ 视频与动图识别',{exact:true})).toBeChecked();
+ await page.getByLabel('启用 QQ 视频与动图识别',{exact:true}).uncheck();await page.getByRole('button',{name:'保存设置',exact:true}).click();await expect(page.getByRole('status').first()).toContainText('已保存并生效');
  await page.getByRole('tab',{name:'Token 用量'}).click();await expect(page.getByText('500 Token',{exact:true})).toBeVisible();
  await expect(page.getByRole('row',{name:/QQ 聊天/})).toContainText('120');
  await page.getByRole('button',{name:'刷新用量'}).click();await expect(page.getByText('500 Token',{exact:true})).toBeVisible();

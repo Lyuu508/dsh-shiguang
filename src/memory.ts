@@ -41,8 +41,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 3) throw new Error('记忆数据库来自更新版本，请升级插件');
-    if ([1,2].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
+    if (Number(version) > 4) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if ([1,2,3].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -65,10 +65,15 @@ export class MemoryStore {
         output INTEGER NOT NULL,reasoning INTEGER NOT NULL,PRIMARY KEY(role,session,seq)
       );
       CREATE INDEX IF NOT EXISTS llm_usage_day ON llm_usage(role,day,category);
-      PRAGMA user_version=3;
+      CREATE TABLE IF NOT EXISTS media_cache (
+        role TEXT NOT NULL,scope TEXT NOT NULL,key TEXT NOT NULL,summary TEXT NOT NULL,expires INTEGER NOT NULL,
+        PRIMARY KEY(role,scope,key)
+      );
+      PRAGMA user_version=4;
     `);
   }
   today(): string { return dayKey(this.clock(), this.timezone); }
+  seen(externalKey: string): boolean { return !!this.db.prepare('SELECT 1 FROM memories WHERE external_key=?').get(`${this.roleId}:${externalKey}`); }
   private namespace(scope: string): string { return createHash('sha256').update(JSON.stringify([this.roleId, scope])).digest('hex'); }
   append(scope: string, platform: string, thread: string, kind: string, body: string, externalKey?: string, time = this.clock()): string | null {
     const id = randomUUID();

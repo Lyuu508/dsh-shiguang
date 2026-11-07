@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-connection';
 import type { ShiguangRuntime } from './runtime.js';
 import { dailyUsage } from './usage.js';
+import { checkMediaTools } from './media.js';
 
 function object(value: unknown): Record<string,unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('请求参数应为对象');
@@ -19,6 +20,7 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'load': return { ...runtime.view(), status: runtime.status() };
     case 'status': return runtime.status();
     case 'usage': return dailyUsage(runtime.memory,text(args.day,runtime.memory.today()));
+    case 'media-check': return checkMediaTools(runtime.settings.media);
     case 'update-status': return runtime.updates.view();
     case 'update-check': return runtime.updates.check();
     case 'update-install': return runtime.updates.start(text(args.version));
@@ -32,7 +34,7 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
       const llm = runtime.ctx.get('llm');
       if (!llm) return { providers: [], models: [] };
       const provider = text(args.provider);
-      return { providers: llm.listProviders().map(p => ({ id: p.id, name: p.name || p.id })), models: provider ? (await llm.listModels(provider)).map(m => ({ id: m.id, name: m.name || m.id })) : [] };
+      return { providers: llm.listProviders().map(p => ({ id: p.id, name: p.name || p.id })), models: provider ? (await llm.listModels(provider)).map(m => ({ id: m.id, name: m.name || m.id, inputModalities: m.inputModalities })) : [] };
     }
     case 'memory-list': return runtime.memory.list(text(args.scope,'owner'),text(args.day,runtime.memory.today()),typeof args.before === 'number' ? args.before : 0);
     case 'memory-search': return { hits: runtime.memory.search(text(args.scope,'owner'),text(args.query),args.range === 'today' ? 'today' : 'history',args.day ? text(args.day) : undefined) };

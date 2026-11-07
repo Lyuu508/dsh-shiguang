@@ -2,10 +2,19 @@ import { readFileSync, mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
+export const MEDIA_DEFAULTS = {
+  enabled: false, mode: 'ask' as 'ask' | 'auto', provider: '', model: '',
+  ffmpegPath: 'ffmpeg', ffprobePath: 'ffprobe', localMediaDir: '',
+  frames: 3, sheetSize: 512, maxFileMB: 20, maxDurationSeconds: 120,
+  timeoutMs: 30000, maxOutputTokens: 320, dailyLimit: 30, contextChars: 600, cacheHours: 24,
+};
+export type MediaSettings = typeof MEDIA_DEFAULTS;
+
 export interface Settings {
   roleId: string; displayName: string; persona: string; timezone: string; dataDir: string;
   provider: string; model: string; replyTimeoutMs: number; maxReplyChars: number; maxQueue: number;
   memory: { todayMaxChars: number; recentMessages: number; recentMaxChars: number; searchLimit: number; snippetChars: number; detailMaxChars: number };
+  media: MediaSettings;
   qq: { enabled: boolean; wsUrl: string; tokenEnv: string; ownerQQ: string; allowedPrivate: string[]; allowedGroups: string[]; groupMentionOnly: boolean; actionTimeoutMs: number; reconnectMs: number };
   bilibili: { enabled: boolean; allowComments: boolean; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number };
 }
@@ -35,6 +44,7 @@ export function configFile(path = ''): string {
 }
 export function parseSettings(value: unknown, file: string): Settings {
   const c = object(value, 'root'), m = object(c.memory, 'memory'), q = object(c.qq, 'qq'), b = object(c.bilibili, 'bilibili');
+  const v = { ...MEDIA_DEFAULTS, ...(c.media === undefined ? {} : object(c.media,'media')) };
   const zone = string(c.timezone, 'timezone');
   const timezone = zone === 'system' ? Intl.DateTimeFormat().resolvedOptions().timeZone : zone;
   new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
@@ -53,6 +63,15 @@ export function parseSettings(value: unknown, file: string): Settings {
       snippetChars: integer(m.snippetChars, 'memory.snippetChars', 50, 1000),
       detailMaxChars: integer(m.detailMaxChars, 'memory.detailMaxChars', 100, 10000),
     },
+    media: {
+      enabled: boolean(v.enabled,'media.enabled'), mode: string(v.mode,'media.mode') as MediaSettings['mode'],
+      provider: string(v.provider,'media.provider'), model: string(v.model,'media.model'),
+      ffmpegPath: string(v.ffmpegPath,'media.ffmpegPath'), ffprobePath: string(v.ffprobePath,'media.ffprobePath'), localMediaDir: string(v.localMediaDir,'media.localMediaDir'),
+      frames: integer(v.frames,'media.frames',1,6), sheetSize: integer(v.sheetSize,'media.sheetSize',256,1024),
+      maxFileMB: integer(v.maxFileMB,'media.maxFileMB',1,50), maxDurationSeconds: integer(v.maxDurationSeconds,'media.maxDurationSeconds',1,600),
+      timeoutMs: integer(v.timeoutMs,'media.timeoutMs',1000,120000), maxOutputTokens: integer(v.maxOutputTokens,'media.maxOutputTokens',128,1024),
+      dailyLimit: integer(v.dailyLimit,'media.dailyLimit',0,200), contextChars: integer(v.contextChars,'media.contextChars',0,2000), cacheHours: integer(v.cacheHours,'media.cacheHours',1,168),
+    },
     qq: {
       enabled: boolean(q.enabled, 'qq.enabled'), wsUrl: string(q.wsUrl, 'qq.wsUrl'), tokenEnv: string(q.tokenEnv, 'qq.tokenEnv'),
       ownerQQ: string(q.ownerQQ, 'qq.ownerQQ'), allowedPrivate: ids(q.allowedPrivate, 'qq.allowedPrivate'), allowedGroups: ids(q.allowedGroups, 'qq.allowedGroups'),
@@ -69,6 +88,9 @@ export function parseSettings(value: unknown, file: string): Settings {
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(s.roleId)) throw new Error('roleId 只能使用字母、数字、下划线和连字符');
   if (!s.displayName.trim() || s.displayName.length > 40 || s.persona.length > 20000) throw new Error('角色名称应为 1–40 字，人设最多 20000 字');
   if (Boolean(s.provider) !== Boolean(s.model)) throw new Error('provider 和 model 必须同时填写或同时留空，留空使用 DSH 默认模型');
+  if (!['ask','auto'].includes(s.media.mode) || ![256,512,768,1024].includes(s.media.sheetSize)) throw new Error('视频识别模式或拼图尺寸无效');
+  if (Boolean(s.media.provider) !== Boolean(s.media.model)) throw new Error('视觉模型的 provider 和 model 必须同时填写或同时留空');
+  if ([s.media.ffmpegPath,s.media.ffprobePath].some(p=>!p.trim() || /[\r\n\0]/.test(p))) throw new Error('请填写有效的 FFmpeg / FFprobe 程序路径');
   const u = new URL(s.qq.wsUrl);
   if (!['ws:', 'wss:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) throw new Error('qq.wsUrl 必须为不带凭据或查询参数的 ws/wss 地址');
   if (s.qq.enabled && !/^\d+$/.test(s.qq.ownerQQ)) throw new Error('启用 QQ 前，请设置 ownerQQ');

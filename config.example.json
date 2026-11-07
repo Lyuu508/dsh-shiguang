@@ -34,5 +34,23 @@
     "commentsPerDay": 10,
     "minCommentIntervalMs": 60000,
     "timeoutMs": 15000
+  },
+  "media": {
+    "enabled": false,
+    "mode": "ask",
+    "provider": "",
+    "model": "",
+    "ffmpegPath": "ffmpeg",
+    "ffprobePath": "ffprobe",
+    "localMediaDir": "",
+    "frames": 3,
+    "sheetSize": 512,
+    "maxFileMB": 20,
+    "maxDurationSeconds": 120,
+    "timeoutMs": 30000,
+    "maxOutputTokens": 320,
+    "dailyLimit": 30,
+    "contextChars": 600,
+    "cacheHours": 24
   }
 }

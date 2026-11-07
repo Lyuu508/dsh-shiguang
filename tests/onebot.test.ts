@@ -44,3 +44,15 @@ test('真实本地 WebSocket 收消息并使用纯文本消息段发送回复', 
     assert.deepEqual((received[0] as any).params.message, [{ type: 'text', data: { text: '[CQ:at,qq=all]这只是文字' } }]);
   } finally { client.stop(); await new Promise<void>(r => server.close(() => r())); delete process.env.SHIGUANG_TEST_TOKEN; f.cleanup(); }
 });
+test('视频和 GIF 可作为独立消息接收，引用媒体不跨会话，文件 ID 不接受路径',async()=>{
+ const f=fixture(),c=f.settings.qq;c.ownerQQ='1';c.allowedGroups=['5'];
+ const media=[{type:'image',data:{file:'animation.image',url:'https://gchat.qpic.cn/a.gif'}},{type:'video',data:{file:'video-id'}}];
+ const client=new OneBotClient(c,()=>{},()=>{});let calls=0;
+ try{
+  assert.equal(parseMessage(event({message:media}),c)?.media?.length,2);
+  const quoted=parseMessage(event({message:[{type:'reply',data:{id:'-123'}},{type:'text',data:{text:'看看'}}]}),c)!;assert.equal(quoted.replyId,'-123');
+  client.action=async()=>{calls++;return {message_type:'private',user_id:'1',message:media};};assert.equal((await client.quotedMedia(quoted)).length,2);
+  client.action=async()=>({message_type:'private',user_id:'999',message:media});await assert.rejects(client.quotedMedia(quoted),/不属于/);
+  assert.deepEqual(await client.mediaInfo({type:'video',file:'C:\\private\\photo.jpg'}),{});assert.equal(calls,1);
+ }finally{client.stop();f.cleanup();}
+});

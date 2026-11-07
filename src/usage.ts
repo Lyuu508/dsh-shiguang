@@ -19,6 +19,13 @@ function counters(usage?: TokenUsage): number[] {
     [usage.cacheReadTokens, usage.cacheWriteTokens, usage.reasoningTokens].some(n => n !== undefined && !valid(n))) return [1,0,0,0,0,0];
   return [0, usage.inputTokens, usage.cacheReadTokens ?? 0, usage.cacheWriteTokens ?? 0, usage.outputTokens, usage.reasoningTokens ?? 0];
 }
+export function recordMediaUsage(memory: MemoryStore, origin: UsageOrigin, usage?: TokenUsage): void {
+  const time=memory.clock();
+  memory.db.prepare(`INSERT OR IGNORE INTO llm_usage
+    (role,session,seq,day,time,source,category,provider,model,missing,input,cache_read,cache_write,output,reasoning)
+    VALUES(?,?,0,?,?,?,'qq-media',?,?,?,?,?,?,?,?)`)
+    .run(memory.roleId,origin.session,dayKey(time,memory.timezone),time,origin.source,origin.provider,origin.model,...counters(usage));
+}
 /** One row per settled model attempt, including tool steps, retries and cancellations. */
 export function recordUsage(memory: MemoryStore, origin: UsageOrigin, events: readonly SessionEvent[]): void {
   const category = events.some(e => e.type === 'tool/call' && e.data.name.startsWith('shiguang_bili_')) ? 'bilibili' : origin.source;
