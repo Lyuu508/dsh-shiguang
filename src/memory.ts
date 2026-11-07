@@ -41,8 +41,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 2) throw new Error('记忆数据库来自更新版本，请升级插件');
-    if (Number(version) === 1 && path !== ':memory:' && !existsSync(`${path}.v1-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v1-backup`);
+    if (Number(version) > 3) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if ([1,2].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -58,7 +58,14 @@ export class MemoryStore {
       );
       CREATE INDEX IF NOT EXISTS actions_quota ON actions(role,kind,day,time DESC);
       CREATE TABLE IF NOT EXISTS memory_trash (id TEXT PRIMARY KEY,role TEXT NOT NULL,scope TEXT NOT NULL,payload TEXT NOT NULL,deleted_at INTEGER NOT NULL);
-      PRAGMA user_version=2;
+      CREATE TABLE IF NOT EXISTS llm_usage (
+        role TEXT NOT NULL,session TEXT NOT NULL,seq INTEGER NOT NULL,day TEXT NOT NULL,time INTEGER NOT NULL,
+        source TEXT NOT NULL,category TEXT NOT NULL,provider TEXT NOT NULL,model TEXT NOT NULL,
+        missing INTEGER NOT NULL,input INTEGER NOT NULL,cache_read INTEGER NOT NULL,cache_write INTEGER NOT NULL,
+        output INTEGER NOT NULL,reasoning INTEGER NOT NULL,PRIMARY KEY(role,session,seq)
+      );
+      CREATE INDEX IF NOT EXISTS llm_usage_day ON llm_usage(role,day,category);
+      PRAGMA user_version=3;
     `);
   }
   today(): string { return dayKey(this.clock(), this.timezone); }

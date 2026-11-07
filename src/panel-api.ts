@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-connection';
 import type { ShiguangRuntime } from './runtime.js';
+import { dailyUsage } from './usage.js';
 
 function object(value: unknown): Record<string,unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('请求参数应为对象');
@@ -17,6 +18,10 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
   switch (action) {
     case 'load': return { ...runtime.view(), status: runtime.status() };
     case 'status': return runtime.status();
+    case 'usage': return dailyUsage(runtime.memory,text(args.day,runtime.memory.today()));
+    case 'update-status': return runtime.updates.view();
+    case 'update-check': return runtime.updates.check();
+    case 'update-install': return runtime.updates.start(text(args.version));
     case 'save': return runtime.save(args.settings,text(args.revision),text(args.token));
     case 'qq-check': return runtime.enqueue(() => runtime.qq.check());
     case 'bili-check': return runtime.enqueue(() => runtime.bili.account(signal));

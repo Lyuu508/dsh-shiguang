@@ -2,6 +2,21 @@
 
 验证环境：2026-11-07，Linux，Node.js v24.22.1，DSH 核心包 0.2.2-rc.1。
 
+## v0.1.2 更新与 Token 统计验证
+
+`npm run check`、`npm run build`、`npm test`、`npm run test:ui` 通过；核心测试 39 项，Chromium 综合交互测试 1 项。
+
+- 使用真实 AgentLoop 和脚本化模型验证 B 站工具前后两次请求的 usage 归入同一 B 站任务，QQ 无用量响应单独标记缺失。
+- 缓存输入与未缓存输入相加，推理 Token 不重复计入输出；失败 attempt 的 usage 同样累计。
+- 按调用时间和配置时区归日，角色隔离，重复采集与重启不会重复累计；v2 数据库升级前备份，旧记忆与评论额度保留。
+- 模拟 GitHub API 验证预览版参与检查、版本数字比较、固定仓库下载、SHA256 校验、重复点击只安装一次、错误包不安装、权限错误和 DSH 安装失败提示。
+- 更新进度跨 DSH 服务重建保存；检测到旧进程未完成的更新会提示核实，等待重启的安装不会重复执行。面板刷新保留所选页面。
+- Chromium 验证每日用量显示、刷新、JSON 导出，检查版本说明与下载安装状态；沿用 QQ / B 站 / 记忆页面联调和窄屏检查。
+
+用量测试使用模拟模型返回的明确计数，没有真实账号连续运行 24 小时，也没有产生真实模型账单。面板截图 `settings-usage.png`、`settings-updates.png` 使用模拟测试数据；未来版本号为测试夹具。
+
+另在真实 DSH 0.2.2-rc.1 Web 中确认六页设置入口，使用真实 GitHub API 检查已发布版本。在一次性 profile 中，以测试版本和模拟 GitHub 下载响应调用真实 `pluginManager.installBundle` 替换为 0.1.2 预构建包，核对安装版本、配置文件与 Token 文件校验值、SQLite 测试记忆，并验证更新进度在服务重建后仍可读取。该测试不使用真实平台账号。
+
 ## v0.1.1 面板与功能验证
 
 最终验证包括 `npm run check`、`npm run build`、`npm test` 和 `npm run test:ui`。核心测试 28 项，Chromium 综合交互测试 1 项，均通过。

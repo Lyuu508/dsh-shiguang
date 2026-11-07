@@ -8,6 +8,7 @@ import { MemoryStore } from '../src/memory.js';
 import { BilibiliClient } from '../src/bilibili.js';
 import { ChatDriver } from '../src/agent.js';
 import { fixture } from './helpers.js';
+import { dailyUsage } from '../src/usage.js';
 
 class ScriptedAdapter extends LlmAdapter {
   requests: GenerateOptions[] = [];
@@ -46,6 +47,25 @@ test('真实 DSH AgentLoop：当天上下文进入请求、旧档案不进入、
     assert.doesNotMatch(JSON.stringify(adapter.requests[1]?.messages), /今天准备练吉他/);
     assert.equal(ctx.agents.list().length, 0);
   } finally { await driver?.stop(); await ctx.fiber.dispose(); memory.close(); f.cleanup(); }
+});
+test('真实 AgentLoop 多步 B站任务把工具前后用量一起归入 B站，普通 QQ 缺失单独标记',async()=>{
+ const f=fixture(),ctx=new Context();f.settings.provider='shiguang-test';f.settings.model='scripted';f.settings.bilibili.enabled=true;
+ const memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory);
+ const adapter=new ScriptedAdapter((_o,index)=>{
+  const chunks=index===0?toolChunks('shiguang_bili_video',{video:'av123'}):textChunks('收到。');
+  if(index<2)chunks.splice(chunks.length-1,0,{type:'usage',usage:{inputTokens:100,cacheReadTokens:400,outputTokens:50,reasoningTokens:20}});
+  return chunks;
+ });
+ let driver:ChatDriver|undefined;
+ try{
+  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['shiguang-test'],adapter);
+  const bili=new BilibiliClient(f.settings,memory,async()=>Response.json({code:0,data:{aid:123,bvid:'BV1xx411c7mD',title:'测试视频',desc:'内容',owner:{name:'测试作者'}}}));
+  driver=new ChatDriver(ctx,f.settings,memory,bili);
+  await driver.reply({scope:'owner',thread:'p',owner:true,platform:'qq',text:'查看 av123'});
+  const report=dailyUsage(memory);assert.equal(report.total.calls,2);assert.equal(report.total.total,1100);assert.equal(report.categories[0]?.category,'bilibili');assert.equal(report.total.reasoning,40);
+  await driver.reply({scope:'owner',thread:'p',owner:true,platform:'qq',text:'你好'});
+  const next=dailyUsage(memory);assert.equal(next.total.calls,3);assert.equal(next.total.missing,1);assert.equal(next.categories.find(c=>c.category==='qq')?.total,0);
+ }finally{await driver?.stop();await ctx.fiber.dispose();memory.close();f.cleanup();}
 });
 function toolChunks(name: string, args: object): StreamChunk[] {
   return [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'block-end', index: 0, block: { type: 'tool-call', id: brandString<ToolCallId>('shiguang-test-call'), name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];

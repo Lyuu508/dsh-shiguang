@@ -2,11 +2,7 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.1 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.1) 页面进入下载。访问私有仓库及下载文件需要登录获授权的 GitHub 账号。
-
-## 版本规则
-
-版本固定采用 `0.1.N`：`0.1.0 → 0.1.1 → 0.1.2 → 0.1.3`。以后每次发布只增加最后一段数字，超过 9 后为 `0.1.10`；不自动提升前两段。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.2 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.2) 页面进入下载。
 
 ## 在哪里打开面板
 
@@ -16,10 +12,43 @@
 - **QQ 连接**：连接地址、主人号、白名单、仅 @ 回复、Token 保存和在线检测。
 - **B 站账号**：页面二维码登录、登录检测、评论开关和额度。
 - **记忆**：读取预算、当天记录、历史搜索、分页原文、移入回收站与撤销。
+- **Token 用量**：按日期分别查看 QQ 聊天、B 站任务、DSH 对话的模型用量，区分未缓存输入、缓存与输出，支持导出 JSON。
+- **版本更新**：检查 GitHub Release、查看说明、下载并校验安装包，交给 DSH 安装。
 
 **点击“保存设置”即可生效，无需重启 DSH。** 保存会等待正在处理的消息完成，再应用新的配置；QQ 连接参数更新时会重新连接。其他窗口同时修改配置时会提示冲突，保留当前编辑内容。
 
 首次加载会自动生成默认配置，QQ 和 B 站互动默认关闭，可以直接在面板开始设置。
+
+### 从旧版升级
+
+0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.2 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.2.tgz)，在文件页面点 **Download raw file**，然后执行：
+
+```powershell
+dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.2.tgz"
+```
+
+重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。
+
+配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会生成 `memory.sqlite.v2-backup`（v1 数据库为 `.v1-backup`）。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
+
+## 一天的 Token 怎么测
+
+打开 **设置 → 拾光 → Token 用量**，选今天，点“刷新用量”。首次安装本版后开始记录，旧聊天不补算。
+
+1. 选择固定模型，记下开始时的合计；用 QQ 做一组普通聊天，刷新查看增量。
+2. 明确追问“上次聊的……”，再刷新，比较带历史检索时的增量。模型调用检索工具后还需继续生成，因此一次回复可能产生多次模型调用。
+3. 用主人私聊要求读取指定 B 站视频，或在允许评论时按要求评论，再查看“B 站任务”增量。扫码、检测账号、B 站 HTTP 请求本身不会消耗模型 Token。
+4. 正常运行一天后导出当天 JSON，与服务商相同时区的用量核对。建议用专用 API Key 或服务商项目，避免混入其他应用的调用。
+
+**统计归属：** 当前 B 站操作由 QQ 或 DSH 对话触发，没有独立常驻的 B 站聊天进程。一轮只要调用过 B 站工具，该轮所有模型请求归入“B 站任务”；其他轮次按“QQ 聊天”或“DSH 对话”归类，合计不重复。混合聊天与 B 站操作无法精确按主题拆分，整轮归类便于观察任务成本。
+
+统计来自 DSH `assistant/message` 与 `assistant/attempt` 的实际 usage，包含工具步骤、重试和已结算的中断。未缓存输入、缓存读取、缓存写入、输出分别累加；推理 Token 作为输出明细，不再重复加入合计。无 usage 的调用标为“缺失”，已知合计不能当作完整账单。进程意外退出前尚未结算的请求可能未入账。只统计拾光创建的模型调用；DSH 主会话调用 `shiguang_chat` 前后的主会话消耗，以及其他插件不在本表内。每天按调用发生时配置的时区归档，修改时区不会重算旧记录。Token 数量不等于费用，缓存和不同模型的单价应以服务商为准。
+
+### 每次会读完整上下文和全部记忆吗
+
+不会读取全部历史档案。普通聊天每轮新建短会话，只带人设、工具说明、当天笔记（默认最多 2600 字符）、当前线程当天最近对话（默认 12 条且最多 4000 字符）和本次输入。明确提到旧事时，才允许搜索历史索引并按需展开少量原文。
+
+**每次实际发送给模型的这些内容仍会计入输入 Token**；命中服务商缓存时按缓存用量统计。SQLite 查询本身不调用模型，不消耗模型 Token；模型选择检索工具、接收片段并继续回答会产生相应输入、输出。多步工具调用中，已有上下文和工具结果也可能再次发送。记忆预算按字符限制，不是精确的 Token 上限。
 
 ![拾光在真实 DSH 0.2.2-rc.1 设置中的入口与面板](docs/settings-dsh-native.png)
 
@@ -186,15 +215,9 @@ npm run benchmark
 
 外部聊天只开放当前角色的记忆与授权平台工具，不向 QQ 群友开放 DSH 的终端或文件读取能力。模型输入属于你所配置模型服务的数据处理范围；本机存档不意味着模型调用离线。
 
-## 从 0.1.0 升级
+## 旧数据库与回退
 
-从 `downloads/` 下载 `dsh-shiguang-0.1.1.tgz`，再安装到原来的 profile：
-
-```powershell
-dsh plugin --profile web add "你的文件夹\dsh-shiguang-0.1.1.tgz"
-```
-
-重启 DSH 并刷新页面后打开 **设置 → 拾光**。原来的配置、Cookie 和记忆在用户数据目录中，升级安装包不会覆盖；数据库会先生成 `memory.sqlite.v1-backup`，再兼容添加回收站表，不清空原记录。数据库版本升为 2，旧版插件无法直接打开升级后的库；回退前需停用插件并使用备份。首次保存旧配置时会补入角色名字字段。
+从旧版本升级沿用原 profile 和数据目录，步骤见上方“从旧版升级”。数据库版本升为 3，升级前先保存对应的 `.v1-backup` 或 `.v2-backup`，再添加缺失的表，不清空原记忆和评论账本。旧版插件无法直接打开新版数据库；回退前需停止插件、另外保留当前数据目录，并使用相应的旧库备份，避免丢失更新后的记录。首次保存 0.1.0 配置时会补入角色名字字段。
 
 ## 工程结构
 
@@ -203,12 +226,14 @@ dsh plugin --profile web add "你的文件夹\dsh-shiguang-0.1.1.tgz"
 | `src/plugin.ts` | 独立 DSH bundle 入口与生命周期 |
 | `src/runtime.ts` | 消息队列、配置热应用、凭据与扫码会话 |
 | `src/panel-api.ts` | DSH 认证保护下的设置面板接口 |
-| `client/` | DSH 原生设置入口、四个设置页与响应式布局 |
+| `client/` | DSH 原生设置入口、六个页面与响应式布局 |
 | `src/agent.ts` | 短会话、当天上下文和受限工具 |
 | `src/memory.ts` | SQLite、中文双字检索、分页、操作账本 |
 | `src/onebot.ts` | QQ 事件校验、WS 连接、发送回执 |
 | `src/bilibili.ts` | 扫码登录、视频元信息、评论与回复 |
 | `src/config.ts` | 配置校验和路径解析 |
+| `src/usage.ts` | 模型 usage 采集、每日分类和模型汇总 |
+| `src/updates.ts` | GitHub Release 检查、包校验、安装与进度保存 |
 | `tests/` | 记忆、平台和真实 DSH 调用链测试 |
 
 依赖的接口文档：[DSH 插件开发](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/)、[DSH 工具定义](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/tool)、[NapCat 连接设置](https://napneko.github.io/config/basic)、[B站扫码接口收集](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/login/login_action/QR.md)、[B站评论接口收集](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/comment/action.md)。

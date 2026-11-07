@@ -8,15 +8,18 @@ import { MemoryStore } from './memory.js';
 import { BilibiliClient } from './bilibili.js';
 import { OneBotClient } from './onebot.js';
 import { ChatDriver } from './agent.js';
+import { UpdateManager } from './updates.js';
 
 export class ShiguangRuntime {
   readonly file: string;
+  readonly updates: UpdateManager;
   settings!: Settings; memory!: MemoryStore; bili!: BilibiliClient; driver!: ChatDriver; qq!: OneBotClient;
   private stopped = false; private queued = 0; private tail = Promise.resolve();
   private login?: { ticket: string; key: string; expires: number };
   private lastError = '';
   constructor(readonly ctx: Context, file = '', readonly fetcher: typeof fetch = fetch) {
     this.file = ensureSettings(file); this.open(loadSettings(this.file));
+    this.updates = new UpdateManager(ctx,this.settings.dataDir,fetcher);
   }
   private log = (message: string) => { this.lastError = message; console.info(`[Shiguang] ${message}`); };
   private secretFile(): string { return join(this.settings.dataDir,'onebot.token'); }

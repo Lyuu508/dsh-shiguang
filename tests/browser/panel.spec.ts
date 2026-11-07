@@ -23,6 +23,16 @@ test('角色保存、QQ 连接、B站扫码、记忆检索和撤销移除',async
  await page.getByRole('button',{name:'移入回收站'}).click();await expect(page.getByText('已移入回收站，不再用于聊天。',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'撤销移除'}).click();await page.getByRole('button',{name:'搜索往事'}).click();await expect(page.getByText('上周选了雅马哈吉他',{exact:true})).toBeVisible();
  await page.screenshot({path:'docs/settings-memory.png',fullPage:true});
+ await page.getByRole('tab',{name:'Token 用量'}).click();await expect(page.getByText('500 Token',{exact:true})).toBeVisible();
+ await expect(page.getByRole('row',{name:/QQ 聊天/})).toContainText('120');
+ await page.getByRole('button',{name:'刷新用量'}).click();await expect(page.getByText('500 Token',{exact:true})).toBeVisible();
+ const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'导出当日记录'}).click();const download=await downloadPromise;expect(download.suggestedFilename()).toMatch(/shiguang-usage-.*\.json/);
+ await page.screenshot({path:'docs/settings-usage.png',fullPage:true});
+ await page.getByRole('tab',{name:'版本更新'}).click();await page.getByRole('button',{name:'检查更新',exact:true}).click();await expect(page.getByRole('status').last()).toContainText('发现新版本 0.1.100');
+ await expect(page.getByText('测试更新说明：保留原有记忆。',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'下载并安装更新'}).click();await expect(page.getByRole('status').last()).toContainText('请重启 DSH',{timeout:10000});
+ await page.screenshot({path:'docs/settings-updates.png',fullPage:true});
+ await page.reload();await expect(page.getByRole('tab',{name:'版本更新'})).toHaveAttribute('aria-selected','true');await expect(page.getByRole('status').last()).toContainText('请重启 DSH');
  await page.reload();await page.getByRole('tab',{name:'记忆',exact:true}).click();await expect(page.getByLabel('历史搜索最多返回条数')).toHaveValue('3');
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.screenshot({path:'docs/settings-mobile.png',fullPage:true});expect(errors).toEqual([]);

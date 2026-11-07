@@ -11,6 +11,7 @@ import type { Settings } from './config.js';
 import { MemoryStore } from './memory.js';
 import { BilibiliClient } from './bilibili.js';
 import { historyRequested } from './policy.js';
+import { recordUsage } from './usage.js';
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap { shiguang: { kind: 'shiguang' } }
@@ -106,8 +107,9 @@ export class ChatDriver {
     if (!saved) return null;
     const history = historyRequested(input.text);
     const allowedTools = ['shiguang_search_memory', 'shiguang_read_memory', 'shiguang_note_today', ...(input.owner && this.settings.bilibili.enabled ? ['shiguang_bili_video', ...(this.settings.bilibili.allowComments ? ['shiguang_bili_comment'] : [])] : [])];
+    const sessionId = `shiguang-${randomUUID()}`;
     const handle = await this.ctx.agents.create({
-      sessionId: brandString<SessionId>(`shiguang-${randomUUID()}`),
+      sessionId: brandString<SessionId>(sessionId),
       agentOptions: selection,
       setup: scoped => {
         scoped.tools.setExecutor(new NativeToolExecutor(scoped));
@@ -143,7 +145,12 @@ export class ChatDriver {
       if (!reply.trim()) throw new Error('DSH 本轮没有可发送的回复，请检查默认模型和 DSH 日志');
       return reply.slice(0, this.settings.maxReplyChars);
     } finally {
-      clearTimeout(timer); this.handles.delete(handle); await handle.dispose();
+      clearTimeout(timer);
+      try { await handle.dispose(); }
+      finally {
+        recordUsage(this.memory, { session: sessionId, source: input.platform, ...selection }, handle.agent.session.snapshotEvents());
+        this.handles.delete(handle);
+      }
     }
   }
   async stop(): Promise<void> {

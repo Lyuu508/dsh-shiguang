@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { PanelApi, Settings, Status, Snapshot, MemoryRow, SearchHit } from './types.js';
 import { styles } from './styles.js';
+import { UsagePanel, UpdatesPanel } from './UsageUpdates.js';
 
-const tabs = ['角色与回复','QQ 连接','B 站账号','记忆'] as const;
+const tabs = ['角色与回复','QQ 连接','B 站账号','记忆','Token 用量','版本更新'] as const;
 function Field({label,help,children}: {label:string;help?:string;children:React.ReactNode}) {
   const id=React.useId();
   return <div className="sg-field"><label htmlFor={id}>{label}</label>{React.Children.map(children,child=>React.isValidElement(child)&&typeof child.type==='string'&&['input','textarea','select'].includes(child.type)?React.cloneElement(child as React.ReactElement<{id:string;'aria-describedby'?:string}>,{id,'aria-describedby':help?id+'-help':undefined}):child)}{help && <small id={id+'-help'} className="sg-help">{help}</small>}</div>;
@@ -14,14 +15,19 @@ function Numeric({label,value,min,max,onChange}: {label:string;value:number;min:
   return <Field label={label}><input type="number" min={min} max={max} value={value} onChange={e=>onChange(Number(e.target.value))}/></Field>;
 }
 const ids = (s:string) => [...new Set(s.split(/[\s,，;；]+/).filter(Boolean))];
+function savedTab():number {
+  try { const value=Number(sessionStorage.getItem('shiguang.settings.tab'));return Number.isInteger(value)&&value>=0&&value<tabs.length?value:0; }
+  catch { return 0; }
+}
 export function ShiguangPanel({api}: {api:PanelApi}) {
   const [snapshot,setSnapshot]=useState<Snapshot>(); const [draft,setDraft]=useState<Settings>(); const [status,setStatus]=useState<Status>();
-  const [tab,setTab]=useState(0); const [dirty,setDirty]=useState(false); const [busy,setBusy]=useState(false);
+  const [tab,setTab]=useState(savedTab); const [dirty,setDirty]=useState(false); const [busy,setBusy]=useState(false);
   const [error,setError]=useState(''); const [notice,setNotice]=useState(''); const [token,setToken]=useState('');
   const [privateIds,setPrivateIds]=useState(''); const [groupIds,setGroupIds]=useState('');
   const [qr,setQr]=useState<{ticket:string;image:string;expires:number}>(); const [qrState,setQrState]=useState('');
   const [providers,setProviders]=useState<{id:string;name:string}[]>([]); const [models,setModels]=useState<{id:string;name:string}[]>([]);
   const alive=useRef(true);
+  useEffect(()=>{try{sessionStorage.setItem('shiguang.settings.tab',String(tab));}catch{/* Storage may be disabled. */}},[tab]);
   function accept(s:Snapshot){setSnapshot(s);setDraft(s.settings);setPrivateIds(s.settings.qq.allowedPrivate.join('\n'));setGroupIds(s.settings.qq.allowedGroups.join('\n'));setToken('');setDirty(false);}
   async function load(){try{const s=await api.call<Snapshot&{status:Status}>('load');if(alive.current){accept(s);setStatus(s.status);setError('');}}catch(e){if(alive.current)setError(message(e));}}
   useEffect(()=>{alive.current=true;void load();const timer=setInterval(()=>{void api.call<Status>('status').then(s=>{if(alive.current)setStatus(s);}).catch(()=>{});},5000);return()=>{alive.current=false;clearInterval(timer);};},[api]);
@@ -48,7 +54,9 @@ export function ShiguangPanel({api}: {api:PanelApi}) {
     <section className="sg-section"><h2>允许哪些人找它聊天</h2><div className="sg-grid"><Field label="其他允许私聊的 QQ 号" help="每行一个，也可以用逗号分隔；主人无需重复添加。"><textarea rows={4} value={privateIds} onChange={e=>{setPrivateIds(e.target.value);setDirty(true);}}/></Field><Field label="允许加入的群号" help="每行一个。留空时不处理任何群聊。"><textarea rows={4} value={groupIds} onChange={e=>{setGroupIds(e.target.value);setDirty(true);}}/></Field></div><Toggle label="群聊仅被 @ 时回复" value={q.groupMentionOnly} onChange={v=>edit(s=>({...s,qq:{...s.qq,groupMentionOnly:v}}))}/></section></>}
     {tab===2&&<><section className="sg-section"><h2>B 站里的同一个它</h2><Toggle label="启用 B 站工具" value={b.enabled} onChange={v=>edit(s=>({...s,bilibili:{...s.bilibili,enabled:v}}))}/><div className="sg-row"><button className="sg-primary" onClick={()=>void act(async()=>{setQr(await api.call('bili-start'));setQrState('等待 B 站 App 扫码');})}>生成登录二维码</button><button onClick={()=>void act(async()=>{const r=await api.call<{loggedIn:boolean;name:string;userId:string}>('bili-check');setNotice(r.loggedIn?`当前账号：${r.name}（${r.userId}）`:'登录已失效，请重新扫码');})}>检查登录状态</button>{status?.bilibili.credentialSaved&&<button onClick={()=>void act(async()=>{await api.call('bili-logout');setStatus(await api.call('status'));setQr(undefined);},'已停用本机 B 站登录凭据')}>停用本机登录</button>}</div>{qr&&<div className="sg-qr"><img src={qr.image} alt="使用 B 站手机 App 扫描登录二维码"/><p>{qrState}</p><small className="sg-help">请在自己的手机上确认，不要将二维码分享给别人。</small></div>}{!qr&&qrState&&<p className="sg-help">{qrState}</p>}</section><section className="sg-section"><h2>评论与互动</h2><Toggle label="允许发表评论" help="开启后按主人的明确要求评论；群聊无法操作你的 B 站账号。" value={b.allowComments} onChange={v=>edit(s=>({...s,bilibili:{...s.bilibili,allowComments:v}}))}/><div className="sg-grid"><Numeric label="每日评论次数上限" value={b.commentsPerDay} min={0} max={100} onChange={v=>edit(s=>({...s,bilibili:{...s.bilibili,commentsPerDay:v}}))}/><Numeric label="评论最小间隔（秒）" value={b.minCommentIntervalMs/1000} min={1} max={86400} onChange={v=>edit(s=>({...s,bilibili:{...s.bilibili,minCommentIntervalMs:v*1000}}))}/></div><p className="sg-help">今日已尝试 {status?.memory.commentsToday??0} 次。发送结果不明时也会占用额度，避免重复发送。</p></section></>}
     {tab===3&&<><section className="sg-section"><h2>今天轻轻记住，往事按需找回</h2><p className="sg-help">普通聊天只加载今天的笔记与近期对话。明确追问旧事时才搜索历史，不把整个档案读进上下文。</p><div className="sg-grid"><Numeric label="当天笔记最多字符" value={m.todayMaxChars} min={100} max={20000} onChange={v=>edit(s=>({...s,memory:{...s.memory,todayMaxChars:v}}))}/><Numeric label="最近对话条数" value={m.recentMessages} min={1} max={100} onChange={v=>edit(s=>({...s,memory:{...s.memory,recentMessages:v}}))}/><Numeric label="近期对话最多字符" value={m.recentMaxChars} min={100} max={20000} onChange={v=>edit(s=>({...s,memory:{...s.memory,recentMaxChars:v}}))}/><Numeric label="历史搜索最多返回条数" value={m.searchLimit} min={1} max={20} onChange={v=>edit(s=>({...s,memory:{...s.memory,searchLimit:v}}))}/><Numeric label="每条搜索片段字符" value={m.snippetChars} min={50} max={1000} onChange={v=>edit(s=>({...s,memory:{...s.memory,snippetChars:v}}))}/><Numeric label="原文每页最多字符" value={m.detailMaxChars} min={100} max={10000} onChange={v=>edit(s=>({...s,memory:{...s.memory,detailMaxChars:v}}))}/></div></section><MemoryBrowser api={api} status={status}/></>}
-    </div></fieldset><footer className="sg-footer"><small>{dirty?'有未保存的修改':'所有修改已保存'} · 保存后生效，无需重启 DSH</small><div className="sg-row"><button disabled={busy} onClick={()=>{if(!dirty||window.confirm('放弃未保存的修改并重新载入？'))void load();}}>重新载入</button><button className="sg-primary" disabled={busy||!dirty} onClick={()=>void save()}>{busy?'正在处理…':'保存设置'}</button></div></footer>
+    {tab===4&&<UsagePanel api={api} today={status?.day}/>}
+    {tab===5&&<UpdatesPanel api={api} dirty={dirty}/>}
+    </div></fieldset><footer className="sg-footer"><small>{dirty?'有未保存的修改':'所有修改已保存'} · 设置保存后生效</small><div className="sg-row"><button disabled={busy} onClick={()=>{if(!dirty||window.confirm('放弃未保存的修改并重新载入？'))void load();}}>重新载入</button><button className="sg-primary" disabled={busy||!dirty} onClick={()=>void save()}>{busy?'正在处理…':'保存设置'}</button></div></footer>
   </div>;
 }
 function message(e:unknown){return e instanceof Error?e.message:'操作未完成，请重试';}
