@@ -9,6 +9,11 @@
   "replyTimeoutMs": 90000,
   "maxReplyChars": 1500,
   "maxQueue": 20,
+  "napcat": {
+    "mode": "managed",
+    "autoInstall": true,
+    "webuiUrl": "http://127.0.0.1:6099"
+  },
   "memory": {
     "todayMaxChars": 2600,
     "recentMessages": 12,

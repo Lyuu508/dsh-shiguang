@@ -11,10 +11,12 @@ import { ChatDriver } from './agent.js';
 import { UpdateManager } from './updates.js';
 import { MediaReader, MediaError, wantsMedia } from './media.js';
 import {Autonomy} from './autonomy.js';
+import { NapCatManager } from './napcat.js';
 
 export class ShiguangRuntime {
   readonly file: string;
   readonly updates: UpdateManager;
+  readonly napcat: NapCatManager;
   settings!: Settings; memory!: MemoryStore; bili!: BilibiliClient; driver!: ChatDriver; qq!: OneBotClient;
   media!: MediaReader;
   autonomy!:Autonomy;
@@ -24,6 +26,8 @@ export class ShiguangRuntime {
   constructor(readonly ctx: Context, file = '', readonly fetcher: typeof fetch = fetch) {
     this.file = ensureSettings(file); this.open(loadSettings(this.file));
     this.updates = new UpdateManager(ctx,this.settings.dataDir,fetcher);
+    this.napcat = new NapCatManager(this.settings.dataDir,()=>this.settings,()=>this.token(),fetcher);
+    this.napcat.configure();
   }
   private log = (message: string) => { this.lastError = message; console.info(`[Shiguang] ${message}`); };
   private secretFile(): string { return join(this.settings.dataDir,'onebot.token'); }
@@ -52,7 +56,7 @@ export class ShiguangRuntime {
           let reply:string;
           try{
             if(mediaQuote&&!media.length){
-              if(!this.settings.media.enabled)reply='视频和动图识别还没开启，可先在 DSH 设置 → 拾光 → QQ 识图中打开。';
+              if(!this.settings.media.enabled)reply='视频和动图识别还没开启，可先在 DSH 设置 → 拾光 → QQ 连接 → QQ 识图中打开。';
               else{media=await this.qq.quotedMedia(message);reply=media.length?await this.media.reply({...message,owner,scope},this.qq,media,previous):'引用消息中没有可读取的视频、GIF 或图片，请直接发送媒体或引用包含媒体的消息。';}
             }else reply=await this.media.reply({...message,owner,scope},this.qq,media,previous);
           }catch(error){this.log(error instanceof Error?error.message:'媒体读取失败');reply=error instanceof MediaError?error.message:'媒体识别未完成，请在拾光面板检查模型、FFmpeg 和下载状态。';}
@@ -82,7 +86,7 @@ export class ShiguangRuntime {
     return { settings: { ...this.settings, timezone: String(raw.timezone), dataDir: String(raw.dataDir) }, revision: this.revision(), tokenConfigured: !!this.token(), tokenFromEnvironment: !panelToken && !!(this.settings.qq.tokenEnv && process.env[this.settings.qq.tokenEnv]) };
   }
   status() {
-    return { displayName: this.settings.displayName, qq: this.settings.qq.enabled ? this.qq.status() : { state: 'disabled', message: 'QQ 回复已关闭' }, bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
+    return { displayName: this.settings.displayName, qq: this.settings.qq.enabled ? this.qq.status() : { state: 'disabled', message: 'QQ 回复已关闭' }, napcat:this.napcat.view(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
   }
   async save(value: unknown, expected: string, newToken = '') {
     return this.enqueue(async () => {
@@ -104,6 +108,7 @@ export class ShiguangRuntime {
         throw error;
       }
       this.autonomy.stop();this.media.stop(); await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
+      this.napcat.configure();
       return this.view();
     });
   }
@@ -127,6 +132,7 @@ export class ShiguangRuntime {
   logoutBili(): void { this.login=undefined; this.bili.logout(); }
   async stop(): Promise<void> {
     this.stopped = true;
+    await this.napcat.stop();
     this.autonomy.stop();
     this.media.stop();
     try { await this.driver.stop(); await this.tail; } finally { this.qq.stop(); this.memory.close(); this.login=undefined; }

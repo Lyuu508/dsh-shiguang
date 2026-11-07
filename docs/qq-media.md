@@ -7,7 +7,7 @@
 1. 先配置 NapCat 与 QQ 连接，使用 Array 消息格式。
 2. 安装 FFmpeg（含 FFprobe）。Windows 可执行 `winget install --id Gyan.FFmpeg -e`，安装后重启 DSH；也可以从 [FFmpeg 官网](https://ffmpeg.org/download.html) 安装并在面板填两个程序的完整路径。
 3. 在 DSH 配置支持图片输入的模型。普通纯文本模型不能看图；插件要求该模型路由声明 `image` 输入能力。
-4. 打开 **设置 → 拾光 → QQ 识图**，开启识别，填写视觉模型提供方和模型名。两项都留空时继承聊天模型。
+4. 打开 **设置 → 拾光 → QQ 连接 → QQ 识图**，开启识别，填写视觉模型提供方和模型名。两项都留空时继承聊天模型。
 5. 保存后点击“检测已保存的媒体工具”。默认按需模式，需要时才调用模型。
 
 FFmpeg 路径示例：`C:\ffmpeg\bin\ffmpeg.exe`、`C:\ffmpeg\bin\ffprobe.exe`。路径不需要带额外命令参数。

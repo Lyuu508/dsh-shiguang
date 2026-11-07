@@ -33,6 +33,24 @@ test('扫码状态与 Cookie 保存不向调用者返回登录凭据', async () 
     assert.ok(existsSync(join(f.dir, 'bilibili.cookies.json')));
   } finally { memory.close(); f.cleanup(); }
 });
+test('兼容 B 站新旧官方扫码页面，拒绝伪装域名、路径、端口及不匹配票据', async () => {
+  const f=fixture(),memory=new MemoryStore(':memory:','qr','UTC',f.settings.memory);
+  let url='https://account.bilibili.com/h5/account-h5/auth/scan-web?navhide=1&qrcode_key=qr-test';
+  const api=new BilibiliClient(f.settings,memory,async()=>json({url,qrcode_key:'qr-test'}));
+  try {
+    assert.equal((await api.startLogin()).url,url);
+    url='https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=qr-test';assert.equal((await api.startLogin()).key,'qr-test');
+    for(const bad of [
+      'https://account.bilibili.com.attacker.test/h5/account-h5/auth/scan-web?qrcode_key=qr-test',
+      'https://account.bilibili.com:8443/h5/account-h5/auth/scan-web?qrcode_key=qr-test',
+      'https://user@account.bilibili.com/h5/account-h5/auth/scan-web?qrcode_key=qr-test',
+      'http://account.bilibili.com/h5/account-h5/auth/scan-web?qrcode_key=qr-test',
+      'https://account.bilibili.com/other?qrcode_key=qr-test',
+      'https://account.bilibili.com/h5/account-h5/auth/scan-web?qrcode_key=wrong',
+      'invalid url',
+    ]){url=bad;await assert.rejects(api.startLogin(),/二维码/);}
+  } finally {memory.close();f.cleanup();}
+});
 test('评论获得回执才写入共享记忆，同一天重复操作不重发', async () => {
   const f = fixture(); f.settings.bilibili.enabled = true; f.settings.bilibili.allowComments = true;
   const memory = new MemoryStore(':memory:', 'a', 'UTC', f.settings.memory);

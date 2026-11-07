@@ -15,6 +15,13 @@ export const AUTONOMY_DEFAULTS = {
   maxOutputTokens:700, contextChars:1200,
 };
 export type AutonomySettings = typeof AUTONOMY_DEFAULTS;
+export const NAPCAT_DEFAULTS = { mode: 'managed' as 'managed' | 'external', autoInstall: true, webuiUrl: 'http://127.0.0.1:6099' };
+
+export function napcatBaseUrl(value: string): URL {
+  const u = new URL(value);
+  if (u.protocol !== 'http:' || !['127.0.0.1','localhost','[::1]'].includes(u.hostname) || u.username || u.password || u.search || u.hash || u.pathname !== '/') throw new Error('NapCat 后台地址应为本机 HTTP 地址，例如 http://127.0.0.1:6099');
+  return u;
+}
 
 export interface Settings {
   roleId: string; displayName: string; persona: string; timezone: string; dataDir: string;
@@ -22,6 +29,7 @@ export interface Settings {
   memory: { todayMaxChars: number; recentMessages: number; recentMaxChars: number; searchLimit: number; snippetChars: number; detailMaxChars: number };
   media: MediaSettings;
   autonomy: AutonomySettings;
+  napcat: typeof NAPCAT_DEFAULTS;
   qq: { enabled: boolean; wsUrl: string; tokenEnv: string; ownerQQ: string; allowedPrivate: string[]; allowedGroups: string[]; groupMentionOnly: boolean; actionTimeoutMs: number; reconnectMs: number };
   bilibili: { enabled: boolean; allowComments: boolean; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number; allowedTags:string[];blockedTags:string[];allowDynamics:boolean;dynamicsPerDay:number;minDynamicIntervalMs:number };
 }
@@ -57,6 +65,8 @@ export function parseSettings(value: unknown, file: string): Settings {
   const c = object(value, 'root'), m = object(c.memory, 'memory'), q = object(c.qq, 'qq'), b = object(c.bilibili, 'bilibili');
   const v = { ...MEDIA_DEFAULTS, ...(c.media === undefined ? {} : object(c.media,'media')) };
   const a = { ...AUTONOMY_DEFAULTS, ...(c.autonomy===undefined?{}:object(c.autonomy,'autonomy')) };
+  // Preserve existing manually configured bridges when upgrading older profiles.
+  const n = { ...NAPCAT_DEFAULTS, mode: q.enabled ? 'external' : 'managed', ...(c.napcat === undefined ? {} : object(c.napcat,'napcat')) };
   const zone = string(c.timezone, 'timezone');
   const timezone = zone === 'system' ? Intl.DateTimeFormat().resolvedOptions().timeZone : zone;
   new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
@@ -84,6 +94,7 @@ export function parseSettings(value: unknown, file: string): Settings {
       timeoutMs: integer(v.timeoutMs,'media.timeoutMs',1000,120000), maxOutputTokens: integer(v.maxOutputTokens,'media.maxOutputTokens',128,1024),
       dailyLimit: integer(v.dailyLimit,'media.dailyLimit',0,200), contextChars: integer(v.contextChars,'media.contextChars',0,2000), cacheHours: integer(v.cacheHours,'media.cacheHours',1,168),
     },
+    napcat: { mode: string(n.mode,'napcat.mode') as 'managed'|'external', autoInstall: boolean(n.autoInstall,'napcat.autoInstall'), webuiUrl: string(n.webuiUrl,'napcat.webuiUrl') },
     qq: {
       enabled: boolean(q.enabled, 'qq.enabled'), wsUrl: string(q.wsUrl, 'qq.wsUrl'), tokenEnv: string(q.tokenEnv, 'qq.tokenEnv'),
       ownerQQ: string(q.ownerQQ, 'qq.ownerQQ'), allowedPrivate: ids(q.allowedPrivate, 'qq.allowedPrivate'), allowedGroups: ids(q.allowedGroups, 'qq.allowedGroups'),
@@ -112,6 +123,8 @@ export function parseSettings(value: unknown, file: string): Settings {
   if (Boolean(s.media.provider) !== Boolean(s.media.model)) throw new Error('视觉模型的 provider 和 model 必须同时填写或同时留空');
   if ([s.media.ffmpegPath,s.media.ffprobePath].some(p=>!p.trim() || /[\r\n\0]/.test(p))) throw new Error('请填写有效的 FFmpeg / FFprobe 程序路径');
   const u = new URL(s.qq.wsUrl);
+  if (!['managed','external'].includes(s.napcat.mode)) throw new Error('NapCat 安装模式无效');
+  napcatBaseUrl(s.napcat.webuiUrl);
   if (!['ws:', 'wss:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) throw new Error('qq.wsUrl 必须为不带凭据或查询参数的 ws/wss 地址');
   if (s.qq.enabled && !/^\d+$/.test(s.qq.ownerQQ)) throw new Error('启用 QQ 前，请设置 ownerQQ');
   if (s.qq.tokenEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(s.qq.tokenEnv)) throw new Error('Token 环境变量名称无效');

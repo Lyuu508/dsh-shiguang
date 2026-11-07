@@ -76,8 +76,14 @@ export class BilibiliClient {
   async startLogin(): Promise<{ url: string; key: string }> {
     const { data } = await this.request('https://passport.bilibili.com/x/passport-login/web/qrcode/generate');
     if (typeof data.url !== 'string' || typeof data.qrcode_key !== 'string') throw new Error('B 站登录二维码返回不完整');
-    const u = new URL(data.url);
-    if (u.protocol !== 'https:' || u.hostname !== 'passport.bilibili.com') throw new Error('B 站二维码地址异常');
+    let u: URL;
+    try { u = new URL(data.url); } catch { throw new Error('B 站二维码地址异常，请重新生成'); }
+    const loginPaths: Record<string,string[]> = {
+      'passport.bilibili.com': ['/h5-app/passport/login/scan'],
+      'account.bilibili.com': ['/h5/account-h5/auth/scan-web'],
+    };
+    if (u.protocol !== 'https:' || u.port || u.username || u.password || u.hash || !loginPaths[u.hostname]?.includes(u.pathname)) throw new Error('B 站二维码地址异常：未收到官方扫码页面');
+    if (!data.qrcode_key || data.qrcode_key.length > 256 || u.searchParams.get('qrcode_key') !== data.qrcode_key) throw new Error('B 站二维码与登录票据不匹配，请重新生成');
     return { url: data.url, key: data.qrcode_key };
   }
   async pollLogin(key: string): Promise<'waiting' | 'scanned' | 'expired' | 'success'> {

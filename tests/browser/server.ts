@@ -14,13 +14,18 @@ import {recordUsage} from '../../src/usage.js';
 import type {SessionEvent} from '@deepseek-ai/dsh-session';
 const f=fixture(),ctx=new Context(),qq=new WebSocketServer({port:0,host:'127.0.0.1'});
 await once(qq,'listening');const address=qq.address();if(!address||typeof address==='string')throw new Error('mock QQ did not bind');
-f.settings.qq.wsUrl=`ws://127.0.0.1:${address.port}`;f.settings.qq.ownerQQ='10001';
+f.settings.napcat.mode='external';f.settings.qq.wsUrl=`ws://127.0.0.1:${address.port}`;f.settings.qq.ownerQQ='10001';
 qq.on('connection',socket=>socket.on('message',raw=>{const request=JSON.parse(raw.toString());socket.send(JSON.stringify({status:'ok',retcode:0,echo:request.echo,data:request.action==='get_status'?{online:true,good:true}:{user_id:10002,nickname:'模拟QQ伙伴'}}));}));
-let polls=0;
+let polls=0,qqPolls=0;
 const platform:typeof fetch=async(url)=>{
+ if(String(url).includes('127.0.0.1:6099')){
+  if(String(url).includes('/auth/login'))return Response.json({code:0,data:{Credential:'browser-napcat-credential'}});
+  if(String(url).includes('RefreshQRcode')){qqPolls=0;return Response.json({code:0,data:{qrcodeurl:'https://txz.qq.com/p?k=refreshed'}});}
+  return Response.json({code:0,data:{isLogin:++qqPolls>=2,loginPhase:'waiting_qrcode',qrcodeurl:'https://txz.qq.com/p?k=browser-qq'}});
+ }
  if(String(url).includes('api.github.com'))return Response.json([{tag_name:'v0.1.100',prerelease:true,body:'测试更新说明：保留原有记忆。'}]);
  if(String(url).includes('raw.githubusercontent.com'))return new Response(String(url).endsWith('.txt')?createHash('sha256').update('browser-package').digest('hex')+'  dsh-shiguang-0.1.100.tgz':'browser-package');
- if(String(url).includes('/generate')){polls=0;return Response.json({code:0,data:{url:'https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=browser-test',qrcode_key:'browser-test'}});}
+ if(String(url).includes('/generate')){polls=0;return Response.json({code:0,data:{url:'https://account.bilibili.com/h5/account-h5/auth/scan-web?qrcode_key=browser-test',qrcode_key:'browser-test'}});}
  if(String(url).includes('/spi'))return Response.json({code:0,data:{b_3:'browser-buvid'}});
  if(String(url).includes('search/type'))return Response.json({code:0,data:{result:[]}});
  if(String(url).includes('/nav'))return Response.json({code:0,data:{isLogin:true,mid:123456,uname:'测试B站伙伴',wbi_img:{img_url:'https://i0.hdslb.com/bfs/wbi/'+'a'.repeat(32)+'.png',sub_url:'https://i0.hdslb.com/bfs/wbi/'+'b'.repeat(32)+'.png'}}});
@@ -28,7 +33,7 @@ const platform:typeof fetch=async(url)=>{
  const r=Response.json({code:0,data:{code:0}});r.headers.append('Set-Cookie','SESSDATA=browser-fake-session; Path=/');r.headers.append('Set-Cookie','bili_jct=browser-fake-csrf; Path=/');return r;
 };
 const file=join(f.dir,'config.json');writeFileSync(file,JSON.stringify(f.settings));
-const runtime=new ShiguangRuntime(ctx,file,platform);runtime.memory.append('owner','qq','p','note','今天练习 C 和弦');runtime.memory.append('owner','bilibili','bilibili','experience','上周选了雅马哈吉他',undefined,Date.now()-86400000);
+const runtime=new ShiguangRuntime(ctx,file,platform);runtime.napcat.saveWebuiToken('browser-napcat-token');runtime.memory.append('owner','qq','p','note','今天练习 C 和弦');runtime.memory.append('owner','bilibili','bilibili','experience','上周选了雅马哈吉他',undefined,Date.now()-86400000);
 ctx.provide('pluginManager',{installBundle:async()=>({application:'restart-required',version:'0.1.100'})} as never);
 recordUsage(runtime.memory,{session:'browser-fixture',source:'qq',provider:'fixture',model:'test'},[{type:'assistant/message',seq:1,time:Date.now(),data:{usage:{inputTokens:120,cacheReadTokens:300,outputTokens:80},stream:[],message:{content:[]}}}] as unknown as SessionEvent[]);
 const connection=new HostConnectionService(ctx,[],{} as never);registerPanelApi(ctx,runtime);await new Promise(r=>setImmediate(r));

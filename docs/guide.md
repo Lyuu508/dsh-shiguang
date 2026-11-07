@@ -2,20 +2,18 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.4 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.4) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.5 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.5) 页面进入下载。
 
 ## 在哪里打开面板
 
 安装或升级插件后，**重启 DSH 并刷新页面 → 设置 → 拾光**。面板随插件启停，不需要另开浏览器端口。
 
 - **角色与回复**：名字、人设、时区、模型选择、回复等待时间和字数。
-- **QQ 连接**：连接地址、主人号、白名单、仅 @ 回复、Token 保存和在线检测。
-- **B 站账号**：页面二维码登录、登录检测、评论开关和额度。
+- **QQ 连接**：NapCat 自动安装、QQ 扫码、后台入口、主人号、白名单、在线检测及 QQ 识图。
+- **B 站账号**：二维码登录、评论权限、标签白黑名单、定时自主生活和文字动态。
 - **记忆**：读取预算、当天记录、历史搜索、分页原文、移入回收站与撤销。
 - **Token 用量**：按日期分别查看 QQ 聊天、B 站任务、DSH 对话的模型用量，区分未缓存输入、缓存与输出，支持导出 JSON。
 - **版本更新**：检查 GitHub Release、查看说明、下载并校验安装包，交给 DSH 安装。
-- **自主生活**：标签白黑名单、每天醒来、限量评论与文字动态，见 [使用说明](autonomy.md)。
-- **QQ 识图**：开关视频、GIF 与图片识别，选择视觉模型，设置关键帧和 Token 预算。详见 [媒体使用指南](qq-media.md)。
 
 **点击“保存设置”即可生效，无需重启 DSH。** 保存会等待正在处理的消息完成，再应用新的配置；QQ 连接参数更新时会重新连接。其他窗口同时修改配置时会提示冲突，保留当前编辑内容。
 
@@ -23,15 +21,15 @@
 
 ### 从旧版升级
 
-0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.4 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.4.tgz)，在文件页面点 **Download raw file**，然后执行：
+0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.5 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.5.tgz)，在文件页面点 **Download raw file**，然后执行：
 
 ```powershell
-dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.4.tgz"
+dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.5.tgz"
 ```
 
 重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。
 
-配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会按原版本生成 `memory.sqlite.v1-backup`、`.v2-backup` 或 `.v3-backup`。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
+配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会按原版本生成 `memory.sqlite.v1-backup`、`.v2-backup` 、`.v3-backup` 或 `.v4-backup`。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
 
 ## 一天的 Token 怎么测
 
@@ -42,7 +40,7 @@ dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.4.tgz"
 3. 用主人私聊要求读取指定 B 站视频，或在允许评论时按要求评论，再查看“B 站任务”增量。扫码、检测账号、B 站 HTTP 请求本身不会消耗模型 Token。
 4. 正常运行一天后导出当天 JSON，与服务商相同时区的用量核对。建议用专用 API Key 或服务商项目，避免混入其他应用的调用。
 
-**统计归属：** 当前 B 站操作由 QQ 或 DSH 对话触发，没有独立常驻的 B 站聊天进程。一轮只要调用过 B 站工具，该轮所有模型请求归入“B 站任务”；媒体的单次模型调用独立归为“QQ 视频 / 动图”，其他轮次按“QQ 聊天”或“DSH 对话”归类，合计不重复。混合聊天与 B 站操作无法精确按主题拆分，整轮归类便于观察任务成本。
+**统计归属：** B 站操作可以由 QQ / DSH 对话或定时自主生活触发；自主思考单独归入“B 站自主生活”。一轮只要调用过 B 站工具，该轮所有模型请求归入“B 站任务”；媒体的单次模型调用独立归为“QQ 视频 / 动图”，其他轮次按“QQ 聊天”或“DSH 对话”归类，合计不重复。混合聊天与 B 站操作无法精确按主题拆分，整轮归类便于观察任务成本。
 
 普通对话统计来自 DSH `assistant/message` 与 `assistant/attempt` 的实际 usage，媒体识别采集单次模型请求的 usage，包含工具步骤、重试和已结算的中断。未缓存输入、缓存读取、缓存写入、输出分别累加；推理 Token 作为输出明细，不再重复加入合计。无 usage 的调用标为“缺失”，已知合计不能当作完整账单。进程意外退出前尚未结算的请求可能未入账。只统计拾光创建的模型调用；DSH 主会话调用 `shiguang_chat` 前后的主会话消耗，以及其他插件不在本表内。每天按调用发生时配置的时区归档，修改时区不会重算旧记录。Token 数量不等于费用，缓存和不同模型的单价应以服务商为准。
 
@@ -70,7 +68,7 @@ dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.4.tgz"
 
 - Node.js **24.9 或更新**，包含内置 SQLite / FTS5。
 - 本版按 **DSH 0.2.2-rc.1** 的公开插件 API 编写、锁定对应依赖；其他版本需先适配，不能保证直接安装。
-- QQ 接入需要另行安装并登录 [NapCat](https://napneko.github.io/)。插件本身不实现 QQ 登录协议，也不分发 QQ 运行时。
+- Windows x64 首次启动会自动准备 [NapCat](https://napneko.github.io/) 官方便携运行包，插件内扫码；其他系统连接已有实例。详见 [NapCat 安装与后台](napcat.md)。
 - B 站使用普通账号的 Web 会话接口，并非官方开放平台授权应用；这些接口可能调整，验证码和账号验证需要在官方客户端处理。
 
 ## Windows 安装
@@ -99,6 +97,8 @@ $env:DSH_SHIGUANG_CONFIG = "D:\ShiguangData\config.json"
 面板保存会即时生效；如果手动修改 JSON，仍需重启 DSH。`dataDir` 的相对路径按**配置文件目录**解析，与打开终端的位置无关。不同角色如需完全独立的数据文件，可以使用不同配置和数据目录。
 
 ## 连接个人 QQ
+
+推荐 Windows x64 使用 QQ 页的自动安装与扫码流程，见 [NapCat 安装与后台](napcat.md)。以下步骤适用于选择“连接已有 NapCat”的用户：
 
 1. 在 NapCat 本机界面完成个人 QQ 扫码登录。
 2. 在网络设置添加 **WebSocket 服务端（正向 WS）**，例如 `127.0.0.1:3001`，配置访问 Token，消息上报格式选择 **Array**，启用后保存。Token 不是 NapCat WebUI 密码。
@@ -230,7 +230,7 @@ npm run benchmark
 | `src/plugin.ts` | 独立 DSH bundle 入口与生命周期 |
 | `src/runtime.ts` | 消息队列、配置热应用、凭据与扫码会话 |
 | `src/panel-api.ts` | DSH 认证保护下的设置面板接口 |
-| `client/` | DSH 原生设置入口、八个页面与响应式布局 |
+| `client/` | DSH 原生设置入口、六个页面与响应式布局 |
 | `src/agent.ts` | 短会话、当天上下文和受限工具 |
 | `src/memory.ts` | SQLite、中文双字检索、分页、操作账本 |
 | `src/onebot.ts` | QQ 事件校验、WS 连接、发送回执 |

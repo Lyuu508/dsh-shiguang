@@ -20,6 +20,12 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
   switch (action) {
     case 'load': return { ...runtime.view(), status: runtime.status() };
     case 'status': return runtime.status();
+    case 'napcat-status':return runtime.napcat.view();
+    case 'napcat-start':return runtime.napcat.start();
+    case 'napcat-token':return runtime.napcat.saveWebuiToken(text(args.token));
+    case 'napcat-console':return runtime.napcat.consoleUrl();
+    case 'napcat-login':return runtime.napcat.loginStatus(signal);
+    case 'napcat-refresh':return runtime.napcat.refreshQR(signal);
     case 'auto-status':return runtime.autonomy.status();
     case 'wake-now':return runtime.enqueue(()=>runtime.autonomy.run());
     case 'wake-cancel':runtime.autonomy.cancelCurrent();return runtime.autonomy.status();

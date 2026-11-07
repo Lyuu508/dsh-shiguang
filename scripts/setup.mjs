@@ -12,5 +12,5 @@ if (existsSync(file)) {
   writeFileSync(file, readFileSync(template), { flag: 'wx', mode: 0o600 });
   console.log(`已生成配置：${file}`);
 }
-console.log('请编辑 ownerQQ、启用开关和所需选项；OneBot Token 使用环境变量，不要发到聊天里。');
+console.log('重启 DSH 后进入设置 → 拾光 → QQ 连接，Windows x64 会自动准备 NapCat；扫码后填写主人 QQ 号并开启回复。已有 NapCat 可选择手动连接，密钥不要发到聊天里。');
 console.log('timezone=system 使用本机时区；也可以填写明确的 IANA 时区，例如 Asia/Shanghai。');

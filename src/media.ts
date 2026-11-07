@@ -122,7 +122,7 @@ export class MediaReader {
   }
   async reply(message:QQMessage,qq:OneBotClient,media:QQMediaRef[],previous?:ReturnType<MemoryStore['fastContext']>):Promise<string>{
     const c=this.settings.media;
-    if(!c.enabled)return '视频和动图识别还没开启，可以在 DSH 设置 → 拾光 → QQ 识图中打开。';
+    if(!c.enabled)return '视频和动图识别还没开启，可以在 DSH 设置 → 拾光 → QQ 连接 → QQ 识图中打开。';
     if(!wantsMedia(message.text,c.mode))return '收到媒体了。想让我看主要画面，请引用这条消息说“看看”；也可以在 QQ 识图中开启自动识别。';
     const used=this.memory.db.prepare("SELECT count(*) AS n FROM llm_usage WHERE role=? AND day=? AND category='qq-media'").get(this.memory.roleId,this.memory.today());
     if(Number(used?.n)>=c.dailyLimit)return '今天的媒体识别调用额度已用完，可明天再看或在 QQ 识图中调整上限。';
