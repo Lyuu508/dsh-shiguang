@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {mkdirSync} from 'node:fs';
+import {mkdirSync,readFileSync} from 'node:fs';
 
 test('角色保存、QQ 连接、B站扫码、记忆检索和撤销移除',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
@@ -15,6 +15,11 @@ test('角色保存、QQ 连接、B站扫码、记忆检索和撤销移除',async
  await expect(page.getByText('OneBot 桥接已连接',{exact:true})).toBeVisible({timeout:10000});await page.getByRole('button',{name:'检测已保存的连接'}).click();await expect(page.getByRole('status')).toContainText('模拟QQ伙伴');
  await page.getByRole('tab',{name:'B 站账号'}).click();await page.getByRole('button',{name:'生成登录二维码'}).click();await expect(page.getByRole('img',{name:/扫描登录二维码/})).toBeVisible();
  await expect(page.getByRole('status')).toContainText('B 站登录成功',{timeout:10000});await page.getByRole('button',{name:'检查登录状态'}).click();await expect(page.getByRole('status')).toContainText('测试B站伙伴');
+ await page.getByLabel('启用 B 站工具',{exact:true}).check();await page.getByRole('button',{name:'保存设置'}).click();await expect(page.getByRole('status').first()).toContainText('已保存并生效');
+ await page.getByRole('tab',{name:'自主生活',exact:true}).click();await page.getByLabel('B 站标签白名单',{exact:true}).fill('科技\n科普');await page.getByLabel('B 站标签黑名单',{exact:true}).fill('广告');await page.getByLabel('开启定时自主生活',{exact:true}).check();await page.getByLabel('每日醒来时间',{exact:true}).fill('06:00\n19:00');
+ await page.getByRole('button',{name:'保存设置'}).click();await expect(page.getByRole('status').first()).toContainText('已保存并生效');await page.getByRole('button',{name:'现在醒来一次',exact:true}).click();await expect(page.getByText(/没有通过标签筛选的新视频/).first()).toBeVisible();await page.screenshot({path:'docs/settings-autonomy.png',fullPage:true});
+ await page.getByLabel('开启定时自主生活',{exact:true}).uncheck();await page.getByRole('button',{name:'保存设置'}).click();await expect(page.getByRole('status').first()).toContainText('已保存并生效');
+ await page.getByRole('tab',{name:'B 站账号',exact:true}).click();
  await page.getByRole('button',{name:'停用本机登录'}).click();await expect(page.getByRole('status')).toContainText('已停用本机 B 站登录凭据');
  await page.getByRole('tab',{name:'记忆',exact:true}).click();await expect(page.getByText('今天练习 C 和弦',{exact:true})).toBeVisible();
  await page.getByLabel('历史搜索最多返回条数').fill('3');await page.getByRole('button',{name:'保存设置'}).click();await expect(page.getByRole('status').first()).toContainText('已保存并生效');
@@ -23,6 +28,10 @@ test('角色保存、QQ 连接、B站扫码、记忆检索和撤销移除',async
  await page.getByRole('button',{name:'移入回收站'}).click();await expect(page.getByText('已移入回收站，不再用于聊天。',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'撤销移除'}).click();await page.getByRole('button',{name:'搜索往事'}).click();await expect(page.getByText('上周选了雅马哈吉他',{exact:true})).toBeVisible();
  await page.screenshot({path:'docs/settings-memory.png',fullPage:true});
+ await page.getByRole('button',{name:'全部记忆',exact:true}).click();await expect(page.getByText('上周选了雅马哈吉他',{exact:true})).toBeVisible();
+ const memoryDownload=page.waitForEvent('download');await page.getByRole('button',{name:'下载全部记忆',exact:true}).click();const memoryFile=await memoryDownload;const exported=JSON.parse(readFileSync((await memoryFile.path())!,'utf8'));expect(exported.format).toBe('shiguang-memory');expect(exported.memories.some((r:any)=>r.platform==='bilibili')).toBe(true);
+ await page.getByLabel('本地记忆文件',{exact:true}).setInputFiles({name:'本地笔记.md',mimeType:'text/markdown',buffer:Buffer.from('导入历史：旅行时带上吉他')});await page.getByLabel('导入到',{exact:true}).selectOption('all');await page.getByRole('button',{name:'导入所选记忆',exact:true}).click();await expect(page.getByText('导入完成：新增 1 条，跳过重复 0 条',{exact:true})).toBeVisible();await expect(page.getByText('导入历史：旅行时带上吉他',{exact:true})).toBeVisible();
+ await page.getByLabel('本地记忆文件',{exact:true}).setInputFiles({name:'今天.txt',mimeType:'text/plain',buffer:Buffer.from('今天导入：练习和弦十分钟')});await page.getByLabel('导入到',{exact:true}).selectOption('today');await page.getByRole('button',{name:'导入所选记忆',exact:true}).click();await expect(page.getByText('今天导入：练习和弦十分钟',{exact:true})).toBeVisible();await page.screenshot({path:'docs/settings-memory-transfer.png',fullPage:true});
  await page.getByRole('tab',{name:'QQ 识图',exact:true}).click();await expect(page.getByLabel('启用 QQ 视频与动图识别',{exact:true})).not.toBeChecked();
  await page.getByLabel('启用 QQ 视频与动图识别',{exact:true}).check();await page.getByLabel('视觉模型提供方',{exact:true}).fill('vision-test');await page.getByLabel('视觉模型名称',{exact:true}).fill('image-model');
  await page.getByRole('button',{name:'使用清晰预设',exact:true}).click();await expect(page.getByLabel('最多关键帧',{exact:true})).toHaveValue('6');

@@ -88,6 +88,10 @@ test('评论配额跨重启保留，未知结果占用配额并阻止重复', ()
     assert.throws(() => store.reserveComment('third', 2, 1000), /次数/);
   } finally { store.close(); f.cleanup(); }
 });
+test('每日发布次数跨日重置，但最小间隔跨午夜仍生效',()=>{
+ const f=fixture();let now=Date.parse('2026-11-07T23:59:00Z');const m=new MemoryStore(':memory:','a','UTC',f.settings.memory,()=>now);
+ try{m.reserveAction('bili-dynamic','first',1,3600000);now+=120000;assert.equal(m.actionQuota('bili-dynamic').today,0);assert.throws(()=>m.reserveAction('bili-dynamic','second',1,3600000),/间隔/);now+=3600000;m.reserveAction('bili-dynamic','second',1,3600000);assert.equal(m.actionQuota('bili-dynamic').today,1);}finally{m.close();f.cleanup();}
+});
 test('日常聊天不开放历史，明确追问和回忆指令才开放', () => {
   assert.equal(historyRequested('你好，今天吃什么'), false);
   assert.equal(historyRequested('你能帮我总结这篇文章吗'), false);

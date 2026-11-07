@@ -3,6 +3,7 @@ import type {} from '@deepseek-ai/dsh-client-connection';
 import type { ShiguangRuntime } from './runtime.js';
 import { dailyUsage } from './usage.js';
 import { checkMediaTools } from './media.js';
+import {exportMemoryPage,importMemory} from './memory-transfer.js';
 
 function object(value: unknown): Record<string,unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('请求参数应为对象');
@@ -19,6 +20,14 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
   switch (action) {
     case 'load': return { ...runtime.view(), status: runtime.status() };
     case 'status': return runtime.status();
+    case 'auto-status':return runtime.autonomy.status();
+    case 'wake-now':return runtime.enqueue(()=>runtime.autonomy.run());
+    case 'wake-cancel':runtime.autonomy.cancelCurrent();return runtime.autonomy.status();
+    case 'memory-export':return exportMemoryPage(runtime.memory,text(args.scope,'owner'),args.range==='today'?'today':'all',typeof args.after==='number'?args.after:0,typeof args.snapshot==='number'?args.snapshot:undefined,text(args.day,runtime.memory.today()));
+    case 'memory-import': {
+      if(typeof args.document!=='string')throw new Error('请选择记忆文件');
+      return runtime.enqueue(async()=>importMemory(runtime.memory,text(args.scope,'owner'),args.target==='today'?'today':'all',args.document as string,args.fileType==='text'?'text':'json'));
+    }
     case 'usage': return dailyUsage(runtime.memory,text(args.day,runtime.memory.today()));
     case 'media-check': return checkMediaTools(runtime.settings.media);
     case 'update-status': return runtime.updates.view();
@@ -37,7 +46,7 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
       return { providers: llm.listProviders().map(p => ({ id: p.id, name: p.name || p.id })), models: provider ? (await llm.listModels(provider)).map(m => ({ id: m.id, name: m.name || m.id, inputModalities: m.inputModalities })) : [] };
     }
     case 'memory-list': return runtime.memory.list(text(args.scope,'owner'),text(args.day,runtime.memory.today()),typeof args.before === 'number' ? args.before : 0);
-    case 'memory-search': return { hits: runtime.memory.search(text(args.scope,'owner'),text(args.query),args.range === 'today' ? 'today' : 'history',args.day ? text(args.day) : undefined) };
+    case 'memory-search': return { hits: runtime.memory.search(text(args.scope,'owner'),text(args.query),args.range === 'today' ? 'today' :args.range==='all'?'all': 'history',args.day ? text(args.day) : undefined) };
     case 'memory-detail': return runtime.memory.detail(text(args.scope,'owner'),text(args.id),typeof args.offset === 'number' ? args.offset : 0);
     case 'memory-remove': return runtime.enqueue(async () => { runtime.memory.remove(text(args.scope,'owner'),text(args.id)); return { success: true }; });
     case 'memory-restore': return runtime.enqueue(async () => { runtime.memory.restore(text(args.scope,'owner'),text(args.id)); return { success: true }; });
@@ -55,7 +64,7 @@ export function registerPanelApi(ctx: Context, runtime: ShiguangRuntime): void {
         try {
           if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return new Response('需要 JSON 请求',{status:415});
           const body = await request.text();
-          if (body.length > 120000) return new Response('请求内容过长',{status:413});
+          if (body.length > 3*1024*1024) return new Response('请求内容过长',{status:413});
           const envelope = object(JSON.parse(body)); rpcId = text(envelope.rpcId);
           if (envelope.type !== 'client-request' || envelope.method !== 'shiguang' || !rpcId || rpcId.length > 128) return new Response('无效的 RPC 请求',{status:400});
           const command = object(envelope.payload);

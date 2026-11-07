@@ -21,7 +21,9 @@ const platform:typeof fetch=async(url)=>{
  if(String(url).includes('api.github.com'))return Response.json([{tag_name:'v0.1.100',prerelease:true,body:'测试更新说明：保留原有记忆。'}]);
  if(String(url).includes('raw.githubusercontent.com'))return new Response(String(url).endsWith('.txt')?createHash('sha256').update('browser-package').digest('hex')+'  dsh-shiguang-0.1.100.tgz':'browser-package');
  if(String(url).includes('/generate')){polls=0;return Response.json({code:0,data:{url:'https://passport.bilibili.com/h5-app/passport/login/scan?qrcode_key=browser-test',qrcode_key:'browser-test'}});}
- if(String(url).includes('/nav'))return Response.json({code:0,data:{isLogin:true,mid:123456,uname:'测试B站伙伴'}});
+ if(String(url).includes('/spi'))return Response.json({code:0,data:{b_3:'browser-buvid'}});
+ if(String(url).includes('search/type'))return Response.json({code:0,data:{result:[]}});
+ if(String(url).includes('/nav'))return Response.json({code:0,data:{isLogin:true,mid:123456,uname:'测试B站伙伴',wbi_img:{img_url:'https://i0.hdslb.com/bfs/wbi/'+'a'.repeat(32)+'.png',sub_url:'https://i0.hdslb.com/bfs/wbi/'+'b'.repeat(32)+'.png'}}});
  if(++polls<2)return Response.json({code:0,data:{code:86101}});
  const r=Response.json({code:0,data:{code:0}});r.headers.append('Set-Cookie','SESSDATA=browser-fake-session; Path=/');r.headers.append('Set-Cookie','bili_jct=browser-fake-csrf; Path=/');return r;
 };

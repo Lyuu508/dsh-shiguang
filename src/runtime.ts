@@ -10,12 +10,14 @@ import { OneBotClient } from './onebot.js';
 import { ChatDriver } from './agent.js';
 import { UpdateManager } from './updates.js';
 import { MediaReader, MediaError, wantsMedia } from './media.js';
+import {Autonomy} from './autonomy.js';
 
 export class ShiguangRuntime {
   readonly file: string;
   readonly updates: UpdateManager;
   settings!: Settings; memory!: MemoryStore; bili!: BilibiliClient; driver!: ChatDriver; qq!: OneBotClient;
   media!: MediaReader;
+  autonomy!:Autonomy;
   private stopped = false; private queued = 0; private tail = Promise.resolve();
   private login?: { ticket: string; key: string; expires: number };
   private lastError = '';
@@ -63,6 +65,7 @@ export class ShiguangRuntime {
       }).catch((_error) => { /* enqueue reports the failure once. */ });
     },this.log,() => this.token());
     if (settings.qq.enabled) this.qq.start();
+    this.autonomy=new Autonomy(this.ctx,settings,this.memory,this.bili,run=>this.enqueue(run),this.log);this.autonomy.start();
   }
   enqueue<T>(run: () => Promise<T>): Promise<T> {
     if (this.stopped) return Promise.reject(new Error('拾光正在停止'));
@@ -79,7 +82,7 @@ export class ShiguangRuntime {
     return { settings: { ...this.settings, timezone: String(raw.timezone), dataDir: String(raw.dataDir) }, revision: this.revision(), tokenConfigured: !!this.token(), tokenFromEnvironment: !panelToken && !!(this.settings.qq.tokenEnv && process.env[this.settings.qq.tokenEnv]) };
   }
   status() {
-    return { displayName: this.settings.displayName, qq: this.settings.qq.enabled ? this.qq.status() : { state: 'disabled', message: 'QQ 回复已关闭' }, bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin() }, memory: this.memory.overview(), day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
+    return { displayName: this.settings.displayName, qq: this.settings.qq.enabled ? this.qq.status() : { state: 'disabled', message: 'QQ 回复已关闭' }, bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
   }
   async save(value: unknown, expected: string, newToken = '') {
     return this.enqueue(async () => {
@@ -100,7 +103,7 @@ export class ShiguangRuntime {
         if (newToken.trim()) this.atomicWrite(secretPath,previousToken || '');
         throw error;
       }
-      this.media.stop(); await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
+      this.autonomy.stop();this.media.stop(); await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
       return this.view();
     });
   }
@@ -124,6 +127,7 @@ export class ShiguangRuntime {
   logoutBili(): void { this.login=undefined; this.bili.logout(); }
   async stop(): Promise<void> {
     this.stopped = true;
+    this.autonomy.stop();
     this.media.stop();
     try { await this.driver.stop(); await this.tail; } finally { this.qq.stop(); this.memory.close(); this.login=undefined; }
   }

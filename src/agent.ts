@@ -66,6 +66,14 @@ export function registerMemoryTools(ctx: Context, settings: Settings, memory: Me
   }));
 }
 function registerBiliTools(ctx: Context, memory: MemoryStore, bili: BilibiliClient, scope: string): void {
+  if(bili.settings.bilibili.allowedTags.length)ctx.tools.register(defineTool({
+    name:'shiguang_bili_browse',description:'按已配置的标签白名单寻找视频，并核验真实标签排除黑名单。只读取介绍，不声称看过画面或听过声音。',parameters:{},output:stringOutput,
+    async execute(_args,exec){const videos=await bili.browse(0,exec.signal);for(const v of videos)memory.append(scope,'bilibili','bilibili','experience',`发现视频介绍《${v.title}》，标签${v.tags.join('、')}，简介${v.description.slice(0,350)}；${v.url}`,'bili:browse:'+v.bvid);return JSON.stringify(videos.map(v=>({...v,description:v.description.slice(0,350)})));},
+  }));
+  if(bili.settings.bilibili.allowDynamics)ctx.tools.register(defineTool({
+    name:'shiguang_bili_dynamic',description:'仅按主人明确要求，使用已经登录的 B 站账号发布文字动态。返回动态 ID 才能说明成功；不要公开私人聊天和凭据。',parameters:{text:{type:'string',required:true}},output:stringOutput,
+    async execute(args,exec){return JSON.stringify(await bili.dynamic(args.text,exec.signal));},
+  }));
   ctx.tools.register(defineTool({
     name: 'shiguang_bili_video', description: '读取指定 B 站视频的标题、简介和作者。此工具未读取画面或音频，不得声称已经看完整个视频。',
     parameters: { video: { type: 'string', required: true, description: 'BV/av 编号或 bilibili.com 完整视频链接' } },
@@ -106,7 +114,7 @@ export class ChatDriver {
     const saved = this.memory.append(input.scope, input.platform, input.thread, 'user', input.text, input.externalKey);
     if (!saved) return null;
     const history = historyRequested(input.text);
-    const allowedTools = ['shiguang_search_memory', 'shiguang_read_memory', 'shiguang_note_today', ...(input.owner && this.settings.bilibili.enabled ? ['shiguang_bili_video', ...(this.settings.bilibili.allowComments ? ['shiguang_bili_comment'] : [])] : [])];
+    const allowedTools = ['shiguang_search_memory', 'shiguang_read_memory', 'shiguang_note_today', ...(input.owner && this.settings.bilibili.enabled ? ['shiguang_bili_video',...(this.settings.bilibili.allowedTags.length?['shiguang_bili_browse']:[]),...(this.settings.bilibili.allowDynamics?['shiguang_bili_dynamic']:[]), ...(this.settings.bilibili.allowComments ? ['shiguang_bili_comment'] : [])] : [])];
     const sessionId = `shiguang-${randomUUID()}`;
     const handle = await this.ctx.agents.create({
       sessionId: brandString<SessionId>(sessionId),

@@ -9,14 +9,21 @@ export const MEDIA_DEFAULTS = {
   timeoutMs: 30000, maxOutputTokens: 320, dailyLimit: 30, contextChars: 600, cacheHours: 24,
 };
 export type MediaSettings = typeof MEDIA_DEFAULTS;
+export const AUTONOMY_DEFAULTS = {
+  enabled:false, wakeTimes:['09:00','15:00','21:00'], videosPerWake:2, candidatesPerWake:8,
+  maxRunsPerDay:6, autoComment:false, autoDynamic:false, includeQQNotes:false,
+  maxOutputTokens:700, contextChars:1200,
+};
+export type AutonomySettings = typeof AUTONOMY_DEFAULTS;
 
 export interface Settings {
   roleId: string; displayName: string; persona: string; timezone: string; dataDir: string;
   provider: string; model: string; replyTimeoutMs: number; maxReplyChars: number; maxQueue: number;
   memory: { todayMaxChars: number; recentMessages: number; recentMaxChars: number; searchLimit: number; snippetChars: number; detailMaxChars: number };
   media: MediaSettings;
+  autonomy: AutonomySettings;
   qq: { enabled: boolean; wsUrl: string; tokenEnv: string; ownerQQ: string; allowedPrivate: string[]; allowedGroups: string[]; groupMentionOnly: boolean; actionTimeoutMs: number; reconnectMs: number };
-  bilibili: { enabled: boolean; allowComments: boolean; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number };
+  bilibili: { enabled: boolean; allowComments: boolean; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number; allowedTags:string[];blockedTags:string[];allowDynamics:boolean;dynamicsPerDay:number;minDynamicIntervalMs:number };
 }
 
 function object(v: unknown, key: string): Record<string, unknown> {
@@ -39,12 +46,17 @@ function ids(v: unknown, key: string): string[] {
   if (!Array.isArray(v) || v.some(x => typeof x !== 'string' || !/^\d+$/.test(x))) throw new Error(`配置 ${key} 应为 QQ 号码字符串数组`);
   return v as string[];
 }
+function strings(v:unknown,key:string,max=50):string[]{
+  if(!Array.isArray(v)||v.length>max||v.some(s=>typeof s!=='string'||!s.trim()||s.length>80))throw new Error(`配置 ${key} 应为最多 ${max} 个非空短文本`);
+  return [...new Set((v as string[]).map(s=>s.trim()))];
+}
 export function configFile(path = ''): string {
   return resolve(path || process.env.DSH_SHIGUANG_CONFIG || resolve(homedir(), '.dsh', 'shiguang', 'config.json'));
 }
 export function parseSettings(value: unknown, file: string): Settings {
   const c = object(value, 'root'), m = object(c.memory, 'memory'), q = object(c.qq, 'qq'), b = object(c.bilibili, 'bilibili');
   const v = { ...MEDIA_DEFAULTS, ...(c.media === undefined ? {} : object(c.media,'media')) };
+  const a = { ...AUTONOMY_DEFAULTS, ...(c.autonomy===undefined?{}:object(c.autonomy,'autonomy')) };
   const zone = string(c.timezone, 'timezone');
   const timezone = zone === 'system' ? Intl.DateTimeFormat().resolvedOptions().timeZone : zone;
   new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
@@ -78,11 +90,19 @@ export function parseSettings(value: unknown, file: string): Settings {
       groupMentionOnly: boolean(q.groupMentionOnly, 'qq.groupMentionOnly'),
       actionTimeoutMs: integer(q.actionTimeoutMs, 'qq.actionTimeoutMs', 1000, 120000), reconnectMs: integer(q.reconnectMs, 'qq.reconnectMs', 500, 60000),
     },
+    autonomy:{
+      enabled:boolean(a.enabled,'autonomy.enabled'),wakeTimes:strings(a.wakeTimes,'autonomy.wakeTimes',8).sort(),
+      videosPerWake:integer(a.videosPerWake,'autonomy.videosPerWake',1,5),candidatesPerWake:integer(a.candidatesPerWake,'autonomy.candidatesPerWake',1,20),
+      maxRunsPerDay:integer(a.maxRunsPerDay,'autonomy.maxRunsPerDay',1,20),autoComment:boolean(a.autoComment,'autonomy.autoComment'),autoDynamic:boolean(a.autoDynamic,'autonomy.autoDynamic'),includeQQNotes:boolean(a.includeQQNotes,'autonomy.includeQQNotes'),
+      maxOutputTokens:integer(a.maxOutputTokens,'autonomy.maxOutputTokens',128,2000),contextChars:integer(a.contextChars,'autonomy.contextChars',0,4000),
+    },
     bilibili: {
       enabled: boolean(b.enabled, 'bilibili.enabled'), allowComments: boolean(b.allowComments, 'bilibili.allowComments'),
       commentsPerDay: integer(b.commentsPerDay, 'bilibili.commentsPerDay', 0, 100),
       minCommentIntervalMs: integer(b.minCommentIntervalMs, 'bilibili.minCommentIntervalMs', 1000, 86400000),
       timeoutMs: integer(b.timeoutMs, 'bilibili.timeoutMs', 1000, 120000),
+      allowedTags:strings(b.allowedTags??[],'bilibili.allowedTags'),blockedTags:strings(b.blockedTags??[],'bilibili.blockedTags'),
+      allowDynamics:boolean(b.allowDynamics??false,'bilibili.allowDynamics'),dynamicsPerDay:integer(b.dynamicsPerDay??2,'bilibili.dynamicsPerDay',0,20),minDynamicIntervalMs:integer(b.minDynamicIntervalMs??3600000,'bilibili.minDynamicIntervalMs',60000,86400000),
     },
   };
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(s.roleId)) throw new Error('roleId 只能使用字母、数字、下划线和连字符');
@@ -95,6 +115,8 @@ export function parseSettings(value: unknown, file: string): Settings {
   if (!['ws:', 'wss:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) throw new Error('qq.wsUrl 必须为不带凭据或查询参数的 ws/wss 地址');
   if (s.qq.enabled && !/^\d+$/.test(s.qq.ownerQQ)) throw new Error('启用 QQ 前，请设置 ownerQQ');
   if (s.qq.tokenEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(s.qq.tokenEnv)) throw new Error('Token 环境变量名称无效');
+  if(s.autonomy.wakeTimes.some(t=>!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)))throw new Error('醒来时间应为 HH:mm');
+  if(s.autonomy.enabled&&(!s.bilibili.enabled||!s.bilibili.allowedTags.length||!s.autonomy.wakeTimes.length))throw new Error('启用自主生活前需要开启 B 站、填写白名单标签和醒来时间');
   return s;
 }
 export function ensureSettings(path = ''): string {

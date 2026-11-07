@@ -15,6 +15,18 @@ export class BiliApiError extends Error {
   }
 }
 const AGENT = 'Mozilla/5.0';
+export interface BiliVideo {aid:string;bvid:string;title:string;description:string;owner:string;url:string}
+export function normalizedTag(text:string):string{return text.normalize('NFKC').trim().replace(/^#+|#+$/g,'').toLowerCase();}
+export function tagsAllowed(tags:string[],allowed:string[],blocked:string[]):boolean {
+  const values=tags.map(normalizedTag);return !blocked.some(t=>values.includes(normalizedTag(t)))&&(!allowed.length||allowed.some(t=>values.includes(normalizedTag(t))));
+}
+const MIXIN=[46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52];
+export function wbiQuery(params:Record<string,string>,imageKey:string,subKey:string,time=Date.now()):string {
+  if(!/^[a-f\d]{32}$/i.test(imageKey)||!/^[a-f\d]{32}$/i.test(subKey))throw new Error('B 站 WBI 签名密钥无效');
+  const key=MIXIN.map(i=>(imageKey+subKey)[i]).join('').slice(0,32),all={...params,wts:String(Math.floor(time/1000))};
+  const query=Object.keys(all).sort().map(k=>`${encodeURIComponent(k)}=${encodeURIComponent(all[k as keyof typeof all]!.replace(/[!'()*]/g,''))}`).join('&');
+  return query+'&w_rid='+createHash('md5').update(query+key).digest('hex');
+}
 export function videoId(input: string): { bvid: string } | { aid: string } {
   const s = input.trim();
   if (/^BV[0-9A-Za-z]{10}$/.test(s)) return { bvid: s };
@@ -28,6 +40,7 @@ export function videoId(input: string): { bvid: string } | { aid: string } {
 }
 export class BilibiliClient {
   private readonly cookiesPath: string;
+  private tagCache=new Map<string,{time:number;tags:string[]}>();
   constructor(readonly settings: Settings, readonly memory: MemoryStore, readonly fetcher: typeof fetch = fetch) {
     this.cookiesPath = join(settings.dataDir, 'bilibili.cookies.json');
   }
@@ -44,20 +57,21 @@ export class BilibiliClient {
   }
   private cookies(): Record<string, string> {
     let value: unknown;
-    try { value = JSON.parse(readFileSync(this.cookiesPath, 'utf8')); } catch { throw new Error('请先在本机执行 npm run bili:login 完成 B 站扫码登录'); }
+    try { value = JSON.parse(readFileSync(this.cookiesPath, 'utf8')); } catch { throw new Error('请先在设置 → 拾光 → B 站账号完成扫码登录'); }
     const values = object(value);
     if (typeof values.SESSDATA !== 'string' || typeof values.bili_jct !== 'string') throw new Error('B 站登录文件不完整，请重新扫码');
     const cookies: Record<string, string> = {};
     for (const [key, value] of Object.entries(values)) if (/^[A-Za-z0-9_]+$/.test(key) && typeof value === 'string' && !/[;\r\n]/.test(value)) cookies[key] = value;
     return cookies;
   }
-  private async request(url: string, init: RequestInit = {}, signal?: AbortSignal): Promise<{ data: ObjectValue; response: Response }> {
+  private async request<T=ObjectValue>(url: string, init: RequestInit = {}, signal?: AbortSignal,array=false): Promise<{ data:T; response: Response }> {
     const combined = signal ? AbortSignal.any([signal, AbortSignal.timeout(this.settings.bilibili.timeoutMs)]) : AbortSignal.timeout(this.settings.bilibili.timeoutMs);
     const response = await this.fetcher(url, { ...init, headers: { 'User-Agent': AGENT, Referer: 'https://www.bilibili.com/', ...init.headers }, redirect: 'error', signal: combined });
     if (!response.ok) throw new Error(`B 站返回 HTTP ${response.status}，请检查登录或稍后重试`);
     const value = object(await response.json());
     if (value.code !== 0) throw new BiliApiError(Number(value.code));
-    return { data: object(value.data), response };
+    if(array&&!Array.isArray(value.data))throw new Error('B 站标签数据格式无效');
+    return { data:(array?value.data:object(value.data)) as T,response };
   }
   async startLogin(): Promise<{ url: string; key: string }> {
     const { data } = await this.request('https://passport.bilibili.com/x/passport-login/web/qrcode/generate');
@@ -82,13 +96,63 @@ export class BilibiliClient {
     writeFileSync(temporary, JSON.stringify(values), { mode: 0o600 }); renameSync(temporary, this.cookiesPath);
     return 'success';
   }
-  async video(input: string, signal?: AbortSignal): Promise<{ aid: string; bvid: string; title: string; description: string; owner: string; url: string }> {
+  async video(input: string, signal?: AbortSignal): Promise<BiliVideo> {
     if (!this.settings.bilibili.enabled) throw new Error('请先启用 bilibili.enabled');
     const query = new URLSearchParams(videoId(input));
     const { data } = await this.request(`https://api.bilibili.com/x/web-interface/view?${query}`, {}, signal);
     const owner = object(data.owner);
     if ((typeof data.aid !== 'number' && typeof data.aid !== 'string') || typeof data.bvid !== 'string' || typeof data.title !== 'string') throw new Error('B 站视频数据不完整');
+    if(this.settings.bilibili.allowedTags.length||this.settings.bilibili.blockedTags.length){const tags=await this.tags(String(data.bvid),signal);if(!tagsAllowed(tags,this.settings.bilibili.allowedTags,this.settings.bilibili.blockedTags))throw new Error('视频标签未通过白黑名单，本次不读取或互动');}
     return { aid: String(data.aid), bvid: data.bvid, title: data.title, description: String(data.desc || '').slice(0, 2000), owner: String(owner.name || ''), url: `https://www.bilibili.com/video/${data.bvid}` };
+  }
+  async tags(input:string,signal?:AbortSignal):Promise<string[]>{
+    const query=new URLSearchParams(videoId(input)),key=query.toString(),cached=this.tagCache.get(key);
+    if(cached&&this.memory.clock()-cached.time<300000)return cached.tags;
+    const cookies=this.cookies(),headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')};
+    const {data}=await this.request<unknown[]>(`https://api.bilibili.com/x/tag/archive/tags?${query}`,{headers},signal,true);
+    const tags=data.flatMap(row=>row&&typeof row==='object'&&typeof (row as ObjectValue).tag_name==='string'?[String((row as ObjectValue).tag_name).slice(0,80)]:[]).slice(0,100);
+    if(this.tagCache.size>200)this.tagCache.clear();this.tagCache.set(key,{time:this.memory.clock(),tags});return tags;
+  }
+  async browse(rotation=0,signal?:AbortSignal):Promise<(BiliVideo&{tags:string[]})[]>{
+    const b=this.settings.bilibili,a=this.settings.autonomy;
+    if(!b.enabled||!b.allowedTags.length)throw new Error('浏览前需要启用 B 站并填写标签白名单');
+    let cookies=this.cookies();
+    if(!cookies.buvid3){
+      const {data}=await this.request('https://api.bilibili.com/x/frontend/finger/spi',{},signal);
+      if(typeof data.b_3!=='string'||/[;\r\n]/.test(data.b_3))throw new Error('无法建立 B 站浏览会话，请重新登录');
+      cookies={...cookies,buvid3:data.b_3};const tmp=`${this.cookiesPath}.${randomUUID()}.tmp`;writeFileSync(tmp,JSON.stringify(cookies),{mode:0o600});renameSync(tmp,this.cookiesPath);
+    }
+    const headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')};
+    const {data:nav}=await this.request('https://api.bilibili.com/x/web-interface/nav',{headers},signal),keys=object(nav.wbi_img);
+    const extract=(v:unknown)=>typeof v==='string'?new URL(v).pathname.split('/').at(-1)!.split('.')[0]!:'';
+    const keyword=b.allowedTags[Math.abs(rotation)%b.allowedTags.length]!;
+    const query=wbiQuery({search_type:'video',keyword,page:String(1+Math.floor(Math.abs(rotation)/b.allowedTags.length)%3),page_size:'20',order:'pubdate'},extract(keys.img_url),extract(keys.sub_url),this.memory.clock());
+    const {data}=await this.request(`https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`,{headers},signal);
+    if(!Array.isArray(data.result))throw new Error('B 站搜索未返回可用视频');
+    const videos:(BiliVideo&{tags:string[]})[]=[];
+    for(const row of data.result.slice(0,a.candidatesPerWake)){
+      signal?.throwIfAborted();if(!row||typeof row!=='object'||typeof row.bvid!=='string'||!/^BV[\dA-Za-z]{10}$/.test(row.bvid))continue;
+      if(this.memory.seen('bili:browse:'+row.bvid)||videos.some(v=>v.bvid===row.bvid))continue;
+      const tags=await this.tags(row.bvid,signal);if(!tagsAllowed(tags,b.allowedTags,b.blockedTags))continue;
+      const video=await this.video(row.bvid,signal);videos.push({...video,tags});if(videos.length>=a.videosPerWake)break;
+    }
+    return videos;
+  }
+  async dynamic(text:string,signal?:AbortSignal):Promise<{id:string;url:string}>{
+    const b=this.settings.bilibili;if(!b.enabled||!b.allowDynamics)throw new Error('B 站动态发布尚未开启');
+    text=text.trim();if(!text||[...text].length>500)throw new Error('文字动态应为 1–500 字');
+    if(b.blockedTags.some(t=>normalizedTag(text).includes(normalizedTag(t))))throw new Error('动态包含黑名单标签词，本次不发布');
+    const cookies=this.cookies(),key=createHash('sha256').update(JSON.stringify([this.settings.roleId,this.memory.today(),'dynamic',text])).digest('hex');
+    this.memory.reserveAction('bili-dynamic',key,b.dynamicsPerDay,b.minDynamicIntervalMs);
+    let result:{data:ObjectValue;response:Response};
+    try{
+      result=await this.request(`https://api.bilibili.com/x/dynamic/feed/create/dyn?csrf=${encodeURIComponent(cookies.bili_jct!)}`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')},body:JSON.stringify({dyn_req:{scene:1,content:{contents:[{raw_text:text,type:1,biz_id:''}]},meta:{app_meta:{from:'create.dynamic.web',mobi_app:'web'}}}})},signal);
+    }catch(error){this.memory.settleAction(key,error instanceof BiliApiError?'failed':'unknown',error instanceof BiliApiError?String(error.code):'发送结果未知，请核实');if(error instanceof BiliApiError)throw error;throw new Error('动态发送结果未知，请在 B 站核实；插件不会自动重发');}
+    if(result.data.need_captcha===true||result.data.v_voucher){this.memory.settleAction(key,'unknown','需要官方验证');throw new Error('B 站要求验证，请先在官方客户端处理并核实动态状态');}
+    const id=result.data.dyn_id_str??result.data.dyn_id;
+    if(!(typeof id==='string'&&/^[1-9]\d*$/.test(id))&&!(typeof id==='number'&&Number.isSafeInteger(id)&&id>0)){this.memory.settleAction(key,'unknown','未收到动态 ID');throw new Error('B 站没有返回动态 ID，请先核实发送状态');}
+    this.memory.settleAction(key,'sent',String(id));const url=`https://t.bilibili.com/${id}`;
+    this.memory.append('owner','bilibili','bilibili','experience',`已发布文字动态：${text}；${url}`);return {id:String(id),url};
   }
   async comment(input: string, text: string, root = '', parent = '', signal?: AbortSignal): Promise<{ rpid: string; url: string }> {
     const b = this.settings.bilibili;

@@ -2,7 +2,7 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.3 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.3) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.4 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.4) 页面进入下载。
 
 ## 在哪里打开面板
 
@@ -14,6 +14,7 @@
 - **记忆**：读取预算、当天记录、历史搜索、分页原文、移入回收站与撤销。
 - **Token 用量**：按日期分别查看 QQ 聊天、B 站任务、DSH 对话的模型用量，区分未缓存输入、缓存与输出，支持导出 JSON。
 - **版本更新**：检查 GitHub Release、查看说明、下载并校验安装包，交给 DSH 安装。
+- **自主生活**：标签白黑名单、每天醒来、限量评论与文字动态，见 [使用说明](autonomy.md)。
 - **QQ 识图**：开关视频、GIF 与图片识别，选择视觉模型，设置关键帧和 Token 预算。详见 [媒体使用指南](qq-media.md)。
 
 **点击“保存设置”即可生效，无需重启 DSH。** 保存会等待正在处理的消息完成，再应用新的配置；QQ 连接参数更新时会重新连接。其他窗口同时修改配置时会提示冲突，保留当前编辑内容。
@@ -22,10 +23,10 @@
 
 ### 从旧版升级
 
-0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.3 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.3.tgz)，在文件页面点 **Download raw file**，然后执行：
+0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.4 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.4.tgz)，在文件页面点 **Download raw file**，然后执行：
 
 ```powershell
-dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.3.tgz"
+dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.4.tgz"
 ```
 
 重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。
@@ -63,7 +64,7 @@ dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.3.tgz"
 - 按本机配置时区划分“今天”。过零点后昨天的内容不再自动注入，但仍可检索。
 - 使用 DSH 自己的模型连接；插件不需要额外的模型 API Key。
 
-首版未包含：自主刷推荐流、定时自主评论、B 站视频画面/音频理解、B 站私信或动态、QQ 语音、断线历史补拉、语义向量搜索。视频简介读取不等于观看或理解视频内容。
+首版未包含：自主刷推荐流、B 站视频画面/音频理解、B 站私信、QQ 空间动态、QQ 语音、断线历史补拉、语义向量搜索。视频简介读取不等于观看或理解视频内容。
 
 ## 环境
 
@@ -220,7 +221,7 @@ npm run benchmark
 
 ## 旧数据库与回退
 
-从旧版本升级沿用原 profile 和数据目录，步骤见上方“从旧版升级”。数据库版本升为 4，升级前先保存对应的 `.v1-backup`、`.v2-backup` 或 `.v3-backup`，再添加缺失的表，不清空原记忆和评论账本。旧版插件无法直接打开新版数据库；回退前需停止插件、另外保留当前数据目录，并使用相应的旧库备份，避免丢失更新后的记录。首次保存 0.1.0 配置时会补入角色名字字段。
+从旧版本升级沿用原 profile 和数据目录，步骤见上方“从旧版升级”。数据库版本升为 5，升级前先保存对应的 `.v1-backup`、`.v2-backup`、`.v3-backup` 或 `.v4-backup`，再添加缺失的表，不清空原记忆和评论账本。旧版插件无法直接打开新版数据库；回退前需停止插件、另外保留当前数据目录，并使用相应的旧库备份，避免丢失更新后的记录。首次保存 0.1.0 配置时会补入角色名字字段。
 
 ## 工程结构
 
@@ -229,7 +230,7 @@ npm run benchmark
 | `src/plugin.ts` | 独立 DSH bundle 入口与生命周期 |
 | `src/runtime.ts` | 消息队列、配置热应用、凭据与扫码会话 |
 | `src/panel-api.ts` | DSH 认证保护下的设置面板接口 |
-| `client/` | DSH 原生设置入口、七个页面与响应式布局 |
+| `client/` | DSH 原生设置入口、八个页面与响应式布局 |
 | `src/agent.ts` | 短会话、当天上下文和受限工具 |
 | `src/memory.ts` | SQLite、中文双字检索、分页、操作账本 |
 | `src/onebot.ts` | QQ 事件校验、WS 连接、发送回执 |

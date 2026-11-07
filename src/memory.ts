@@ -41,8 +41,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 4) throw new Error('记忆数据库来自更新版本，请升级插件');
-    if ([1,2,3].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
+    if (Number(version) > 5) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if ([1,2,3,4].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -51,12 +51,14 @@ export class MemoryStore {
       );
       CREATE INDEX IF NOT EXISTS memories_today ON memories(role,scope,day,kind,time DESC,rowid DESC);
       CREATE INDEX IF NOT EXISTS memories_thread ON memories(role,scope,day,thread,time DESC,rowid DESC);
+      CREATE INDEX IF NOT EXISTS memories_scope ON memories(role,scope);
       CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(tokens, namespace, day UNINDEXED, tokenize='unicode61');
       CREATE TABLE IF NOT EXISTS actions (
         key TEXT PRIMARY KEY, role TEXT NOT NULL, day TEXT NOT NULL, time INTEGER NOT NULL,
         kind TEXT NOT NULL, status TEXT NOT NULL, result TEXT
       );
       CREATE INDEX IF NOT EXISTS actions_quota ON actions(role,kind,day,time DESC);
+      CREATE INDEX IF NOT EXISTS actions_interval ON actions(role,kind,time DESC);
       CREATE TABLE IF NOT EXISTS memory_trash (id TEXT PRIMARY KEY,role TEXT NOT NULL,scope TEXT NOT NULL,payload TEXT NOT NULL,deleted_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS llm_usage (
         role TEXT NOT NULL,session TEXT NOT NULL,seq INTEGER NOT NULL,day TEXT NOT NULL,time INTEGER NOT NULL,
@@ -69,7 +71,12 @@ export class MemoryStore {
         role TEXT NOT NULL,scope TEXT NOT NULL,key TEXT NOT NULL,summary TEXT NOT NULL,expires INTEGER NOT NULL,
         PRIMARY KEY(role,scope,key)
       );
-      PRAGMA user_version=4;
+      CREATE TABLE IF NOT EXISTS autonomy_runs (
+        id TEXT PRIMARY KEY,role TEXT NOT NULL,day TEXT NOT NULL,slot TEXT NOT NULL,time INTEGER NOT NULL,
+        status TEXT NOT NULL,summary TEXT NOT NULL DEFAULT '',UNIQUE(role,day,slot)
+      );
+      CREATE INDEX IF NOT EXISTS autonomy_day ON autonomy_runs(role,day,time DESC);
+      PRAGMA user_version=5;
     `);
   }
   today(): string { return dayKey(this.clock(), this.timezone); }
@@ -77,14 +84,14 @@ export class MemoryStore {
   private namespace(scope: string): string { return createHash('sha256').update(JSON.stringify([this.roleId, scope])).digest('hex'); }
   append(scope: string, platform: string, thread: string, kind: string, body: string, externalKey?: string, time = this.clock()): string | null {
     const id = randomUUID();
-    this.db.exec('BEGIN IMMEDIATE');
+    this.db.exec('SAVEPOINT memory_append');
     try {
       const result = this.db.prepare('INSERT OR IGNORE INTO memories(id,role,scope,day,time,platform,thread,kind,body,external_key) VALUES(?,?,?,?,?,?,?,?,?,?)')
         .run(id, this.roleId, scope, dayKey(time, this.timezone), time, platform, thread, kind, body, externalKey ? `${this.roleId}:${externalKey}` : null);
-      if (!result.changes) { this.db.exec('COMMIT'); return null; }
+      if (!result.changes) { this.db.exec('RELEASE memory_append'); return null; }
       this.db.prepare('INSERT INTO memory_fts(rowid,tokens,namespace,day) VALUES(?,?,?,?)').run(result.lastInsertRowid, searchTokens(body).join(' '), this.namespace(scope), dayKey(time, this.timezone));
-      this.db.exec('COMMIT'); return id;
-    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+      this.db.exec('RELEASE memory_append'); return id;
+    } catch (error) { this.db.exec('ROLLBACK TO memory_append; RELEASE memory_append'); throw error; }
   }
   fastContext(scope: string, thread: string): { day: string; todayNotes: string; recent: string } {
     const day = this.today();
@@ -98,14 +105,14 @@ export class MemoryStore {
       recent: budgetLines(recent.map(r => `${r.kind === 'user' ? '对方' : '你'}：${r.body}`), this.limits.recentMaxChars),
     };
   }
-  search(scope: string, query: string, range: 'history' | 'today' = 'history', day?: string): SearchHit[] {
+  search(scope: string, query: string, range: 'history' | 'today' | 'all' = 'history', day?: string): SearchHit[] {
     if (!query.trim() || query.length > 200) throw new Error('检索词应为 1–200 字');
     if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('日期应为 YYYY-MM-DD');
     const tokens = searchTokens(query).slice(0, 24);
     if (!tokens.length) return [];
     const terms = tokens.map(t => `"${t.replaceAll('"', '""')}"`).join(' OR ');
     const match = `namespace:"${this.namespace(scope)}" AND tokens:(${terms})`;
-    const dayClause = day || range === 'today' ? 'day=?' : 'day<?';
+    const dayClause = day || range === 'today' ? 'day=?' : range==='all'?'day<=?':'day<?';
     // Rank and bound within FTS before primary-key reads; joining first can
     // make SQLite re-run the virtual-table match for each archived row.
     const rows = this.db.prepare(`WITH hits AS MATERIALIZED (SELECT rowid,rank AS score FROM memory_fts WHERE memory_fts MATCH ? AND ${dayClause} ORDER BY rank LIMIT ?) SELECT m.id,m.day,m.platform,m.kind,m.body FROM hits JOIN memories m ON m.rowid=hits.rowid WHERE m.role=? AND m.scope=? ORDER BY hits.score,m.time DESC`)
@@ -126,14 +133,23 @@ export class MemoryStore {
     return { id: row.id, day: row.day, platform: row.platform, text: row.body.slice(offset, end), nextOffset: end < row.body.length ? end : null };
   }
   reserveComment(key: string, perDay: number, intervalMs: number): void {
+    this.reserveAction('bili-comment',key,perDay,intervalMs);
+  }
+  actionQuota(kind:'bili-comment'|'bili-dynamic',day=this.today()):{today:number;last:number|null}{
+    const count=this.db.prepare('SELECT count(*) AS n FROM actions WHERE role=? AND kind=? AND day=?').get(this.roleId,kind,day);
+    const last=this.db.prepare('SELECT time FROM actions WHERE role=? AND kind=? ORDER BY time DESC LIMIT 1').get(this.roleId,kind);
+    return {today:Number(count?.n),last:last?Number(last.time):null};
+  }
+  reserveAction(kind:'bili-comment'|'bili-dynamic',key:string,perDay:number,intervalMs:number):void {
     const day = this.today(), time = this.clock();
+    const label=kind==='bili-comment'?'评论':'动态';
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      if (this.db.prepare('SELECT key FROM actions WHERE key=?').get(key)) throw new Error('这次评论已提交过或结果待核实；请先去 B 站查看，插件不会重复发送');
-      const count = this.db.prepare("SELECT count(*) AS n,max(time) AS last FROM actions WHERE role=? AND kind='bili-comment' AND day=?").get(this.roleId, day) as { n: number; last: number | null };
-      if (count.n >= perDay) throw new Error('今日评论次数已用完');
-      if (count.last !== null && time - count.last < intervalMs) throw new Error('评论间隔过短，请稍后再试');
-      this.db.prepare("INSERT INTO actions(key,role,day,time,kind,status) VALUES(?,?,?,?,'bili-comment','pending')").run(key, this.roleId, day, time);
+      if (this.db.prepare('SELECT key FROM actions WHERE key=?').get(key)) throw new Error(`这次${label}已提交过或结果待核实；请先去 B 站查看，插件不会重复发送`);
+      const quota=this.actionQuota(kind,day);
+      if (quota.today >= perDay) throw new Error(`今日${label}次数已用完`);
+      if (quota.last !== null && time - quota.last < intervalMs) throw new Error(`${label}间隔过短，请稍后再试`);
+      this.db.prepare("INSERT INTO actions(key,role,day,time,kind,status) VALUES(?,?,?,?,?,'pending')").run(key,this.roleId,day,time,kind);
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
@@ -147,8 +163,9 @@ export class MemoryStore {
     return { total: Number(total.n), today: Number(today.n), scopes: [...new Set(['owner', ...this.db.prepare('SELECT DISTINCT scope FROM memories WHERE role=?').all(this.roleId).map(r => String(r.scope))])], commentsToday: Number(comments.n) };
   }
   list(scope: string, day: string, before = 0): { rows: (MemoryRow & { cursor: number })[]; nextCursor: number | null } {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isSafeInteger(before) || before < 0) throw new Error('日期或分页参数无效');
-    const rows = this.db.prepare('SELECT rowid,id,day,time,platform,kind,substr(body,1,240) AS body FROM memories WHERE role=? AND scope=? AND day=? AND (?=0 OR rowid<?) ORDER BY rowid DESC LIMIT 21').all(this.roleId, scope, day, before, before);
+    if (day!==''&&!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isSafeInteger(before) || before < 0) throw new Error('日期或分页参数无效');
+    const filter=day?'AND day=?':'';
+    const rows = this.db.prepare(`SELECT rowid,id,day,time,platform,kind,substr(body,1,240) AS body FROM memories WHERE role=? AND scope=? ${filter} AND (?=0 OR rowid<?) ORDER BY rowid DESC LIMIT 21`).all(this.roleId,scope,...(day?[day]:[]),before,before);
     const items = rows.slice(0,20).map(r => ({ id: String(r.id), day: String(r.day), time: Number(r.time), platform: String(r.platform), kind: String(r.kind), body: String(r.body), cursor: Number(r.rowid) }));
     return { rows: items, nextCursor: rows.length > 20 ? items.at(-1)!.cursor : null };
   }

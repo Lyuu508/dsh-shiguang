@@ -33,7 +33,12 @@
     "allowComments": false,
     "commentsPerDay": 10,
     "minCommentIntervalMs": 60000,
-    "timeoutMs": 15000
+    "timeoutMs": 15000,
+    "allowedTags": [],
+    "blockedTags": [],
+    "allowDynamics": false,
+    "dynamicsPerDay": 2,
+    "minDynamicIntervalMs": 3600000
   },
   "media": {
     "enabled": false,
@@ -52,5 +57,21 @@
     "dailyLimit": 30,
     "contextChars": 600,
     "cacheHours": 24
+  },
+  "autonomy": {
+    "enabled": false,
+    "wakeTimes": [
+      "09:00",
+      "15:00",
+      "21:00"
+    ],
+    "videosPerWake": 2,
+    "candidatesPerWake": 8,
+    "maxRunsPerDay": 6,
+    "autoComment": false,
+    "autoDynamic": false,
+    "includeQQNotes": false,
+    "maxOutputTokens": 700,
+    "contextChars": 1200
   }
 }
