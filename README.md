@@ -2,7 +2,7 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。第一版面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。初始版本的源码 ZIP 和预构建安装包会附在 [v0.1.0 Release](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.0) 中；访问私有仓库及下载文件需要登录获授权的 GitHub 账号。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.0 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.0) 页面进入下载。访问私有仓库及下载文件需要登录获授权的 GitHub 账号。
 
 ## 已实现
 

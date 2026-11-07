@@ -3,5 +3,6 @@ dist/
 state/
 config.local.json
 *.tgz
+!downloads/*.tgz
 *.sqlite*
 *.cookies.json

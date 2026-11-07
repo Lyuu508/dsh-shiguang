@@ -1,0 +1,2 @@
+64e275a5316dc2a51efc00e681087253a0c8c7efdc735eb5eeb323a968bd6eb5  dsh-shiguang-0.1.0-source.zip
+d1bd3c538d826dd26211bf005f169588bc33fa2b040f68d8d2683af153f2ac7e  dsh-shiguang-0.1.0.tgz
