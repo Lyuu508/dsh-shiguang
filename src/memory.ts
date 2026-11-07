@@ -41,8 +41,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 5) throw new Error('记忆数据库来自更新版本，请升级插件');
-    if ([1,2,3,4].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
+    if (Number(version) > 6) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if ([1,2,3,4,5].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -76,7 +76,12 @@ export class MemoryStore {
         status TEXT NOT NULL,summary TEXT NOT NULL DEFAULT '',UNIQUE(role,day,slot)
       );
       CREATE INDEX IF NOT EXISTS autonomy_day ON autonomy_runs(role,day,time DESC);
-      PRAGMA user_version=5;
+      CREATE TABLE IF NOT EXISTS voice_usage (
+        id TEXT PRIMARY KEY,role TEXT NOT NULL,day TEXT NOT NULL,time INTEGER NOT NULL,
+        chars INTEGER NOT NULL,billed_chars INTEGER,status TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS voice_usage_day ON voice_usage(role,day);
+      PRAGMA user_version=6;
     `);
   }
   today(): string { return dayKey(this.clock(), this.timezone); }

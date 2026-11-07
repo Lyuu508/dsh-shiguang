@@ -1,4 +1,8 @@
 import {createServer} from 'node:http';
+import {execFileSync} from 'node:child_process';
+import {LocalAttachmentStore} from '@deepseek-ai/dsh-attachment-local';
+import {mountAgentLoopTestDependencies,mountAgentLoopTestHarness} from '@deepseek-ai/dsh-agent-loop-testkit';
+import {LlmAdapter,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm';
 import {Context} from '@deepseek-ai/cordis';
 import {HostConnectionService} from '@deepseek-ai/dsh-client-connection';
 import {WebSocketServer} from 'ws';
@@ -16,8 +20,22 @@ const f=fixture(),ctx=new Context(),qq=new WebSocketServer({port:0,host:'127.0.0
 await once(qq,'listening');const address=qq.address();if(!address||typeof address==='string')throw new Error('mock QQ did not bind');
 f.settings.napcat.mode='external';f.settings.qq.wsUrl=`ws://127.0.0.1:${address.port}`;f.settings.qq.ownerQQ='10001';
 qq.on('connection',socket=>socket.on('message',raw=>{const request=JSON.parse(raw.toString());socket.send(JSON.stringify({status:'ok',retcode:0,echo:request.echo,data:request.action==='get_status'?{online:true,good:true}:{user_id:10002,nickname:'模拟QQ伙伴'}}));}));
+const audio=execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=0.2','-f','mp3','pipe:1']);
+const videoFile=join(f.dir,'browser-video.mp4');execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=red:s=320x180:r=5:d=2','-threads','1','-pix_fmt','yuv420p','-y',videoFile]);const videoBytes=readFileSync(videoFile);
+class BrowserVision extends LlmAdapter {
+ async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as any};}
+ async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{const text=JSON.stringify({summary:'红色画面配有吉他姿势字幕。',reply:'抽样画面是红色背景，字幕讲吉他持琴姿势。'});yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'usage',usage:{inputTokens:300,outputTokens:80}};yield {type:'finish',reason:{kind:'stop'}};}
+}
+await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['browser-vision'],new BrowserVision());
 let polls=0,qqPolls=0;
 const platform:typeof fetch=async(url)=>{
+ if(String(url).includes('openspeech.bytedance.com'))return new Response(JSON.stringify({code:0,data:audio.toString('base64'),usage:{text_words:12}})+'\n'+JSON.stringify({code:20000000}));
+ if(String(url).includes('upos-test.bilivideo.com'))return new Response(videoBytes);
+ if(String(url).includes('aisubtitle.hdslb.com'))return Response.json({body:[{from:0,content:'吉他持琴姿势'}]});
+ if(String(url).includes('/x/tag/archive/tags'))return Response.json({code:0,data:[{tag_name:'科技'}]});
+ if(String(url).includes('/x/web-interface/view'))return Response.json({code:0,data:{aid:123,bvid:'BV1xx411c7mD',title:'测试吉他视频',desc:'持琴姿势',owner:{name:'测试作者'},cid:999,duration:2,pages:[{cid:999,duration:2}]}});
+ if(String(url).includes('/x/player/wbi/playurl'))return Response.json({code:0,data:{timelength:2000,dash:{duration:2,video:[{id:16,codecid:7,baseUrl:'https://upos-test.bilivideo.com/video.mp4'}]}}});
+ if(String(url).includes('/x/player/wbi/v2'))return Response.json({code:0,data:{subtitle:{subtitles:[{lan:'zh-CN',subtitle_url:'//aisubtitle.hdslb.com/subtitle.json'}]}}});
  if(String(url).includes('127.0.0.1:6099')){
   if(String(url).includes('/auth/login'))return Response.json({code:0,data:{Credential:'browser-napcat-credential'}});
   if(String(url).includes('RefreshQRcode')){qqPolls=0;return Response.json({code:0,data:{qrcodeurl:'https://txz.qq.com/p?k=refreshed'}});}

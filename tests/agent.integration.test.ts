@@ -9,6 +9,20 @@ import { BilibiliClient } from '../src/bilibili.js';
 import { ChatDriver } from '../src/agent.js';
 import { fixture } from './helpers.js';
 import { dailyUsage } from '../src/usage.js';
+import type {BiliVision} from '../src/bili-vision.js';
+
+test('视频内容工具仅主人开启后可用，群聊不取得账号视频识别工具',async()=>{
+ const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory);let watches=0,driver:ChatDriver|undefined;
+ try{
+  f.settings.provider='bili-tool-test';f.settings.model='script';f.settings.bilibili.enabled=true;f.settings.biliVision.enabled=true;
+  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);
+  const adapter=new ScriptedAdapter((_options,index)=>index===0?toolChunks('shiguang_bili_watch',{video:'BV1xx411c7mD',question:'讲了什么'}):textChunks('看到了持琴姿势的抽样画面。'));ctx.llm.registerAdapter(['bili-tool-test'],adapter);
+  const vision={watch:async()=>{watches++;return '抽样内容：讲解持琴姿势，没有原始音频。';}} as unknown as BiliVision;
+  driver=new ChatDriver(ctx,f.settings,memory,new BilibiliClient(f.settings,memory),vision);
+  await driver.reply({owner:true,scope:'owner',thread:'p',platform:'qq',text:'看看视频里的内容'});assert.equal(watches,1);
+  await driver.reply({owner:false,scope:'qq:group:1',thread:'g',platform:'qq',text:'你好'});assert.ok(!adapter.requests.at(-1)?.tools?.some(t=>t.name==='shiguang_bili_watch'));
+ }finally{await driver?.stop();await ctx.fiber.dispose();memory.close();f.cleanup();}
+});
 
 class ScriptedAdapter extends LlmAdapter {
   requests: GenerateOptions[] = [];

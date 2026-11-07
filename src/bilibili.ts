@@ -41,6 +41,7 @@ export function videoId(input: string): { bvid: string } | { aid: string } {
 export class BilibiliClient {
   private readonly cookiesPath: string;
   private tagCache=new Map<string,{time:number;tags:string[]}>();
+  private playbackKeys?:{image:string;sub:string;expires:number};
   constructor(readonly settings: Settings, readonly memory: MemoryStore, readonly fetcher: typeof fetch = fetch) {
     this.cookiesPath = join(settings.dataDir, 'bilibili.cookies.json');
   }
@@ -110,6 +111,45 @@ export class BilibiliClient {
     if ((typeof data.aid !== 'number' && typeof data.aid !== 'string') || typeof data.bvid !== 'string' || typeof data.title !== 'string') throw new Error('B 站视频数据不完整');
     if(this.settings.bilibili.allowedTags.length||this.settings.bilibili.blockedTags.length){const tags=await this.tags(String(data.bvid),signal);if(!tagsAllowed(tags,this.settings.bilibili.allowedTags,this.settings.bilibili.blockedTags))throw new Error('视频标签未通过白黑名单，本次不读取或互动');}
     return { aid: String(data.aid), bvid: data.bvid, title: data.title, description: String(data.desc || '').slice(0, 2000), owner: String(owner.name || ''), url: `https://www.bilibili.com/video/${data.bvid}` };
+  }
+  private async playerRequest(path:string,params:Record<string,string>,signal?:AbortSignal):Promise<ObjectValue>{
+    const cookies=this.cookies(),headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')};
+    if(!this.playbackKeys||this.playbackKeys.expires<this.memory.clock()){
+      const {data}=await this.request('https://api.bilibili.com/x/web-interface/nav',{headers},signal);
+      if(data.isLogin!==true)throw new Error('B 站登录已过期，请重新扫码');
+      const keys=object(data.wbi_img),key=(value:unknown)=>typeof value==='string'?new URL(value).pathname.split('/').at(-1)!.split('.')[0]!:'';
+      this.playbackKeys={image:key(keys.img_url),sub:key(keys.sub_url),expires:this.memory.clock()+300000};
+    }
+    const query=wbiQuery(params,this.playbackKeys.image,this.playbackKeys.sub,this.memory.clock());
+    return (await this.request('https://api.bilibili.com'+path+'?'+query,{headers},signal)).data;
+  }
+  async videoPart(input:string,part=1,signal?:AbortSignal):Promise<{video:BiliVideo;cid:string;duration:number;part:number}>{
+    const video=await this.video(input,signal);
+    const {data}=await this.request('https://api.bilibili.com/x/web-interface/view?bvid='+encodeURIComponent(video.bvid),{},signal);
+    if(!Number.isSafeInteger(part)||part<1||part>100)throw new Error('视频分 P 应为 1–100');
+    const page=Array.isArray(data.pages)?data.pages[part-1]:part===1?{cid:data.cid,duration:data.duration}:undefined;
+    if(!page||!Number.isSafeInteger(page.cid)||page.cid<1||!Number.isFinite(page.duration)||page.duration<=0)throw new Error('未取得有效视频分 P 和时长');
+    return {video,cid:String(page.cid),duration:page.duration,part};
+  }
+  async playback(bvid:string,cid:string,signal?:AbortSignal):Promise<{urls:string[];duration:number}>{
+    const data=await this.playerRequest('/x/player/wbi/playurl',{bvid,cid,qn:'16',fnval:'16',fnver:'0',fourk:'0'},signal);
+    if(data.is_preview===true||data.is_preview===1||data.need_vip===true||data.need_login===true||data.is_drm===true)throw new Error('当前账号仅有预览或没有完整播放权限，本次不读取内容');
+    const dash=data.dash&&typeof data.dash==='object'?data.dash as ObjectValue:undefined;
+    const candidates=Array.isArray(dash?.video)?dash.video.filter(v=>v&&typeof v==='object'&&(!v.codecid||v.codecid===7)).sort((a,b)=>(Number(a.id)||999)-(Number(b.id)||999)||(Number(a.bandwidth)||0)-(Number(b.bandwidth)||0)):[];
+    const selected=candidates[0];let urls:string[]=[];
+    if(selected)urls=[selected.baseUrl??selected.base_url,...(selected.backupUrl??selected.backup_url??[])].filter((u):u is string=>typeof u==='string');
+    else if(Array.isArray(data.durl)&&data.durl.length===1){const item=data.durl[0];if(item&&typeof item.url==='string')urls=[item.url,...(Array.isArray(item.backup_url)?item.backup_url:[])];}
+    if(!urls.length)throw new Error('当前账号没有可读取的普通视频流，请在 B 站检查播放权限');
+    const duration=Number(data.timelength)/1000||Number(dash?.duration);
+    if(!Number.isFinite(duration)||duration<=0)throw new Error('无法确认实际播放时长');
+    return {urls:urls.slice(0,5),duration};
+  }
+  async subtitle(bvid:string,cid:string,signal?:AbortSignal):Promise<string|undefined>{
+    const data=await this.playerRequest('/x/player/wbi/v2',{bvid,cid},signal);
+    const subtitle=data.subtitle as ObjectValue|undefined;
+    const subtitles=Array.isArray(subtitle?.subtitles)?subtitle.subtitles.filter(s=>s&&typeof s.subtitle_url==='string'&&s.subtitle_url):[];
+    const selected=subtitles.find(s=>/^(?:ai-)?zh/.test(String(s.lan)))??subtitles[0];
+    if(!selected)return undefined;return new URL(selected.subtitle_url,'https://www.bilibili.com').href;
   }
   async tags(input:string,signal?:AbortSignal):Promise<string[]>{
     const query=new URLSearchParams(videoId(input)),key=query.toString(),cached=this.tagCache.get(key);

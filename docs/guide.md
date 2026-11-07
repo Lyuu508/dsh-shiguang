@@ -2,15 +2,16 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.5 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.5) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.6 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.6) 页面进入下载。
 
 ## 在哪里打开面板
 
 安装或升级插件后，**重启 DSH 并刷新页面 → 设置 → 拾光**。面板随插件启停，不需要另开浏览器端口。
 
 - **角色与回复**：名字、人设、时区、模型选择、回复等待时间和字数。
+- **语音**：火山复刻音色配置、试听、QQ 语音回复与独立字符用量，见 [语音指南](voice.md)。
 - **QQ 连接**：NapCat 自动安装、QQ 扫码、后台入口、主人号、白名单、在线检测及 QQ 识图。
-- **B 站账号**：二维码登录、评论权限、标签白黑名单、定时自主生活和文字动态。
+- **B 站账号**：二维码登录、评论权限、标签白黑名单、定时自主生活、文字动态及关键帧 / 字幕视频识别，见 [视频内容指南](bili-video.md)。
 - **记忆**：读取预算、当天记录、历史搜索、分页原文、移入回收站与撤销。
 - **Token 用量**：按日期分别查看 QQ 聊天、B 站任务、DSH 对话的模型用量，区分未缓存输入、缓存与输出，支持导出 JSON。
 - **版本更新**：检查 GitHub Release、查看说明、下载并校验安装包，交给 DSH 安装。
@@ -21,15 +22,21 @@
 
 ### 从旧版升级
 
-0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.5 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.5.tgz)，在文件页面点 **Download raw file**，然后执行：
+0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.6 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.6.tgz)，在文件页面点 **Download raw file**，然后执行：
 
 ```powershell
-dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.5.tgz"
+dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.6.tgz"
 ```
 
 重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。
 
-配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会按原版本生成 `memory.sqlite.v1-backup`、`.v2-backup` 、`.v3-backup` 或 `.v4-backup`。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
+配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会按原版本生成 `memory.sqlite.v1-backup`、`.v2-backup` 、`.v3-backup` 、`.v4-backup` 或 `.v5-backup`。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
+
+## Token 是多少个中文？
+
+Token 是模型分词后的计量单位，不是字数。汉字、标点、英文和数字的分词因模型不同而变化，几百 Token 不能固定换成几百中文。输出上限限制模型生成预算，部分模型的思考也占用该预算；“单次回复最多字数”才限制文字字符。输入还包含发送的人设、限量上下文和工具结果。
+
+语音合成另外按语音资源和字符等规则计费，语音页单独记录，不合并成聊天 Token。B 站关键帧识别归为“B 站视频识别”。
 
 ## 一天的 Token 怎么测
 
@@ -62,7 +69,7 @@ dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.5.tgz"
 - 按本机配置时区划分“今天”。过零点后昨天的内容不再自动注入，但仍可检索。
 - 使用 DSH 自己的模型连接；插件不需要额外的模型 API Key。
 
-首版未包含：自主刷推荐流、B 站视频画面/音频理解、B 站私信、QQ 空间动态、QQ 语音、断线历史补拉、语义向量搜索。视频简介读取不等于观看或理解视频内容。
+尚未包含：无范围限制的推荐流浏览、原始音频转写、B 站私信、QQ 空间动态、QQ 语音、断线历史补拉、语义向量搜索。视频简介读取不等于观看或理解视频内容。
 
 ## 环境
 
@@ -221,7 +228,7 @@ npm run benchmark
 
 ## 旧数据库与回退
 
-从旧版本升级沿用原 profile 和数据目录，步骤见上方“从旧版升级”。数据库版本升为 5，升级前先保存对应的 `.v1-backup`、`.v2-backup`、`.v3-backup` 或 `.v4-backup`，再添加缺失的表，不清空原记忆和评论账本。旧版插件无法直接打开新版数据库；回退前需停止插件、另外保留当前数据目录，并使用相应的旧库备份，避免丢失更新后的记录。首次保存 0.1.0 配置时会补入角色名字字段。
+从旧版本升级沿用原 profile 和数据目录，步骤见上方“从旧版升级”。数据库版本升为 5，升级前先保存对应的 `.v1-backup`、`.v2-backup`、`.v3-backup` 、`.v4-backup` 或 `.v5-backup`，再添加缺失的表，不清空原记忆和评论账本。旧版插件无法直接打开新版数据库；回退前需停止插件、另外保留当前数据目录，并使用相应的旧库备份，避免丢失更新后的记录。首次保存 0.1.0 配置时会补入角色名字字段。
 
 ## 工程结构
 
@@ -230,7 +237,7 @@ npm run benchmark
 | `src/plugin.ts` | 独立 DSH bundle 入口与生命周期 |
 | `src/runtime.ts` | 消息队列、配置热应用、凭据与扫码会话 |
 | `src/panel-api.ts` | DSH 认证保护下的设置面板接口 |
-| `client/` | DSH 原生设置入口、六个页面与响应式布局 |
+| `client/` | DSH 原生设置入口、七个页面与响应式布局 |
 | `src/agent.ts` | 短会话、当天上下文和受限工具 |
 | `src/memory.ts` | SQLite、中文双字检索、分页、操作账本 |
 | `src/onebot.ts` | QQ 事件校验、WS 连接、发送回执 |

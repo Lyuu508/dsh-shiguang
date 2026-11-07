@@ -1,6 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
@@ -8,6 +7,7 @@ import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import QRCode from 'qrcode';
 import { napcatBaseUrl, type Settings } from './config.js';
+import {downloadPackage} from './package-download.js';
 
 const RELEASE = 'https://api.github.com/repos/NapNeko/NapCatQQ/releases/latest';
 const ASSET = 'NapCat.Shell.Windows.Node.zip';
@@ -57,13 +57,13 @@ const nativeHost: NapCatHost = {
 export interface NapCatState {
   supported:boolean; mode:'managed'|'external'; installed:boolean; version:string;
   phase:'idle'|'downloading'|'extracting'|'starting'|'ready'|'error';
-  message:string; downloaded:number; total:number; busy:boolean; webuiUrl:string; tokenConfigured:boolean;
+  message:string; downloaded:number; total:number; speed?:number; resumed?:number; connections?:number; busy:boolean; webuiUrl:string; tokenConfigured:boolean;
 }
 export interface QQLoginView {loggedIn:boolean;phase:string;message:string;image?:string;bridgeReady?:boolean}
 
 export class NapCatManager {
   private readonly root: string;
-  private state: Pick<NapCatState,'phase'|'message'|'downloaded'|'total'> = {phase:'idle',message:'等待安装或启动 NapCat',downloaded:0,total:0};
+  private state: Pick<NapCatState,'phase'|'message'|'downloaded'|'total'|'speed'|'resumed'|'connections'> = {phase:'idle',message:'等待安装或启动 NapCat',downloaded:0,total:0};
   private controller = new AbortController();
   private job?: Promise<void>;
   private child?: ChildProcess;
@@ -72,6 +72,8 @@ export class NapCatManager {
   private bridgeSignature = '';
   private bridgeJob?: Promise<void>;
   private disposed = false;
+  private preparation?:AbortController;
+  private paused=false;
   constructor(readonly dataDir:string,readonly settings:()=>Settings,readonly onebotToken:()=>string,readonly fetcher:typeof fetch=fetch,readonly host:NapCatHost=nativeHost) {
     this.root=join(dataDir,'napcat');
   }
@@ -94,20 +96,22 @@ export class NapCatManager {
   configure():void {
     const n=this.settings().napcat;
     this.credential=undefined;this.bridgeSignature='';
-    if(n.mode === 'managed' && n.autoInstall && this.view().supported) this.start();
+    if(n.mode === 'managed' && n.autoInstall && this.view().supported && !this.paused) this.start();
   }
   start():NapCatState {
     if(this.disposed)throw new Error('NapCat 管理正在停止');
     if(this.settings().napcat.mode !== 'managed')throw new Error('已有 NapCat 请直接扫码或打开后台，无需重复安装');
     if(!this.view().supported)throw new Error('自动安装支持 Windows x64；此系统请连接已有 NapCat');
     if(this.job)return this.view();
+    this.paused=false;this.preparation=new AbortController();
     this.state={phase:'starting',message:'正在准备 NapCat…',downloaded:0,total:0};
     this.job=this.prepare().catch(error=>{
-      if(!this.disposed)this.state={...this.state,phase:'error',message:error instanceof Error?error.message:'NapCat 安装未完成'};
+      if(!this.disposed)this.state={...this.state,phase:this.paused?'idle':'error',message:this.paused?'下载已暂停，断点已保存；可继续下载':error instanceof Error?error.message:'NapCat 安装未完成'};
     }).finally(()=>{this.job=undefined;});
     return this.view();
   }
   async whenIdle():Promise<void> {await this.job;}
+  pause():NapCatState {if(this.state.phase==='downloading'){this.paused=true;this.preparation?.abort();this.state.message='正在暂停下载并保存断点…';}return this.view();}
   private lock():()=>void {
     mkdirSync(this.root,{recursive:true,mode:0o700});const file=join(this.root,'install.lock'),id=randomUUID();
     if(existsSync(file)){
@@ -127,20 +131,8 @@ export class NapCatManager {
     try{for(;;){const r=await reader.read();if(r.done)break;total+=r.value.length;if(total>max)throw new Error('NapCat 返回内容超出大小限制');chunks.push(r.value);}return Buffer.concat(chunks);}finally{await reader.cancel().catch(()=>{});}
   }
   private async download(asset:ReturnType<typeof napcatAsset>,file:string,signal:AbortSignal):Promise<void> {
-    let url=asset.url,response:Response|undefined;
-    for(let redirects=0;redirects<6;redirects++){
-      const u=new URL(url);
-      if(u.protocol!=='https:'||u.port||u.username||u.password||!['github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'].includes(u.hostname))throw new Error('NapCat 下载跳转地址异常');
-      response=await this.fetcher(url,{headers:{'User-Agent':'dsh-shiguang'},redirect:'manual',signal});
-      if(![301,302,303,307,308].includes(response.status))break;
-      const location=response.headers.get('location');await response.body?.cancel();if(!location)throw new Error('NapCat 下载地址缺失');url=new URL(location,url).href;response=undefined;
-    }
-    if(!response?.ok||!response.body)throw new Error(`NapCat 安装包下载失败${response?'（HTTP '+response.status+'）':''}，可在 QQ 连接中重试`);
-    const fd=await open(file,'wx',0o600),reader=response.body.getReader(),hash=createHash('sha256');let length=0;
-    try{
-      for(;;){const r=await reader.read();if(r.done)break;length+=r.value.length;if(length>asset.size||length>MAX_DOWNLOAD)throw new Error('NapCat 安装包超出声明大小');hash.update(r.value);await fd.writeFile(r.value);this.state.downloaded=length;}
-      if(length!==asset.size||hash.digest('hex')!==asset.digest)throw new Error('NapCat 安装包 SHA256 或大小校验失败，未解压或启动');
-    }finally{await reader.cancel().catch(()=>{});await fd.close();}
+    const n=this.settings().napcat;
+    await downloadPackage(asset,file,join(this.root,'downloads'),{connections:n.downloadConnections,mirrorUrl:n.mirrorUrl},signal,this.fetcher,p=>{this.state={...this.state,...p};});
   }
   private ensureTokens():void {
     if(!this.secret())this.write(this.secretFile(),randomBytes(24).toString('hex'));
@@ -158,7 +150,7 @@ export class NapCatManager {
   }
   private async prepare():Promise<void> {
     const releaseLock=this.lock(),stage=join(this.root,'stage-'+randomUUID()),archive=join(this.root,'download-'+randomUUID()+'.zip');
-    const signal=AbortSignal.any([this.controller.signal,AbortSignal.timeout(15*60*1000)]);
+    const signal=AbortSignal.any([this.controller.signal,AbortSignal.timeout(15*60*1000),...(this.preparation?[this.preparation.signal]:[])]);
     try{
       if(!this.manifest()){
         if(existsSync(this.runtime))throw new Error('NapCat 安装目录已存在但不完整，请先检查本机 napcat/runtime，插件不会覆盖');

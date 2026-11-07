@@ -15,7 +15,14 @@ export const AUTONOMY_DEFAULTS = {
   maxOutputTokens:700, contextChars:1200,
 };
 export type AutonomySettings = typeof AUTONOMY_DEFAULTS;
-export const NAPCAT_DEFAULTS = { mode: 'managed' as 'managed' | 'external', autoInstall: true, webuiUrl: 'http://127.0.0.1:6099' };
+export const NAPCAT_DEFAULTS = { mode: 'managed' as 'managed' | 'external', autoInstall: true, webuiUrl: 'http://127.0.0.1:6099', downloadConnections:4, mirrorUrl:'' };
+export const BILI_VISION_DEFAULTS = {enabled:false,autoBrowse:false,provider:'',model:'',frames:4,sheetSize:768,maxFileMB:40,maxDurationSeconds:600,timeoutMs:90000,maxOutputTokens:480,dailyLimit:12,subtitleChars:1800,cacheHours:24};
+export const VOICE_DEFAULTS = {enabled:false,authMode:'app' as 'app'|'apiKey',appId:'',speakerId:'',resourceId:'seed-icl-2.0',mode:'ask' as 'ask'|'auto',sendText:true,allowGroups:false,maxChars:200,dailyLimit:30,timeoutMs:30000,speechRate:0};
+export function mirrorBaseUrl(value:string):URL {
+  const u=new URL(value);
+  if(u.protocol!=='https:'||u.port||u.username||u.password||u.search||u.hash||!u.hostname.includes('.')||/^[\d.]+$/.test(u.hostname)||['localhost','.localhost','.local','.internal'].some(s=>u.hostname===s||u.hostname.endsWith(s)))throw new Error('下载加速地址应为你信任的公开 HTTPS 镜像前缀，不带账号或查询参数');
+  if(!u.pathname.endsWith('/'))u.pathname+='/';return u;
+}
 
 export function napcatBaseUrl(value: string): URL {
   const u = new URL(value);
@@ -30,6 +37,8 @@ export interface Settings {
   media: MediaSettings;
   autonomy: AutonomySettings;
   napcat: typeof NAPCAT_DEFAULTS;
+  biliVision: typeof BILI_VISION_DEFAULTS;
+  voice: typeof VOICE_DEFAULTS;
   qq: { enabled: boolean; wsUrl: string; tokenEnv: string; ownerQQ: string; allowedPrivate: string[]; allowedGroups: string[]; groupMentionOnly: boolean; actionTimeoutMs: number; reconnectMs: number };
   bilibili: { enabled: boolean; allowComments: boolean; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number; allowedTags:string[];blockedTags:string[];allowDynamics:boolean;dynamicsPerDay:number;minDynamicIntervalMs:number };
 }
@@ -67,6 +76,7 @@ export function parseSettings(value: unknown, file: string): Settings {
   const a = { ...AUTONOMY_DEFAULTS, ...(c.autonomy===undefined?{}:object(c.autonomy,'autonomy')) };
   // Preserve existing manually configured bridges when upgrading older profiles.
   const n = { ...NAPCAT_DEFAULTS, mode: q.enabled ? 'external' : 'managed', ...(c.napcat === undefined ? {} : object(c.napcat,'napcat')) };
+  const bv={...BILI_VISION_DEFAULTS,...(c.biliVision===undefined?{}:object(c.biliVision,'biliVision'))},vo={...VOICE_DEFAULTS,...(c.voice===undefined?{}:object(c.voice,'voice'))};
   const zone = string(c.timezone, 'timezone');
   const timezone = zone === 'system' ? Intl.DateTimeFormat().resolvedOptions().timeZone : zone;
   new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
@@ -94,7 +104,9 @@ export function parseSettings(value: unknown, file: string): Settings {
       timeoutMs: integer(v.timeoutMs,'media.timeoutMs',1000,120000), maxOutputTokens: integer(v.maxOutputTokens,'media.maxOutputTokens',128,1024),
       dailyLimit: integer(v.dailyLimit,'media.dailyLimit',0,200), contextChars: integer(v.contextChars,'media.contextChars',0,2000), cacheHours: integer(v.cacheHours,'media.cacheHours',1,168),
     },
-    napcat: { mode: string(n.mode,'napcat.mode') as 'managed'|'external', autoInstall: boolean(n.autoInstall,'napcat.autoInstall'), webuiUrl: string(n.webuiUrl,'napcat.webuiUrl') },
+    napcat: { mode: string(n.mode,'napcat.mode') as 'managed'|'external', autoInstall: boolean(n.autoInstall,'napcat.autoInstall'), webuiUrl: string(n.webuiUrl,'napcat.webuiUrl'),downloadConnections:integer(n.downloadConnections,'napcat.downloadConnections',1,8),mirrorUrl:string(n.mirrorUrl,'napcat.mirrorUrl') },
+    biliVision:{enabled:boolean(bv.enabled,'biliVision.enabled'),autoBrowse:boolean(bv.autoBrowse,'biliVision.autoBrowse'),provider:string(bv.provider,'biliVision.provider'),model:string(bv.model,'biliVision.model'),frames:integer(bv.frames,'biliVision.frames',1,6),sheetSize:integer(bv.sheetSize,'biliVision.sheetSize',256,1024),maxFileMB:integer(bv.maxFileMB,'biliVision.maxFileMB',1,100),maxDurationSeconds:integer(bv.maxDurationSeconds,'biliVision.maxDurationSeconds',1,1800),timeoutMs:integer(bv.timeoutMs,'biliVision.timeoutMs',1000,300000),maxOutputTokens:integer(bv.maxOutputTokens,'biliVision.maxOutputTokens',128,2000),dailyLimit:integer(bv.dailyLimit,'biliVision.dailyLimit',0,100),subtitleChars:integer(bv.subtitleChars,'biliVision.subtitleChars',0,6000),cacheHours:integer(bv.cacheHours,'biliVision.cacheHours',1,168)},
+    voice:{enabled:boolean(vo.enabled,'voice.enabled'),authMode:string(vo.authMode,'voice.authMode') as 'app'|'apiKey',appId:string(vo.appId,'voice.appId'),speakerId:string(vo.speakerId,'voice.speakerId'),resourceId:string(vo.resourceId,'voice.resourceId'),mode:string(vo.mode,'voice.mode') as 'ask'|'auto',sendText:boolean(vo.sendText,'voice.sendText'),allowGroups:boolean(vo.allowGroups,'voice.allowGroups'),maxChars:integer(vo.maxChars,'voice.maxChars',20,500),dailyLimit:integer(vo.dailyLimit,'voice.dailyLimit',0,200),timeoutMs:integer(vo.timeoutMs,'voice.timeoutMs',1000,120000),speechRate:integer(vo.speechRate,'voice.speechRate',-50,100)},
     qq: {
       enabled: boolean(q.enabled, 'qq.enabled'), wsUrl: string(q.wsUrl, 'qq.wsUrl'), tokenEnv: string(q.tokenEnv, 'qq.tokenEnv'),
       ownerQQ: string(q.ownerQQ, 'qq.ownerQQ'), allowedPrivate: ids(q.allowedPrivate, 'qq.allowedPrivate'), allowedGroups: ids(q.allowedGroups, 'qq.allowedGroups'),
@@ -125,6 +137,11 @@ export function parseSettings(value: unknown, file: string): Settings {
   const u = new URL(s.qq.wsUrl);
   if (!['managed','external'].includes(s.napcat.mode)) throw new Error('NapCat 安装模式无效');
   napcatBaseUrl(s.napcat.webuiUrl);
+  if(s.napcat.mirrorUrl)mirrorBaseUrl(s.napcat.mirrorUrl);
+  if(Boolean(s.biliVision.provider)!==Boolean(s.biliVision.model)||![256,512,768,1024].includes(s.biliVision.sheetSize))throw new Error('B 站视觉模型需同时填写提供方和模型，拼图尺寸请选择预设值');
+  if(!['app','apiKey'].includes(s.voice.authMode)||!['ask','auto'].includes(s.voice.mode)||!['seed-icl-1.0','seed-icl-2.0'].includes(s.voice.resourceId))throw new Error('语音鉴权方式、触发方式或复刻资源 ID 无效');
+  if(s.voice.appId&&!/^\d{1,32}$/.test(s.voice.appId)||s.voice.speakerId&&!/^[A-Za-z0-9_-]{1,128}$/.test(s.voice.speakerId))throw new Error('请填写有效的火山 APPID 和音色 ID');
+  if(s.voice.enabled&&(!s.voice.speakerId||s.voice.authMode==='app'&&!s.voice.appId))throw new Error('开启语音前请填写音色 ID，以及 APPID（APP 鉴权模式）');
   if (!['ws:', 'wss:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) throw new Error('qq.wsUrl 必须为不带凭据或查询参数的 ws/wss 地址');
   if (s.qq.enabled && !/^\d+$/.test(s.qq.ownerQQ)) throw new Error('启用 QQ 前，请设置 ownerQQ');
   if (s.qq.tokenEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(s.qq.tokenEnv)) throw new Error('Token 环境变量名称无效');

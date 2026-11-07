@@ -12,6 +12,9 @@ import { UpdateManager } from './updates.js';
 import { MediaReader, MediaError, wantsMedia } from './media.js';
 import {Autonomy} from './autonomy.js';
 import { NapCatManager } from './napcat.js';
+import {VoiceService,wantsVoice} from './voice.js';
+import {BiliVision} from './bili-vision.js';
+import type {QQMessage} from './onebot.js';
 
 export class ShiguangRuntime {
   readonly file: string;
@@ -20,6 +23,8 @@ export class ShiguangRuntime {
   settings!: Settings; memory!: MemoryStore; bili!: BilibiliClient; driver!: ChatDriver; qq!: OneBotClient;
   media!: MediaReader;
   autonomy!:Autonomy;
+  voice!:VoiceService;
+  biliVision!:BiliVision;
   private stopped = false; private queued = 0; private tail = Promise.resolve();
   private login?: { ticket: string; key: string; expires: number };
   private lastError = '';
@@ -40,7 +45,9 @@ export class ShiguangRuntime {
     this.settings = settings;
     this.memory = new MemoryStore(join(settings.dataDir,'memory.sqlite'),settings.roleId,settings.timezone,settings.memory);
     this.bili = new BilibiliClient(settings,this.memory,this.fetcher);
-    this.driver = new ChatDriver(this.ctx,settings,this.memory,this.bili);
+    this.biliVision=new BiliVision(this.ctx,settings,this.memory,this.bili,this.fetcher);
+    this.voice=new VoiceService(settings,this.memory,()=>this.voiceSecret(),this.fetcher);
+    this.driver = new ChatDriver(this.ctx,settings,this.memory,this.bili,this.biliVision);
     this.media = new MediaReader(this.ctx,settings,this.memory,this.fetcher);
     this.qq = new OneBotClient(settings.qq, message => {
       void this.enqueue(async () => {
@@ -60,16 +67,33 @@ export class ShiguangRuntime {
               else{media=await this.qq.quotedMedia(message);reply=media.length?await this.media.reply({...message,owner,scope},this.qq,media,previous):'引用消息中没有可读取的视频、GIF 或图片，请直接发送媒体或引用包含媒体的消息。';}
             }else reply=await this.media.reply({...message,owner,scope},this.qq,media,previous);
           }catch(error){this.log(error instanceof Error?error.message:'媒体读取失败');reply=error instanceof MediaError?error.message:'媒体识别未完成，请在拾光面板检查模型、FFmpeg 和下载状态。';}
-          await this.qq.send(message,reply);this.memory.append(scope,'qq',message.thread,'assistant',reply);return;
+          await this.sendReply(message,reply);this.memory.append(scope,'qq',message.thread,'assistant',reply);return;
         }
         const reply = await this.driver.reply({ scope, thread: message.thread, owner, platform: 'qq', text: message.text, externalKey: message.id });
         if (!reply) return;
-        await this.qq.send(message,reply);
+        await this.sendReply(message,reply);
         this.memory.append(scope,'qq',message.thread,'assistant',reply);
       }).catch((_error) => { /* enqueue reports the failure once. */ });
     },this.log,() => this.token());
     if (settings.qq.enabled) this.qq.start();
-    this.autonomy=new Autonomy(this.ctx,settings,this.memory,this.bili,run=>this.enqueue(run),this.log);this.autonomy.start();
+    this.autonomy=new Autonomy(this.ctx,settings,this.memory,this.bili,run=>this.enqueue(run),this.log,this.biliVision);this.autonomy.start();
+  }
+  private voiceSecret():string {try{return readFileSync(join(this.settings.dataDir,'voice.access-key'),'utf8').trim();}catch{return '';}}
+  async saveVoiceSecret(secret:string){
+    if(!secret.trim()||secret.length>4096||/[\s\0]/.test(secret))throw new Error('语音密钥格式无效，请填写语音服务的 Access Token / API Key');
+    this.atomicWrite(join(this.settings.dataDir,'voice.access-key'),secret.trim());return this.voice.status();
+  }
+  private async sendReply(message:QQMessage,reply:string):Promise<void>{
+    const v=this.settings.voice;
+    if(!v.enabled||message.groupId&&!v.allowGroups||!wantsVoice(message.text,v.mode)){await this.qq.send(message,reply);return;}
+    if(v.sendText)await this.qq.send(message,reply);
+    let audio;
+    try{audio=await this.voice.synthesize(reply,message.scope);}catch(error){
+      this.log(error instanceof Error?error.message:'语音合成未完成');
+      if(!v.sendText)await this.qq.send(message,reply+'\n（语音生成未完成，本次使用文字。）');return;
+    }
+    // Once a platform send starts, an unknown receipt must not cause a resend.
+    await this.qq.sendVoice(message,audio.bytes);
   }
   enqueue<T>(run: () => Promise<T>): Promise<T> {
     if (this.stopped) return Promise.reject(new Error('拾光正在停止'));
@@ -86,12 +110,13 @@ export class ShiguangRuntime {
     return { settings: { ...this.settings, timezone: String(raw.timezone), dataDir: String(raw.dataDir) }, revision: this.revision(), tokenConfigured: !!this.token(), tokenFromEnvironment: !panelToken && !!(this.settings.qq.tokenEnv && process.env[this.settings.qq.tokenEnv]) };
   }
   status() {
-    return { displayName: this.settings.displayName, qq: this.settings.qq.enabled ? this.qq.status() : { state: 'disabled', message: 'QQ 回复已关闭' }, napcat:this.napcat.view(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
+    return { displayName: this.settings.displayName, qq: this.settings.qq.enabled ? this.qq.status() : { state: 'disabled', message: 'QQ 回复已关闭' }, napcat:this.napcat.view(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
   }
   async save(value: unknown, expected: string, newToken = '') {
     return this.enqueue(async () => {
       if (expected !== this.revision()) throw new Error('配置已被其他窗口修改，请先重新载入；当前编辑内容已保留');
       const next = parseSettings(value,this.file);
+      if(next.voice.enabled&&!this.voiceSecret())throw new Error('请先在语音页面保存 Access Token / API Key，再开启语音');
       if (resolve(next.dataDir) !== resolve(this.settings.dataDir) || next.roleId !== this.settings.roleId) throw new Error('面板不支持迁移数据目录或角色标识，请保留原值');
       if (newToken.length > 4096 || /[\r\n]/.test(newToken)) throw new Error('OneBot Token 格式无效');
       const effective = newToken.trim() || this.token(next);
@@ -107,7 +132,7 @@ export class ShiguangRuntime {
         if (newToken.trim()) this.atomicWrite(secretPath,previousToken || '');
         throw error;
       }
-      this.autonomy.stop();this.media.stop(); await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
+      this.autonomy.stop();this.media.stop();this.biliVision.stop();this.voice.stop(); await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
       this.napcat.configure();
       return this.view();
     });
@@ -132,6 +157,7 @@ export class ShiguangRuntime {
   logoutBili(): void { this.login=undefined; this.bili.logout(); }
   async stop(): Promise<void> {
     this.stopped = true;
+    this.voice.stop();this.biliVision.stop();
     await this.napcat.stop();
     this.autonomy.stop();
     this.media.stop();

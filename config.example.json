@@ -12,7 +12,9 @@
   "napcat": {
     "mode": "managed",
     "autoInstall": true,
-    "webuiUrl": "http://127.0.0.1:6099"
+    "webuiUrl": "http://127.0.0.1:6099",
+    "downloadConnections": 4,
+    "mirrorUrl": ""
   },
   "memory": {
     "todayMaxChars": 2600,
@@ -78,5 +80,34 @@
     "includeQQNotes": false,
     "maxOutputTokens": 700,
     "contextChars": 1200
+  },
+  "biliVision": {
+    "enabled": false,
+    "autoBrowse": false,
+    "provider": "",
+    "model": "",
+    "frames": 4,
+    "sheetSize": 768,
+    "maxFileMB": 40,
+    "maxDurationSeconds": 600,
+    "timeoutMs": 90000,
+    "maxOutputTokens": 480,
+    "dailyLimit": 12,
+    "subtitleChars": 1800,
+    "cacheHours": 24
+  },
+  "voice": {
+    "enabled": false,
+    "authMode": "app",
+    "appId": "",
+    "speakerId": "",
+    "resourceId": "seed-icl-2.0",
+    "mode": "ask",
+    "sendText": true,
+    "allowGroups": false,
+    "maxChars": 200,
+    "dailyLimit": 30,
+    "timeoutMs": 30000,
+    "speechRate": 0
   }
 }

@@ -22,7 +22,7 @@ function counters(usage?: TokenUsage): number[] {
 export function recordMediaUsage(memory: MemoryStore, origin: UsageOrigin, usage?: TokenUsage): void {
   recordSingleUsage(memory,origin,'qq-media',usage);
 }
-export function recordSingleUsage(memory:MemoryStore,origin:UsageOrigin,category:'qq-media'|'bilibili-auto',usage?:TokenUsage):void {
+export function recordSingleUsage(memory:MemoryStore,origin:UsageOrigin,category:'qq-media'|'bilibili-auto'|'bilibili-video',usage?:TokenUsage):void {
   const time=memory.clock();
   memory.db.prepare(`INSERT OR IGNORE INTO llm_usage
     (role,session,seq,day,time,source,category,provider,model,missing,input,cache_read,cache_write,output,reasoning)

@@ -22,10 +22,15 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'status': return runtime.status();
     case 'napcat-status':return runtime.napcat.view();
     case 'napcat-start':return runtime.napcat.start();
+    case 'napcat-pause':return runtime.napcat.pause();
     case 'napcat-token':return runtime.napcat.saveWebuiToken(text(args.token));
     case 'napcat-console':return runtime.napcat.consoleUrl();
     case 'napcat-login':return runtime.napcat.loginStatus(signal);
     case 'napcat-refresh':return runtime.napcat.refreshQR(signal);
+    case 'voice-key':return runtime.enqueue(()=>runtime.saveVoiceSecret(text(args.secret)));
+    case 'voice-status':return runtime.voice.status();
+    case 'voice-test':return runtime.enqueue(async()=>{const result=await runtime.voice.synthesize(text(args.text),'owner',signal);return {audio:'data:audio/mpeg;base64,'+result.bytes.toString('base64'),chars:result.chars,billedChars:result.billedChars,reused:result.reused,status:runtime.voice.status()};});
+    case 'bili-watch':return runtime.enqueue(()=>runtime.biliVision.watch(text(args.video),text(args.question,'概括视频里的主要内容'),typeof args.part==='number'?args.part:1,signal));
     case 'auto-status':return runtime.autonomy.status();
     case 'wake-now':return runtime.enqueue(()=>runtime.autonomy.run());
     case 'wake-cancel':runtime.autonomy.cancelCurrent();return runtime.autonomy.status();

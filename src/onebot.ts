@@ -104,6 +104,11 @@ export class OneBotClient {
     const params = message.groupId ? { group_id: message.groupId, message: [{ type: 'text', data: { text } }] } : { user_id: message.userId, message: [{ type: 'text', data: { text } }] };
     return this.action(message.groupId ? 'send_group_msg' : 'send_private_msg', params);
   }
+  sendVoice(message:QQMessage,bytes:Buffer):Promise<JsonObject>{
+    if(!bytes.length||bytes.length>2*1024*1024)return Promise.reject(new Error('QQ 语音内容为空或超过 2 MB'));
+    const record={type:'record',data:{file:'base64://'+bytes.toString('base64')}};
+    return this.action(message.groupId?'send_group_msg':'send_private_msg',message.groupId?{group_id:message.groupId,message:[record]}:{user_id:message.userId,message:[record]});
+  }
   async quotedMedia(message: QQMessage): Promise<QQMediaRef[]> {
     if(!message.replyId)return [];
     const result=await this.action('get_msg',{message_id:message.replyId});
