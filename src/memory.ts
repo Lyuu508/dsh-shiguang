@@ -3,8 +3,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import type { Settings } from './config.js';
 
-export interface MemoryRow { id: string; day: string; time: number; platform: string; kind: string; body: string }
-export interface SearchHit { id: string; day: string; platform: string; kind: string; snippet: string }
+export interface MemoryRow { scope?:string;thread?:string;category?:string; id: string; day: string; time: number; platform: string; kind: string; body: string }
+export interface SearchHit { time:number;at:string;scope?:string;thread?:string;category?:string; id: string; day: string; platform: string; kind: string; snippet: string }
+const timeFormatters=new Map<string,Intl.DateTimeFormat>();
+export function timeLabel(time:number,timezone:string):string{let formatter=timeFormatters.get(timezone);if(!formatter){formatter=new Intl.DateTimeFormat('zh-CN',{timeZone:timezone,hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});timeFormatters.set(timezone,formatter);}return formatter.format(time);}
 const dayFormatters = new Map<string, Intl.DateTimeFormat>();
 export function dayKey(time: number, timezone: string): string {
   let formatter = dayFormatters.get(timezone);
@@ -41,8 +43,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 7) throw new Error('记忆数据库来自更新版本，请升级插件');
-    if ([1,2,3,4,5,6].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
+    if (Number(version) > 8) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if ([1,2,3,4,5,6,7].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -86,18 +88,20 @@ export class MemoryStore {
       CREATE INDEX IF NOT EXISTS initiative_day ON initiative_runs(role,kind,day,time DESC);
       CREATE TABLE IF NOT EXISTS bili_dm_cursor(role TEXT NOT NULL,account TEXT NOT NULL,uid TEXT NOT NULL,seq TEXT NOT NULL,PRIMARY KEY(role,account,uid));
       CREATE TABLE IF NOT EXISTS bili_dm_receipts(role TEXT NOT NULL,account TEXT NOT NULL,uid TEXT NOT NULL,seq TEXT NOT NULL,status TEXT NOT NULL,PRIMARY KEY(role,account,uid,seq));
-      PRAGMA user_version=7;
+      CREATE TABLE IF NOT EXISTS emoji_collections(role TEXT NOT NULL,digest TEXT NOT NULL,day TEXT NOT NULL,time INTEGER NOT NULL,status TEXT NOT NULL,summary TEXT NOT NULL DEFAULT '',file TEXT NOT NULL DEFAULT '',PRIMARY KEY(role,digest));
     `);
+    if(!this.db.prepare('PRAGMA table_info(memories)').all().some(c=>c.name==='category'))this.db.exec("ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+    this.db.exec('CREATE INDEX IF NOT EXISTS memories_activity ON memories(role,platform,day,category,time DESC,rowid DESC); PRAGMA user_version=8;');
   }
   today(): string { return dayKey(this.clock(), this.timezone); }
   seen(externalKey: string): boolean { return !!this.db.prepare('SELECT 1 FROM memories WHERE external_key=?').get(`${this.roleId}:${externalKey}`); }
   private namespace(scope: string): string { return createHash('sha256').update(JSON.stringify([this.roleId, scope])).digest('hex'); }
-  append(scope: string, platform: string, thread: string, kind: string, body: string, externalKey?: string, time = this.clock()): string | null {
+  append(scope: string, platform: string, thread: string, kind: string, body: string, externalKey?: string, time = this.clock(),category = ''): string | null {
     const id = randomUUID();
     this.db.exec('SAVEPOINT memory_append');
     try {
-      const result = this.db.prepare('INSERT OR IGNORE INTO memories(id,role,scope,day,time,platform,thread,kind,body,external_key) VALUES(?,?,?,?,?,?,?,?,?,?)')
-        .run(id, this.roleId, scope, dayKey(time, this.timezone), time, platform, thread, kind, body, externalKey ? `${this.roleId}:${externalKey}` : null);
+      const result = this.db.prepare('INSERT OR IGNORE INTO memories(id,role,scope,day,time,platform,thread,kind,body,external_key,category) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+        .run(id, this.roleId, scope, dayKey(time, this.timezone), time, platform, thread, kind, body, externalKey ? `${this.roleId}:${externalKey}` : null,category);
       if (!result.changes) { this.db.exec('RELEASE memory_append'); return null; }
       this.db.prepare('INSERT INTO memory_fts(rowid,tokens,namespace,day) VALUES(?,?,?,?)').run(result.lastInsertRowid, searchTokens(body).join(' '), this.namespace(scope), dayKey(time, this.timezone));
       this.db.exec('RELEASE memory_append'); return id;
@@ -105,14 +109,14 @@ export class MemoryStore {
   }
   fastContext(scope: string, thread: string): { day: string; todayNotes: string; recent: string } {
     const day = this.today();
-    const notes = this.db.prepare("SELECT body, platform FROM memories WHERE role=? AND scope=? AND day=? AND kind IN ('note','experience') ORDER BY time DESC,rowid DESC LIMIT 80")
-      .all(this.roleId, scope, day) as { body: string; platform: string }[];
-    const recent = this.db.prepare("SELECT kind,body FROM memories WHERE role=? AND scope=? AND day=? AND thread=? AND kind IN ('user','assistant') ORDER BY time DESC,rowid DESC LIMIT ?")
-      .all(this.roleId, scope, day, thread, this.limits.recentMessages) as { kind: string; body: string }[];
+    const notes = this.db.prepare("SELECT body, platform,time FROM memories WHERE role=? AND scope=? AND day=? AND kind IN ('note','experience') ORDER BY time DESC,rowid DESC LIMIT 80")
+      .all(this.roleId, scope, day) as { body: string; platform: string;time:number }[];
+    const recent = this.db.prepare("SELECT kind,body,time FROM memories WHERE role=? AND scope=? AND day=? AND thread=? AND kind IN ('user','assistant') ORDER BY time DESC,rowid DESC LIMIT ?")
+      .all(this.roleId, scope, day, thread, this.limits.recentMessages) as { kind: string; body: string;time:number }[];
     return {
       day,
-      todayNotes: budgetLines(notes.map(n => `[${n.platform}] ${n.body}`), this.limits.todayMaxChars),
-      recent: budgetLines(recent.map(r => `${r.kind === 'user' ? '对方' : '你'}：${r.body}`), this.limits.recentMaxChars),
+      todayNotes: budgetLines(notes.map(n => `[${timeLabel(n.time,this.timezone)}] [${n.platform}] ${n.body}`), this.limits.todayMaxChars),
+      recent: budgetLines(recent.map(r => `[${timeLabel(r.time,this.timezone)}] ${r.kind === 'user' ? '对方' : '你'}：${r.body}`), this.limits.recentMaxChars),
     };
   }
   search(scope: string, query: string, range: 'history' | 'today' | 'all' = 'history', day?: string): SearchHit[] {
@@ -125,34 +129,34 @@ export class MemoryStore {
     const dayClause = day || range === 'today' ? 'day=?' : range==='all'?'day<=?':'day<?';
     // Rank and bound within FTS before primary-key reads; joining first can
     // make SQLite re-run the virtual-table match for each archived row.
-    const rows = this.db.prepare(`WITH hits AS MATERIALIZED (SELECT rowid,rank AS score FROM memory_fts WHERE memory_fts MATCH ? AND ${dayClause} ORDER BY rank LIMIT ?) SELECT m.id,m.day,m.platform,m.kind,m.body FROM hits JOIN memories m ON m.rowid=hits.rowid WHERE m.role=? AND m.scope=? ORDER BY hits.score,m.time DESC`)
+    const rows = this.db.prepare(`WITH hits AS MATERIALIZED (SELECT rowid,rank AS score FROM memory_fts WHERE memory_fts MATCH ? AND ${dayClause} ORDER BY rank LIMIT ?) SELECT m.id,m.day,m.time,m.platform,m.kind,m.body FROM hits JOIN memories m ON m.rowid=hits.rowid WHERE m.role=? AND m.scope=? ORDER BY hits.score,m.time DESC`)
       .all(match, day || this.today(), this.limits.searchLimit, this.roleId, scope);
     return rows.map(r => {
       const body = String(r.body);
       const lower = body.toLowerCase();
       const positions = tokens.map(t => lower.indexOf(t)).filter(n => n >= 0);
       const start = Math.max(0, (positions.length ? Math.min(...positions) : 0) - 45);
-      return { id: String(r.id), day: String(r.day), platform: String(r.platform), kind: String(r.kind), snippet: `${start ? '…' : ''}${body.slice(start, start + this.limits.snippetChars)}${body.length > start + this.limits.snippetChars ? '…' : ''}` };
+      return { id: String(r.id), day: String(r.day),time:Number(r.time),at:String(r.day)+' '+timeLabel(Number(r.time),this.timezone), platform: String(r.platform), kind: String(r.kind), snippet: `${start ? '…' : ''}${body.slice(start, start + this.limits.snippetChars)}${body.length > start + this.limits.snippetChars ? '…' : ''}` };
     });
   }
-  detail(scope: string, id: string, offset = 0, historyAllowed = true): { id: string; day: string; platform: string; text: string; nextOffset: number | null } {
+  detail(scope: string, id: string, offset = 0, historyAllowed = true): { id: string; day: string;time:number;at:string; platform: string; text: string; nextOffset: number | null } {
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('offset 必须为非负整数');
-    const row = this.db.prepare('SELECT id,day,platform,body FROM memories WHERE role=? AND scope=? AND id=? AND (? OR day=?)').get(this.roleId, scope, id, historyAllowed ? 1 : 0, this.today()) as { id: string; day: string; platform: string; body: string } | undefined;
+    const row = this.db.prepare('SELECT id,day,time,platform,body FROM memories WHERE role=? AND scope=? AND id=? AND (? OR day=?)').get(this.roleId, scope, id, historyAllowed ? 1 : 0, this.today()) as { id: string; day: string;time:number; platform: string; body: string } | undefined;
     if (!row) throw new Error('记忆不存在或不属于当前会话');
     const end = offset + this.limits.detailMaxChars;
-    return { id: row.id, day: row.day, platform: row.platform, text: row.body.slice(offset, end), nextOffset: end < row.body.length ? end : null };
+    return { id: row.id, day: row.day,time:row.time,at:row.day+' '+timeLabel(row.time,this.timezone), platform: row.platform, text: row.body.slice(offset, end), nextOffset: end < row.body.length ? end : null };
   }
   reserveComment(key: string, perDay: number, intervalMs: number): void {
     this.reserveAction('bili-comment',key,perDay,intervalMs);
   }
-  actionQuota(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm',day=this.today()):{today:number;last:number|null}{
+  actionQuota(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji',day=this.today()):{today:number;last:number|null}{
     const count=this.db.prepare('SELECT count(*) AS n FROM actions WHERE role=? AND kind=? AND day=?').get(this.roleId,kind,day);
     const last=this.db.prepare('SELECT time FROM actions WHERE role=? AND kind=? ORDER BY time DESC LIMIT 1').get(this.roleId,kind);
     return {today:Number(count?.n),last:last?Number(last.time):null};
   }
-  reserveAction(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm',key:string,perDay:number,intervalMs:number):void {
+  reserveAction(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji',key:string,perDay:number,intervalMs:number):void {
     const day = this.today(), time = this.clock();
-    const label=kind==='bili-comment'?'评论':kind==='bili-dynamic'?'动态':kind==='bili-dm'?'B 站私信':'QQ 主动联系';
+    const label=kind==='bili-comment'?'评论':kind==='bili-dynamic'?'动态':kind==='bili-dm'?'B 站私信':kind==='bili-like'?'B 站点赞':kind==='qq-emoji'?'QQ 表情收藏':'QQ 主动联系';
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (this.db.prepare('SELECT key FROM actions WHERE key=?').get(key)) throw new Error(`这次${label}已提交过或结果待核实；请先去 B 站查看，插件不会重复发送`);
@@ -179,6 +183,22 @@ export class MemoryStore {
     const items = rows.slice(0,20).map(r => ({ id: String(r.id), day: String(r.day), time: Number(r.time), platform: String(r.platform), kind: String(r.kind), body: String(r.body), cursor: Number(r.rowid) }));
     return { rows: items, nextCursor: rows.length > 20 ? items.at(-1)!.cursor : null };
   }
+  timeline(options:{platform?:string;channel?:string;category?:string;scope?:string;day?:string;before?:number;beforeTime?:number;query?:string}={}) {
+    const {platform='all',channel='all',category='all',scope='*',day=this.today(),before=0,beforeTime=0,query=''}=options;
+    if(!['all','qq','bilibili'].includes(platform)||!['all','private','group'].includes(channel)||!['all','watch','comment','like','emoji','sleep'].includes(category)||day&&!/^\d{4}-\d{2}-\d{2}$/.test(day)||![before,beforeTime].every(n=>Number.isSafeInteger(n)&&n>=0)||query.length>200)throw new Error('记忆筛选或分页参数无效');
+    const clauses=['m.role=?'],values:(string|number)[]=[this.roleId];
+    if(scope!=='*'){clauses.push('m.scope=?');values.push(scope);}
+    if(platform!=='all'){clauses.push('m.platform=?');values.push(platform);}
+    if(day){clauses.push('m.day=?');values.push(day);}
+    if(channel!=='all'){clauses.push(channel==='group'?"m.thread LIKE 'qq:group:%'":"m.platform='qq' AND m.thread NOT LIKE 'qq:group:%'");}
+    const classify="CASE WHEN m.category<>'' THEN m.category WHEN m.platform='bilibili' AND m.body LIKE '%评论%' AND m.body LIKE '%评论ID%' THEN 'comment' WHEN m.platform='bilibili' AND m.kind='experience' AND (m.body LIKE '%视频%' OR m.body LIKE '《%') THEN 'watch' ELSE '' END";
+    if(category!=='all'){clauses.push(`(${classify})=?`);values.push(category);}
+    if(before){clauses.push('(m.time<? OR (m.time=? AND m.rowid<?))');values.push(beforeTime,beforeTime,before);}
+    if(query.trim()){const terms=searchTokens(query).slice(0,24).map(t=>'"'+t.replaceAll('"','""')+'"').join(' OR ');if(!terms)return {rows:[],nextCursor:null};clauses.push('m.rowid IN (SELECT rowid FROM memory_fts WHERE memory_fts MATCH ?)');values.push(terms);}
+    const rows=this.db.prepare(`SELECT m.rowid,m.id,m.scope,m.thread,m.day,m.time,m.platform,m.kind,substr(m.body,1,400) AS body,(${classify}) AS category FROM memories m WHERE ${clauses.join(' AND ')} ORDER BY m.time DESC,m.rowid DESC LIMIT 41`).all(...values);
+    const items=rows.slice(0,40).map(r=>({id:String(r.id),scope:String(r.scope),thread:String(r.thread),day:String(r.day),time:Number(r.time),platform:String(r.platform),kind:String(r.kind),body:String(r.body),category:String(r.category)}));
+    const last=rows[39];return {rows:items,nextCursor:rows.length>40&&last?{id:Number(last.rowid),time:Number(last.time)}:null};
+  }
   remove(scope: string, id: string): void {
     this.db.exec('BEGIN IMMEDIATE');
     try {
@@ -196,7 +216,7 @@ export class MemoryStore {
       const trashed = this.db.prepare('SELECT payload FROM memory_trash WHERE id=? AND role=? AND scope=?').get(id,this.roleId,scope);
       if (!trashed) throw new Error('回收站中没有这条记忆');
       const row = JSON.parse(String(trashed.payload)) as Record<string, string | number | null>;
-      const inserted = this.db.prepare('INSERT INTO memories(id,role,scope,day,time,platform,thread,kind,body,external_key) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,this.roleId,scope,row.day!,row.time!,row.platform!,row.thread!,row.kind!,row.body!,row.external_key!);
+      const inserted = this.db.prepare('INSERT INTO memories(id,role,scope,day,time,platform,thread,kind,body,external_key,category) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,this.roleId,scope,row.day!,row.time!,row.platform!,row.thread!,row.kind!,row.body!,row.external_key!,row.category??'');
       this.db.prepare('INSERT INTO memory_fts(rowid,tokens,namespace,day) VALUES(?,?,?,?)').run(inserted.lastInsertRowid,searchTokens(String(row.body)).join(' '),this.namespace(scope),row.day!);
       this.db.prepare('DELETE FROM memory_trash WHERE id=?').run(id);
       this.db.exec('COMMIT');

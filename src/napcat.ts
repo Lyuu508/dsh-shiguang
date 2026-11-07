@@ -1,3 +1,4 @@
+import {timeoutSignal} from './timeouts.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -150,7 +151,7 @@ export class NapCatManager {
   }
   private async prepare():Promise<void> {
     const releaseLock=this.lock(),stage=join(this.root,'stage-'+randomUUID()),archive=join(this.root,'download-'+randomUUID()+'.zip');
-    const signal=AbortSignal.any([this.controller.signal,AbortSignal.timeout(15*60*1000),...(this.preparation?[this.preparation.signal]:[])]);
+    const signal=AbortSignal.any([this.controller.signal,timeoutSignal(15*60*1000),...(this.preparation?[this.preparation.signal]:[])]);
     try{
       if(!this.manifest()){
         if(existsSync(this.runtime))throw new Error('NapCat 安装目录已存在但不完整，请先检查本机 napcat/runtime，插件不会覆盖');
@@ -192,7 +193,7 @@ export class NapCatManager {
   }
   private async request(path:string,body:ObjectValue={},credential='',signal?:AbortSignal):Promise<unknown> {
     const base=napcatBaseUrl(this.settings().napcat.webuiUrl);
-    const response=await this.fetcher(new URL('/api'+path,base),{method:'POST',headers:{'Content-Type':'application/json',...(credential?{Authorization:'Bearer '+credential}:{})},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.any([this.controller.signal,AbortSignal.timeout(8000),...(signal?[signal]:[])])});
+    const response=await this.fetcher(new URL('/api'+path,base),{method:'POST',headers:{'Content-Type':'application/json',...(credential?{Authorization:'Bearer '+credential}:{})},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.any([this.controller.signal,timeoutSignal(8000),...(signal?[signal]:[])])});
     if(!response.ok)throw new Error(`NapCat 后台 HTTP ${response.status}，请确认已启动`);
     const value=object(JSON.parse((await this.readBounded(response,1024*1024)).toString('utf8')));
     if(value.code!==0){if(value.message==='Unauthorized'){this.credential=undefined;throw new Error('NapCat 后台登录已过期，请重试或更新 WebUI Token');}throw new Error('NapCat 后台未完成操作，请检查 WebUI Token、登录状态或在后台完成验证');}

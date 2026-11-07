@@ -1,3 +1,4 @@
+import {timeoutSignal} from './timeouts.js';
 import type { Context } from '@deepseek-ai/cordis';
 import type { PluginManager } from '@deepseek-ai/dsh-plugin-manager';
 import { createHash } from 'node:crypto';
@@ -57,7 +58,7 @@ export class UpdateManager {
     this.controller.signal.throwIfAborted();this.state.attempt=attempt;this.save();
     const target=binary&&options.mirrorUrl?mirrorBaseUrl(options.mirrorUrl).href+url:url;
     try{
-    const response = await this.fetcher(target, { headers: { Accept: url.includes('api.github.com') ? 'application/vnd.github+json' : 'application/octet-stream', 'User-Agent': 'dsh-shiguang/'+VERSION },redirect:'error', signal: AbortSignal.any([this.controller.signal,AbortSignal.timeout(binary?options.downloadTimeoutMs:options.timeoutMs)]) });
+    const response = await this.fetcher(target, { headers: { Accept: url.includes('api.github.com') ? 'application/vnd.github+json' : 'application/octet-stream', 'User-Agent': 'dsh-shiguang/'+VERSION },redirect:'error', signal: AbortSignal.any([this.controller.signal,timeoutSignal(binary?options.downloadTimeoutMs:options.timeoutMs)]) });
     if (!response.ok) {
       await response.body?.cancel();
       if ([401,403,404,429].includes(response.status)) throw new Error(`GitHub 暂时无法访问（${response.status}）：请检查仓库权限或 API 限额，也可从仓库手动下载安装包`);

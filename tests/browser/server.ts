@@ -52,6 +52,7 @@ const platform:typeof fetch=async(url)=>{
 };
 const file=join(f.dir,'config.json');writeFileSync(file,JSON.stringify(f.settings));
 const runtime=new ShiguangRuntime(ctx,file,platform);runtime.napcat.saveWebuiToken('browser-napcat-token');runtime.memory.append('owner','qq','p','note','今天练习 C 和弦');runtime.memory.append('owner','bilibili','bilibili','experience','上周选了雅马哈吉他',undefined,Date.now()-86400000);
+runtime.memory.append('qq:group:20001','qq','qq:group:20001','user','测试群今天讨论天文');runtime.memory.append('owner','bilibili','bilibili','experience','观看测试科普视频的抽样画面',undefined,Date.now(),'watch');runtime.memory.append('owner','bilibili','bilibili','experience','在测试科普视频留言：这个实验很清楚。',undefined,Date.now(),'comment');runtime.memory.append('owner','bilibili','bilibili','experience','已点赞测试科普视频',undefined,Date.now(),'like');
 ctx.provide('pluginManager',{installBundle:async()=>({application:'restart-required',version:'0.1.100'})} as never);
 recordUsage(runtime.memory,{session:'browser-fixture',source:'qq',provider:'fixture',model:'test'},[{type:'assistant/message',seq:1,time:Date.now(),data:{usage:{inputTokens:120,cacheReadTokens:300,outputTokens:80},stream:[],message:{content:[]}}}] as unknown as SessionEvent[]);
 const connection=new HostConnectionService(ctx,[],{} as never);registerPanelApi(ctx,runtime);await new Promise(r=>setImmediate(r));

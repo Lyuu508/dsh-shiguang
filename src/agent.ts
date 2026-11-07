@@ -1,3 +1,4 @@
+import {scheduleTimeout} from './timeouts.js';
 import type { Context } from '@deepseek-ai/cordis';
 import type {BiliVision} from './bili-vision.js';
 import type { AgentHandle } from '@deepseek-ai/dsh-agent';
@@ -32,7 +33,7 @@ export function registerMemoryTools(ctx: Context, settings: Settings, memory: Me
     },
     output: {
       schema: { type: 'object', properties: {
-        hits: { type: 'array', required: true, items: { type: 'object', properties: { id: stringField, day: stringField, platform: stringField, kind: stringField, snippet: stringField }, additionalProperties: false } },
+        hits: { type: 'array', required: true, items: { type: 'object', properties: { id: stringField, day: stringField,time:{type:'number',required:true},at:stringField, platform: stringField, kind: stringField, snippet: stringField }, additionalProperties: false } },
       }, additionalProperties: false },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
@@ -47,7 +48,7 @@ export function registerMemoryTools(ctx: Context, settings: Settings, memory: Me
     description: '索引片段不足时，按 ID 分页展开一条记忆。只读当前会话有权限的记录，不得批量遍历。',
     parameters: { id: { type: 'string', required: true }, offset: { type: 'number', description: '分页起点，默认 0' } },
     output: {
-      schema: { type: 'object', properties: { id: stringField, day: stringField, platform: stringField, text: stringField, nextOffset: { oneOf: [{ type: 'number' }, { type: 'null' }], required: true } }, additionalProperties: false },
+      schema: { type: 'object', properties: { id: stringField, day: stringField,time:{type:'number',required:true},at:stringField, platform: stringField, text: stringField, nextOffset: { oneOf: [{ type: 'number' }, { type: 'null' }], required: true } }, additionalProperties: false },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
     async execute(args) {
@@ -93,6 +94,7 @@ function registerBiliTools(ctx: Context, memory: MemoryStore, bili: BilibiliClie
       return result;
     },
   }));
+  if(bili.settings.bilibili.allowLikes)ctx.tools.register(defineTool({name:'shiguang_bili_like',description:'仅按主人明确要求为指定视频点赞，权限与每日额度独立控制。未知结果不重发。',parameters:{video:{type:'string',required:true}},output:stringOutput,async execute(args,exec){return JSON.stringify(await bili.like(args.video,exec.signal));}}));
   if (bili.settings.bilibili.allowComments) ctx.tools.register(defineTool({
     name: 'shiguang_bili_comment', description: '使用已扫码登录的 B 站账号发表评论或回复评论。仅按主人明确要求操作；返回评论 ID 才能说发送成功。未知结果必须停下核实，不能换措辞重复发送。',
     parameters: { video: { type: 'string', required: true }, text: { type: 'string', required: true }, root: { type: 'string', description: '回复时的根评论 ID' }, parent: { type: 'string', description: '回复时的目标评论 ID' } },
@@ -120,7 +122,7 @@ export class ChatDriver {
     const saved = this.memory.append(input.scope, input.platform, input.thread, 'user', input.text, input.externalKey);
     if (!saved) return null;
     const history = historyRequested(input.text);
-    const allowedTools = ['shiguang_search_memory', 'shiguang_read_memory', 'shiguang_note_today', ...(input.owner && this.settings.bilibili.enabled ? ['shiguang_bili_video',...(this.vision&&this.settings.biliVision.enabled?['shiguang_bili_watch']:[]),...(this.settings.bilibili.allowedTags.length?['shiguang_bili_browse']:[]),...(this.settings.bilibili.allowDynamics?['shiguang_bili_dynamic']:[]), ...(this.settings.bilibili.allowComments ? ['shiguang_bili_comment'] : [])] : [])];
+    const allowedTools = ['shiguang_search_memory', 'shiguang_read_memory', 'shiguang_note_today', ...(input.owner && this.settings.bilibili.enabled ? ['shiguang_bili_video',...(this.vision&&this.settings.biliVision.enabled?['shiguang_bili_watch']:[]),...(this.settings.bilibili.allowedTags.length?['shiguang_bili_browse']:[]),...(this.settings.bilibili.allowDynamics?['shiguang_bili_dynamic']:[]), ...(this.settings.bilibili.allowLikes?['shiguang_bili_like']:[]), ...(this.settings.bilibili.allowComments ? ['shiguang_bili_comment'] : [])] : [])];
     const sessionId = `shiguang-${randomUUID()}`;
     const handle = await this.ctx.agents.create({
       sessionId: brandString<SessionId>(sessionId),
@@ -141,7 +143,7 @@ export class ChatDriver {
     });
     this.handles.add(handle);
     let expired = false;
-    const timer = setTimeout(() => { expired = true; handle.agent.cancel({ kind: 'user' }); }, this.settings.replyTimeoutMs);
+    const timer = scheduleTimeout(() => { expired = true; handle.agent.cancel({ kind: 'user' }); }, this.settings.replyTimeoutMs);
     try {
       if (this.stopped) throw new Error('Shiguang 正在停止');
       handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: input.text }], source: { kind: 'shiguang' } }));
@@ -159,7 +161,7 @@ export class ChatDriver {
       if (!reply.trim()) throw new Error('DSH 本轮没有可发送的回复，请检查默认模型和 DSH 日志');
       return reply.slice(0, this.settings.maxReplyChars);
     } finally {
-      clearTimeout(timer);
+      timer.clear();
       try { await handle.dispose(); }
       finally {
         recordUsage(this.memory, { session: sessionId, source: input.platform, ...selection }, handle.agent.session.snapshotEvents());

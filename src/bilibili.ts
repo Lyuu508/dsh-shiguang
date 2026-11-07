@@ -1,3 +1,4 @@
+import {timeoutSignal} from './timeouts.js';
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -72,13 +73,13 @@ export class BilibiliClient {
     return cookies;
   }
   private async request<T=ObjectValue>(url: string, init: RequestInit = {}, signal?: AbortSignal,array=false): Promise<{ data:T; response: Response }> {
-    const combined = signal ? AbortSignal.any([signal, AbortSignal.timeout(this.settings.bilibili.timeoutMs)]) : AbortSignal.timeout(this.settings.bilibili.timeoutMs);
+    const combined = signal ? AbortSignal.any([signal, timeoutSignal(this.settings.bilibili.timeoutMs)]) : timeoutSignal(this.settings.bilibili.timeoutMs);
     const response = await this.fetcher(url, { ...init, headers: { 'User-Agent': AGENT, Referer: 'https://www.bilibili.com/', ...init.headers }, redirect: 'error', signal: combined });
     if (!response.ok) throw new Error(`B 站返回 HTTP ${response.status}，请检查登录或稍后重试`);
     const value = object(await response.json());
     if (value.code !== 0) throw new BiliApiError(Number(value.code));
     if(array&&!Array.isArray(value.data))throw new Error('B 站标签数据格式无效');
-    return { data:(array?value.data:object(value.data)) as T,response };
+    return { data:(array?value.data:object(value.data??{})) as T,response };
   }
   async startLogin(): Promise<{ url: string; key: string }> {
     const { data } = await this.request('https://passport.bilibili.com/x/passport-login/web/qrcode/generate');
@@ -115,7 +116,11 @@ export class BilibiliClient {
     const { data } = await this.request(`https://api.bilibili.com/x/web-interface/view?${query}`, {}, signal);
     const owner = object(data.owner);
     if ((typeof data.aid !== 'number' && typeof data.aid !== 'string') || typeof data.bvid !== 'string' || typeof data.title !== 'string') throw new Error('B 站视频数据不完整');
-    if(this.settings.bilibili.allowedTags.length||this.settings.bilibili.blockedTags.length){const tags=await this.tags(String(data.bvid),signal);if(!tagsAllowed(tags,this.settings.bilibili.allowedTags,this.settings.bilibili.blockedTags))throw new Error('视频标签未通过白黑名单，本次不读取或互动');}
+    if(this.settings.bilibili.manualWhitelist&&this.settings.bilibili.allowedTags.length||this.settings.bilibili.blockedTags.length){
+      const tags=await this.tags(String(data.bvid),signal),b=this.settings.bilibili,blocked=b.blockedTags.filter(t=>tags.map(normalizedTag).includes(normalizedTag(t)));
+      if(blocked.length)throw new Error(`这个视频命中黑名单标签：${blocked.join('、')}。视频实际标签：${tags.join('、')||'无'}。请在 B 站账号中调整黑名单后再读取。`);
+      if(b.manualWhitelist&&!tagsAllowed(tags,b.allowedTags,[]))throw new Error(`这个视频没有命中白名单：${b.allowedTags.join('、')}。视频实际标签：${tags.join('、')||'无'}。手动指定的视频可关闭“手动读取也要求白名单”后再试；自动浏览仍按白名单筛选。`);
+    }
     return { aid: String(data.aid), bvid: data.bvid, title: data.title, description: String(data.desc || '').slice(0, 2000), owner: String(owner.name || ''), url: `https://www.bilibili.com/video/${data.bvid}` };
   }
   private async playerRequest(path:string,params:Record<string,string>,signal?:AbortSignal):Promise<ObjectValue>{
@@ -132,7 +137,7 @@ export class BilibiliClient {
   async videoPart(input:string,part=1,signal?:AbortSignal):Promise<{video:BiliVideo;cid:string;duration:number;part:number}>{
     const video=await this.video(input,signal);
     const {data}=await this.request('https://api.bilibili.com/x/web-interface/view?bvid='+encodeURIComponent(video.bvid),{},signal);
-    if(!Number.isSafeInteger(part)||part<1||part>100)throw new Error('视频分 P 应为 1–100');
+    if(!Number.isSafeInteger(part)||part<1)throw new Error('视频分 P 应为正整数');
     const page=Array.isArray(data.pages)?data.pages[part-1]:part===1?{cid:data.cid,duration:data.duration}:undefined;
     if(!page||!Number.isSafeInteger(page.cid)||page.cid<1||!Number.isFinite(page.duration)||page.duration<=0)throw new Error('未取得有效视频分 P 和时长');
     return {video,cid:String(page.cid),duration:page.duration,part};
@@ -181,12 +186,18 @@ export class BilibiliClient {
     const query=wbiQuery({search_type:'video',keyword,page:String(1+Math.floor(Math.abs(rotation)/b.allowedTags.length)%3),page_size:'20',order:'pubdate'},extract(keys.img_url),extract(keys.sub_url),this.memory.clock());
     const {data}=await this.request(`https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`,{headers},signal);
     if(!Array.isArray(data.result))throw new Error('B 站搜索未返回可用视频');
-    const videos:(BiliVideo&{tags:string[]})[]=[];
-    for(const row of data.result.slice(0,a.candidatesPerWake)){
+    const videos:(BiliVideo&{tags:string[]})[]=[];let batch=data,examined=0,page=Number(new URLSearchParams(query).get('page'));
+    while(examined<a.candidatesPerWake){
+    for(const entry of (batch.result as unknown[])){
+      const row=entry as ObjectValue;
+      if(examined++>=a.candidatesPerWake)break;
       signal?.throwIfAborted();if(!row||typeof row!=='object'||typeof row.bvid!=='string'||!/^BV[\dA-Za-z]{10}$/.test(row.bvid))continue;
       if(this.memory.seen('bili:browse:'+row.bvid)||videos.some(v=>v.bvid===row.bvid))continue;
       const tags=await this.tags(row.bvid,signal);if(!tagsAllowed(tags,b.allowedTags,b.blockedTags))continue;
-      const video=await this.video(row.bvid,signal);videos.push({...video,tags});if(videos.length>=a.videosPerWake)break;
+      const video=await this.video(row.bvid,signal);videos.push({...video,tags});if(videos.length>=a.videosPerWake)return videos;
+    }
+    if(examined>=a.candidatesPerWake||!Array.isArray(batch.result)||batch.result.length<20)break;
+    const next=wbiQuery({search_type:'video',keyword,page:String(++page),page_size:'20',order:'pubdate'},extract(keys.img_url),extract(keys.sub_url),this.memory.clock());batch=(await this.request('https://api.bilibili.com/x/web-interface/wbi/search/type?'+next,{headers},signal)).data;if(!Array.isArray(batch.result))throw new Error('B 站搜索分页格式无效');
     }
     return videos;
   }
@@ -231,8 +242,16 @@ export class BilibiliClient {
     const rpid = result.data.rpid_str ?? result.data.rpid;
     if (!/^[1-9]\d*$/.test(String(rpid)) || typeof rpid==='number'&&!Number.isSafeInteger(rpid)) { this.memory.settleAction(key, 'unknown', '无评论回执'); throw new Error('B 站未返回评论 ID，请先在客户端核实'); }
     this.memory.settleAction(key, 'sent', String(rpid));
-    this.memory.append('owner', 'bilibili', 'bilibili', 'experience', `已在《${video.title}》评论：${text.trim()}；视频 ${video.url}；评论ID ${String(rpid)}`);
+    this.memory.append('owner', 'bilibili', 'bilibili', 'experience', `已在《${video.title}》评论：${text.trim()}；视频 ${video.url}；评论ID ${String(rpid)}`,undefined,this.memory.clock(),'comment');
     return { rpid: String(rpid), url: `${video.url}#reply${String(rpid)}` };
+  }
+  async like(input:string,signal?:AbortSignal):Promise<{liked:boolean;url:string}>{
+    const c=this.settings.bilibili;if(!c.enabled||!c.allowLikes)throw new Error('请先在 B 站账号开启点赞权限');
+    const video=await this.video(input,signal),cookies=this.cookies(),key=createHash('sha256').update(JSON.stringify([this.settings.roleId,this.memory.today(),'like',video.aid])).digest('hex');
+    this.memory.reserveAction('bili-like',key,c.likesPerDay,c.minLikeIntervalMs);
+    try{const response=await this.request('https://api.bilibili.com/x/web-interface/archive/like',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')},body:new URLSearchParams({aid:video.aid,like:'1',csrf:cookies.bili_jct!})},signal);if(response.data.need_captcha===true||response.data.v_voucher)throw new Error('B 站需要在官方客户端完成验证');}
+    catch(error){this.memory.settleAction(key,error instanceof BiliApiError?'failed':'unknown','请核实平台点赞状态');throw new Error(error instanceof BiliApiError?error.message:'点赞结果未知，请到 B 站核实，不会自动重发');}
+    this.memory.settleAction(key,'sent','点赞接口返回成功');this.memory.append('owner','bilibili','bilibili','experience',`已点赞《${video.title}》；${video.url}`,undefined,this.memory.clock(),'like');return {liked:true,url:video.url};
   }
   async recommend(input:string,text:string,signal?:AbortSignal):Promise<{rpid:string;url:string}>{
     const uids=this.settings.biliSocial.ownerUids;if(!this.settings.autonomy.recommendOwner||!uids.length)throw new Error('请先开启推荐并填写主人 UID 白名单');
@@ -243,7 +262,7 @@ export class BilibiliClient {
     return this.comment(input,Object.keys(mentions).map(n=>'@'+n+' ').join('')+text,'','',signal,mentions);
   }
   private async vc(path:string,init:RequestInit={},signal?:AbortSignal):Promise<ObjectValue>{
-    const cookies=this.cookies(),response=await this.fetcher('https://api.vc.bilibili.com'+path,{...init,headers:{'User-Agent':AGENT,Referer:'https://message.bilibili.com/','Content-Type':'application/x-www-form-urlencoded',Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; '),...init.headers},redirect:'error',signal:AbortSignal.any([AbortSignal.timeout(this.settings.bilibili.timeoutMs),...(signal?[signal]:[])])});
+    const cookies=this.cookies(),response=await this.fetcher('https://api.vc.bilibili.com'+path,{...init,headers:{'User-Agent':AGENT,Referer:'https://message.bilibili.com/','Content-Type':'application/x-www-form-urlencoded',Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; '),...init.headers},redirect:'error',signal:AbortSignal.any([timeoutSignal(this.settings.bilibili.timeoutMs),...(signal?[signal]:[])])});
     if(!response.ok)throw new Error('B 站私信 HTTP '+response.status);
     if(!response.body)throw new Error('B 站私信响应为空');const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
     try{for(;;){const r=await reader.read();if(r.done)break;size+=r.value.length;if(size>1024*1024)throw new Error('B 站私信响应过大');chunks.push(r.value);}}finally{await reader.cancel().catch(()=>{});}

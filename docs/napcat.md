@@ -20,7 +20,7 @@
 
 ## 下载慢时怎样调整
 
-默认采用 **4 路分段并行**，可在“NapCat 后台、下载与已有实例设置”中改成 1–8 路。显示实际进度、平均下载速度、连接数和复用断点大小；并行不能突破网络总带宽。
+默认采用 **4 路分段并行**，可在“NapCat 后台、下载与已有实例设置”中按需增加，通常建议 4–8 路。显示实际进度、平均下载速度、连接数和复用断点大小；并行不能突破网络总带宽。
 
 1. 需要切线路时先点“暂停下载”。已完成和未完成的分段都会留在本机，下次继续只请求剩余字节。
 2. 展开高级设置，在“GitHub 下载加速前缀”填写你信任的公开 HTTPS 镜像前缀，留空则使用官方 GitHub。保存后再次安装 / 重试。
@@ -63,3 +63,7 @@ WebUI Token 是后台登录密钥；OneBot Token 是消息连接密钥，两者�
 | 新窗口无法打开 | 允许浏览器弹出本机 NapCat 窗口后重试 |
 
 接口实现依据 [NapCat v4.18.42 WebUI 路由](https://github.com/NapNeko/NapCatQQ/tree/v4.18.42/packages/napcat-webui-backend/src/router)、[鉴权](https://github.com/NapNeko/NapCatQQ/blob/v4.18.42/packages/napcat-webui-backend/src/helper/SignToken.ts)、[便携启动入口](https://github.com/NapNeko/NapCatQQ/blob/v4.18.42/packages/napcat-develop/index.js) 与官方 Release。后续接口变化以实际版本为准。
+
+## 打开后台没有出现窗口
+
+新版入口先准备本机 URL，再用真实链接打开，避免异步弹窗及 Desktop 无窗口句柄导致的误报。点击后还会显示“直接进入 NapCat 后台”“复制后台地址”和“在当前页打开后台”。WebView 不支持外部窗口时，把复制的地址粘贴到系统浏览器即可。地址包含本机登录信息，请勿分享。

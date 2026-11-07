@@ -2,13 +2,13 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.7 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.7) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.8 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.8) 页面进入下载。
 
 ## 在哪里打开面板
 
 安装或升级插件后，**重启 DSH 并刷新页面 → 设置 → 拾光**。面板随插件启停，不需要另开浏览器端口。
 
-- **角色与回复**：名字、人设、时区、模型选择、回复等待时间和字数。
+- **角色与回复**：名字、人设、时区、模型选择、回复等待时间、字数和生物钟。
 - **语音**：火山复刻音色配置、试听、QQ 语音回复与独立字符用量，见 [语音指南](voice.md)。
 - **QQ 连接**：NapCat 自动安装、QQ 扫码、后台入口、主人号、白名单、在线检测、QQ 识图及[主动陪伴](social.md)。
 - **B 站账号**：二维码登录、评论权限、标签白黑名单、固定 / 自由自主生活、主人 UID 私信、@ 推荐、文字动态及浅看 / 分段深看视频识别，见 [视频内容指南](bili-video.md)。
@@ -22,15 +22,15 @@
 
 ### 从旧版升级
 
-0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.7 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.7.tgz)，在文件页面点 **Download raw file**，然后执行：
+0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.8 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.8.tgz)，在文件页面点 **Download raw file**，然后执行：
 
 ```powershell
-dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.7.tgz"
+dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.8.tgz"
 ```
 
 重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。
 
-配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会按原版本生成 `memory.sqlite.v1-backup`、`.v2-backup` 、`.v3-backup` 、`.v4-backup` 、`.v5-backup` 或 `.v6-backup`。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
+配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会按原版本生成 `memory.sqlite.v1-backup`、`.v2-backup` 、`.v3-backup` 、`.v4-backup` 、`.v5-backup` 、`.v6-backup` 或 `.v7-backup`。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
 
 ## Token 是多少个中文？
 
@@ -230,7 +230,7 @@ npm run benchmark
 
 ## 旧数据库与回退
 
-从旧版本升级沿用原 profile 和数据目录，步骤见上方“从旧版升级”。数据库版本升为 7，升级前先保存对应的 `.v1-backup`、`.v2-backup`、`.v3-backup` 、`.v4-backup` 、`.v5-backup` 或 `.v6-backup`，再添加缺失的表，不清空原记忆和评论账本。旧版插件无法直接打开新版数据库；回退前需停止插件、另外保留当前数据目录，并使用相应的旧库备份，避免丢失更新后的记录。首次保存 0.1.0 配置时会补入角色名字字段。
+从旧版本升级沿用原 profile 和数据目录，步骤见上方“从旧版升级”。数据库版本升为 8，升级前先保存对应的 `.v1-backup`、`.v2-backup`、`.v3-backup` 、`.v4-backup` 、`.v5-backup` 、`.v6-backup` 或 `.v7-backup`，再添加缺失的表，不清空原记忆和评论账本。旧版插件无法直接打开新版数据库；回退前需停止插件、另外保留当前数据目录，并使用相应的旧库备份，避免丢失更新后的记录。首次保存 0.1.0 配置时会补入角色名字字段。
 
 ## 工程结构
 
@@ -252,3 +252,5 @@ npm run benchmark
 依赖的接口文档：[DSH 插件开发](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/)、[DSH 工具定义](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/tool)、[NapCat 连接设置](https://napneko.github.io/config/basic)、[B站扫码接口收集](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/login/login_action/QR.md)、[B站评论接口收集](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/comment/action.md)。
 
 MIT 许可。第三方组件按各自许可使用。
+
+设置用途与推荐值见 [设置说明](settings.md)，生物钟和 QQ 表情收藏见 [专门指南](clock-emoji.md)。记忆页支持按天、精确到秒的 QQ / B 站活动筛选。

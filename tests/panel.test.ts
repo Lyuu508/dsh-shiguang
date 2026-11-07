@@ -24,7 +24,7 @@ test('面板保存即时生效、保留记忆且提供版本冲突保护',async(
 test('无效配置不改变文件和运行状态，数据目录与角色标识不被意外迁移',async()=>{
  const f=setup();try{
   const old=f.runtime.view(),bytes=readFileSync(f.file,'utf8');
-  await assert.rejects(f.runtime.save({...old.settings,memory:{...old.settings.memory,searchLimit:999}},old.revision),/searchLimit/);
+  await assert.rejects(f.runtime.save({...old.settings,memory:{...old.settings.memory,searchLimit:0}},old.revision),/searchLimit/);
   assert.equal(readFileSync(f.file,'utf8'),bytes);assert.equal(f.runtime.settings.memory.searchLimit,5);
   await assert.rejects(f.runtime.save({...old.settings,dataDir:join(f.dir,'elsewhere')},old.revision),/迁移/);
   assert.equal(readFileSync(f.file,'utf8'),bytes);

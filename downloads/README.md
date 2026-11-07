@@ -1,10 +1,10 @@
-# 下载拾光 Shiguang v0.1.7
+# 下载拾光 Shiguang v0.1.8
 
-适配 DeepSeek Harness 0.2.2-rc.1，需要 Node.js 24.9 或更新。新增后台更新修复、B 站自由醒来与分段深看、主人私信和 @ 推荐，以及 QQ 带权重的主动陪伴。
+适配 DeepSeek Harness 0.2.2-rc.1，需要 Node.js 24.9 或更新。新增生物钟、QQ 自主收藏表情、按秒分类时间线与 B 站点赞，修复手动视频误拦与后台入口；设置显示用途和推荐值并放开旧数值上限。
 
-- **首次安装推荐：** `dsh-shiguang-0.1.7.zip`，含源码、已构建客户端与 Host 文件、中文说明和 Windows 安装脚本。
-- **预构建 DSH 包：** `dsh-shiguang-0.1.7.tgz`，可通过 DSH 插件安装命令安装或升级。
-- **校验：** `SHA256SUMS-0.1.7.txt`。
+- **首次安装推荐：** `dsh-shiguang-0.1.8.zip`，含源码、已构建客户端与 Host 文件、中文说明和 Windows 安装脚本。
+- **预构建 DSH 包：** `dsh-shiguang-0.1.8.tgz`，可通过 DSH 插件安装命令安装或升级。
+- **校验：** `SHA256SUMS-0.1.8.txt`。
 
 点击对应文件，再点 GitHub 的 **Download raw file / 下载原始文件**。
 

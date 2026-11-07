@@ -1,3 +1,4 @@
+import {timeoutSignal} from './timeouts.js';
 import type {Context} from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-attachment';
 import {BlockAssembler} from '@deepseek-ai/dsh-llm';
@@ -40,13 +41,13 @@ export class BiliVision {
   }
   async watch(input:string,question='概括视频里的主要内容',part=1,externalSignal?:AbortSignal,depth:'shallow'|'deep'='shallow'):Promise<string>{
     const c=this.settings.biliVision;if(!c.enabled)throw new Error('请先在 B 站账号页面开启视频内容识别并保存');
-    const signal=AbortSignal.any([this.abort.signal,AbortSignal.timeout(Math.min(900000,c.timeoutMs+this.settings.replyTimeoutMs*(depth==='deep'?c.deepMaxSegments:1))),...(externalSignal?[externalSignal]:[])]);
+    const signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs*(depth==='deep'?c.deepMaxSegments:1)),...(externalSignal?[externalSignal]:[])]);
     const source=await this.bili.videoPart(input,part,signal);
     if(source.duration>c.maxDurationSeconds)throw new Error(`这个分 P 超过 ${c.maxDurationSeconds} 秒的识别上限，请提高上限或换短视频`);
     const segments=depth==='deep'?Math.ceil(source.duration/c.deepSegmentSeconds):1;if(segments>c.deepMaxSegments)throw new Error(`深度浏览需要 ${segments} 段，超过 ${c.deepMaxSegments} 段预算，尚未浏览整个视频；可调大分段长度或选择浅看`);
     const key=createHash('sha256').update(JSON.stringify(['bili-vision-v2',depth,c.deepSegmentSeconds,c.deepMaxSegments,source.video.bvid,source.cid,c.frames,c.sheetSize,c.subtitleChars,c.provider,c.model])).digest('hex');
     const cached=this.memory.db.prepare('SELECT summary FROM media_cache WHERE role=? AND scope=? AND key=? AND expires>?').get(this.memory.roleId,'owner',key,this.memory.clock());
-    if(cached)return String(cached.summary)+'\n（复用已识别的画面与字幕摘要，本次未重新读取视频。）';
+    if(cached){this.memory.append('owner','bilibili','bilibili','experience',`复看缓存摘要：${String(cached.summary)}；${source.video.url}`,undefined,this.memory.clock(),'watch');return String(cached.summary)+'\n（复用已识别的画面与字幕摘要，本次未重新读取视频。）';}
     const used=Number(this.memory.db.prepare("SELECT count(*) AS n FROM llm_usage WHERE role=? AND day=? AND category='bilibili-video'").get(this.memory.roleId,this.memory.today())?.n);
     if(used+segments>c.dailyLimit)throw new Error('今天的 B 站视频识别额度已用完');
     const route=c.provider?{provider:c.provider,model:c.model}:this.settings.media.provider?{provider:this.settings.media.provider,model:this.settings.media.model}:this.settings.provider?{provider:this.settings.provider,model:this.settings.model}:this.ctx.agents.list().filter(a=>!String(a.id).startsWith('shiguang-')).map(a=>a.model.current()).find(Boolean);
@@ -78,7 +79,7 @@ export class BiliVision {
       const coverage=depth==='deep'?`分段细看覆盖 0–${source.duration} 秒，共 ${segments} 段`:'浅看整段的少量关键帧';
       const factual=`《${source.video.title}》第 ${part} P：${summaries.join('；')}\n（${coverage}，抽样 ${totalFrames} 帧；${subtitleStatus}。非逐帧或原始音频完整理解。）`;
       this.memory.db.prepare('INSERT OR REPLACE INTO media_cache(role,scope,key,summary,expires) VALUES(?,?,?,?,?)').run(this.memory.roleId,'owner',key,factual,this.memory.clock()+c.cacheHours*3600000);
-      this.memory.append('owner','bilibili','bilibili','experience',`识别视频：${factual}；${source.video.url}`);
+      this.memory.append('owner','bilibili','bilibili','experience',`识别视频：${factual}；${source.video.url}`,undefined,this.memory.clock(),'watch');
       return depth==='deep'?factual:`《${source.video.title}》第 ${part} P：${answers[0]}\n${factual}`;
     }finally{await rm(directory,{recursive:true,force:true});}
   }

@@ -11,7 +11,7 @@ const LIMIT=256*1024*1024;
 export async function downloadPackage(asset:DownloadAsset,target:string,cacheRoot:string,options:{connections:number;mirrorUrl:string},signal:AbortSignal,fetcher:typeof fetch=fetch,progress:(p:DownloadProgress)=>void=()=>{}):Promise<void>{
   if(!/^[a-f0-9]{64}$/i.test(asset.digest)||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>LIMIT)throw new Error('安装包摘要或大小无效');
   const mirror=options.mirrorUrl?mirrorBaseUrl(options.mirrorUrl):undefined;
-  const count=Math.max(1,Math.min(8,Math.floor(options.connections)||1,asset.size));
+  const count=Math.max(1,Math.min(Math.floor(options.connections)||1,asset.size));
   const directory=join(cacheRoot,asset.digest+'-'+count);await mkdir(directory,{recursive:true,mode:0o700});
   const stop=new AbortController(),combined=AbortSignal.any([signal,stop.signal]);
   const initial=mirror?mirror.href+asset.url:asset.url;

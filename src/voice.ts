@@ -1,3 +1,4 @@
+import {timeoutSignal} from './timeouts.js';
 import {createHash,randomUUID} from 'node:crypto';
 import type {Settings} from './config.js';
 import type {MemoryStore} from './memory.js';
@@ -61,7 +62,7 @@ export class VoiceService {
     const text=spokenText(value,v.maxChars);if(!text)throw new VoiceError('请填写要朗读的文字');
     const key=createHash('sha256').update(JSON.stringify([scope,v.authMode,v.appId,v.speakerId,v.resourceId,v.speechRate,token,text])).digest('hex'),cached=this.cache.get(key);
     if(cached&&this.memory.clock()-cached.time<3600000)return {...cached.audio,reused:true};
-    const id=randomUUID(),chars=[...text].length,signal=AbortSignal.any([this.abort.signal,AbortSignal.timeout(v.timeoutMs),...(externalSignal?[externalSignal]:[])]);
+    const id=randomUUID(),chars=[...text].length,signal=AbortSignal.any([this.abort.signal,timeoutSignal(v.timeoutMs),...(externalSignal?[externalSignal]:[])]);
     signal.throwIfAborted();
     this.memory.db.exec('BEGIN IMMEDIATE');
     try{if(this.status().todayCalls>=v.dailyLimit)throw new VoiceError('今天的语音合成次数已用完');this.memory.db.prepare("INSERT INTO voice_usage(id,role,day,time,chars,status) VALUES(?,?,?,?,?,'pending')").run(id,this.memory.roleId,this.memory.today(),this.memory.clock(),chars);this.memory.db.exec('COMMIT');}catch(e){this.memory.db.exec('ROLLBACK');throw e;}

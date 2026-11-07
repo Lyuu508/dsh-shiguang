@@ -1,3 +1,4 @@
+import {timeoutSignal} from './timeouts.js';
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-attachment';
 import { BlockAssembler } from '@deepseek-ai/dsh-llm';
@@ -34,7 +35,7 @@ async function run(program:string,args:string[],signal:AbortSignal,maxBuffer=102
   }
 }
 export async function checkMediaTools(config:MediaSettings):Promise<{ready:boolean;message:string}> {
-  try { const signal=AbortSignal.timeout(5000);await run(config.ffmpegPath,['-version'],signal);await run(config.ffprobePath,['-version'],signal);return {ready:true,message:'FFmpeg 与 FFprobe 可用'}; }
+  try { const signal=timeoutSignal(5000);await run(config.ffmpegPath,['-version'],signal);await run(config.ffprobePath,['-version'],signal);return {ready:true,message:'FFmpeg 与 FFprobe 可用'}; }
   catch(error){return {ready:false,message:error instanceof Error?error.message:'媒体工具不可用'};}
 }
 /** Pick visually different low-resolution candidates; unchanged animations need one frame. */
@@ -62,10 +63,10 @@ export async function frameSheet(file:string,dir:string,c:MediaSettings,signal:A
   if(!Number.isFinite(width)||!Number.isFinite(height)||width<1||height<1||width>4096||height>4096)throw new MediaError('媒体尺寸无效或超过 4096 像素，请先压缩');
   if(!Number.isFinite(duration)||duration<0||duration>c.maxDurationSeconds)throw new MediaError(`媒体超过 ${c.maxDurationSeconds} 秒或无法确认时长，请先剪短`);
   if(!duration&&Number(video.nb_frames)>1)throw new MediaError('无法确认动图时长，请转换为 GIF 或短视频后重试');
-  const candidates=duration>0?Math.min(12,c.frames*3):1;
+  const candidates=duration>0?c.frames*3:1;
   const filter=(duration>0?`fps=${candidates/duration}:start_time=0,`:'')+'scale=16:16,format=rgb24';
   const base=['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-format_whitelist',FORMATS];
-  const raw=await run(c.ffmpegPath,[...base,'-i',file,'-an','-sn','-dn','-vf',filter,'-frames:v',String(candidates),'-pix_fmt','rgb24','-f','rawvideo','pipe:1'],signal,16384);
+  const raw=await run(c.ffmpegPath,[...base,'-i',file,'-an','-sn','-dn','-vf',filter,'-frames:v',String(candidates),'-pix_fmt','rgb24','-f','rawvideo','pipe:1'],signal,Math.max(16384,candidates*16*16*3));
   const indices=pickFrames(raw,c.frames);if(!indices.length)throw new MediaError('媒体没有可读取的画面');
   const times=indices.map(i=>duration>0?i*duration/candidates:0),cols=indices.length===1?1:indices.length>4?3:2,rows=Math.ceil(indices.length/cols),cell=Math.floor(c.sheetSize/Math.max(cols,rows));
   for(let i=0;i<times.length;i++){
@@ -74,7 +75,7 @@ export async function frameSheet(file:string,dir:string,c:MediaSettings,signal:A
   }
   const output=join(dir,'sheet.jpg');
   await run(c.ffmpegPath,['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-framerate','1','-i',join(dir,'frame-%d.jpg'),'-vf',`tile=${cols}x${rows}:nb_frames=${indices.length}`,'-frames:v','1','-q:v','5','-y',output],signal);
-  const bytes=await readFile(output);if(bytes.length>1024*1024)throw new MediaError('缩略图超过处理预算，请降低拼图尺寸');
+  const bytes=await readFile(output);if(bytes.length>c.maxFileMB*1024*1024)throw new MediaError('拼图超过设置的媒体大小预算，请提高大小预算或降低拼图尺寸');
   return {bytes,duration,times,width:cols*cell,height:rows*cell};
 }
 export function parseVisionAnswer(text:string):{summary:string;reply:string} {
@@ -83,7 +84,10 @@ export function parseVisionAnswer(text:string):{summary:string;reply:string} {
   catch { /* Some compatible models ignore the JSON instruction. Do not retry. */ }
   throw new MediaError('视觉模型没有返回可用的简短结果，本次不会自动重试；可换用支持图片的非思考模型');
 }
+export interface MediaObservation {id:string;bytes:Buffer;summary:string;source:QQMediaRef}
 export class MediaReader {
+  lastObservation?:MediaObservation;
+  readSource(media:QQMediaRef,qq:OneBotClient,signal:AbortSignal){return this.source(media,qq,signal);}
   private abort=new AbortController();
   constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly fetcher:typeof fetch=fetch){}
   stop():void{this.abort.abort();}
@@ -131,11 +135,11 @@ export class MediaReader {
     if(!wantsMedia(message.text,c.mode))return '收到媒体了。想让我看主要画面，请引用这条消息说“看看”；也可以在 QQ 识图中开启自动识别。';
     const used=this.memory.db.prepare("SELECT count(*) AS n FROM llm_usage WHERE role=? AND day=? AND category='qq-media'").get(this.memory.roleId,this.memory.today());
     if(Number(used?.n)>=c.dailyLimit)return '今天的媒体识别调用额度已用完，可明天再看或在 QQ 识图中调整上限。';
-    const route=this.route(),signal=AbortSignal.any([this.abort.signal,AbortSignal.timeout(c.timeoutMs+this.settings.replyTimeoutMs)]);
+    const route=this.route(),signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs)]);
     const llm=this.ctx.get('llm'),attachments=this.ctx.get('attachments');if(!llm||!attachments)throw new MediaError('当前 DSH 缺少模型或图片附件服务，请启用对应服务后重试');
     const model=await llm.resolveModelInfo(route.provider,route.model,signal);
     if(!model.inputModalities?.includes('image'))throw new MediaError('所选模型尚未声明支持图片输入，请在 QQ 识图中选择视觉模型；普通纯文本模型不能看视频');
-    const processing=AbortSignal.any([signal,AbortSignal.timeout(c.timeoutMs)]),source=media.find(m=>m.type==='video')??media[0];if(!source)throw new MediaError('引用消息中没有可读取的视频或动图');
+    const processing=AbortSignal.any([signal,timeoutSignal(c.timeoutMs)]),source=media.find(m=>m.type==='video')??media[0];if(!source)throw new MediaError('引用消息中没有可读取的视频或动图');
     const bytes=await this.source(source,qq,processing),digest=createHash('sha256').update(bytes).digest('hex');
     const cacheKey=createHash('sha256').update(JSON.stringify([digest,c.frames,c.sheetSize,c.maxDurationSeconds,c.cacheHours,route.provider,route.model,'vision-v1'])).digest('hex');
     const cache=this.memory.db.prepare('SELECT summary FROM media_cache WHERE role=? AND scope=? AND key=? AND expires>?').get(this.memory.roleId,message.scope,cacheKey,this.memory.clock());
@@ -160,6 +164,7 @@ export class MediaReader {
       this.memory.db.prepare('INSERT OR REPLACE INTO media_cache(role,scope,key,summary,expires) VALUES(?,?,?,?,?)').run(this.memory.roleId,message.scope,cacheKey,answer.summary,this.memory.clock()+c.cacheHours*3600000);
       this.memory.db.prepare('DELETE FROM media_cache WHERE role=? AND expires<=?').run(this.memory.roleId,this.memory.clock());
     }
+    this.lastObservation={id:message.id,bytes,source,summary:cache?String(cache.summary):answer.summary};
     const note=`[媒体抽样摘要，未听取音频] ${cache?String(cache.summary):answer.summary}`;
     if(!this.memory.db.prepare("SELECT 1 FROM memories WHERE role=? AND scope=? AND day=? AND kind='experience' AND body=?").get(this.memory.roleId,message.scope,this.memory.today(),note))this.memory.append(message.scope,'qq',message.thread,'experience',note);
     const footer=`\n（${cache?'复用之前的画面摘要，未重新看图':`抽样 ${sheet!.times.length} 帧，未听取音频`}）`;

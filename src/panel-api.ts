@@ -62,6 +62,7 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
       const provider = text(args.provider);
       return { providers: llm.listProviders().map(p => ({ id: p.id, name: p.name || p.id })), models: provider ? (await llm.listModels(provider)).map(m => ({ id: m.id, name: m.name || m.id, inputModalities: m.inputModalities })) : [] };
     }
+    case 'memory-timeline':return runtime.memory.timeline({scope:text(args.scope,'*'),platform:text(args.platform,'all'),channel:text(args.channel,'all'),category:text(args.category,'all'),day:text(args.day,runtime.memory.today()),query:text(args.query),before:typeof args.before==='number'?args.before:0,beforeTime:typeof args.beforeTime==='number'?args.beforeTime:0});
     case 'memory-list': return runtime.memory.list(text(args.scope,'owner'),text(args.day,runtime.memory.today()),typeof args.before === 'number' ? args.before : 0);
     case 'memory-search': return { hits: runtime.memory.search(text(args.scope,'owner'),text(args.query),args.range === 'today' ? 'today' :args.range==='all'?'all': 'history',args.day ? text(args.day) : undefined) };
     case 'memory-detail': return runtime.memory.detail(text(args.scope,'owner'),text(args.id),typeof args.offset === 'number' ? args.offset : 0);

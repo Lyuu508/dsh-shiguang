@@ -37,6 +37,10 @@
   },
   "bilibili": {
     "enabled": false,
+    "manualWhitelist": false,
+    "allowLikes": false,
+    "likesPerDay": 20,
+    "minLikeIntervalMs": 60000,
     "allowComments": false,
     "commentsPerDay": 10,
     "minCommentIntervalMs": 60000,
@@ -87,7 +91,8 @@
     "quietEnd": "08:00",
     "chooseBrowsing": true,
     "allowDeep": false,
-    "recommendOwner": false
+    "recommendOwner": false,
+    "autoLike": false
   },
   "biliVision": {
     "enabled": false,
@@ -150,5 +155,22 @@
     "pollSeconds": 60,
     "repliesPerDay": 20,
     "minReplySeconds": 10
+  },
+  "clock": {
+    "enabled": false,
+    "wakeAt": "08:00",
+    "sleepAt": "23:00",
+    "wakeOnMention": true,
+    "wakeChance": 25,
+    "awakeMinutes": 10,
+    "minWakeGapMinutes": 30
+  },
+  "emoji": {
+    "enabled": false,
+    "dailyLimit": 3,
+    "decisionsPerDay": 8,
+    "allowGroups": false,
+    "maxFileMB": 5,
+    "maxOutputTokens": 240
   }
 }
