@@ -1,0 +1,81 @@
+{
+  "name": "dsh-shiguang",
+  "version": "0.1.0",
+  "description": "拾光：跨 QQ 与 B 站的 AI 伙伴，使用当天优先、历史按需检索的共享记忆。",
+  "type": "module",
+  "main": "./dist/plugin.js",
+  "exports": {
+    ".": "./dist/plugin.js",
+    "./memory": "./dist/memory.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "tests",
+    "scripts",
+    "tsconfig.json",
+    "cordis.patch.yml",
+    "config.example.json",
+    "README.md",
+    "VALIDATION.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=24.9",
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "setup": "node scripts/setup.mjs",
+    "bili:login": "node dist/cli.js login",
+    "memory:today": "node dist/cli.js today",
+    "memory:search": "node dist/cli.js search",
+    "benchmark": "node --import tsx scripts/benchmark.ts",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tool-executor-native": "0.2.2-rc.1",
+    "@deepseek-ai/schemastery": "3.19.0",
+    "qrcode": "1.5.4",
+    "ws": "8.18.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.1.0",
+    "@deepseek-ai/dsh-agent": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-session": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-agent": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-agent-loop-testkit": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-session": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tool-testkit": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
+    "@types/node": "24.10.0",
+    "@types/qrcode": "1.5.6",
+    "@types/ws": "8.18.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lyuu508/dsh-shiguang.git"
+  },
+  "homepage": "https://github.com/Lyuu508/dsh-shiguang#readme",
+  "bugs": {
+    "url": "https://github.com/Lyuu508/dsh-shiguang/issues"
+  }
+}

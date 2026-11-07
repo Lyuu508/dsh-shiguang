@@ -1,0 +1,5 @@
+- insert:
+    - id: shiguang
+      name: dsh-shiguang
+      config:
+        configPath: ''

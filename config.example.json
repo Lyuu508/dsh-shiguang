@@ -1,0 +1,37 @@
+{
+  "roleId": "companion",
+  "persona": "你是一个自然、真诚的 AI 伙伴。保持一致的性格，不假装有未发生的经历。",
+  "timezone": "system",
+  "dataDir": "./state",
+  "provider": "",
+  "model": "",
+  "replyTimeoutMs": 90000,
+  "maxReplyChars": 1500,
+  "maxQueue": 20,
+  "memory": {
+    "todayMaxChars": 2600,
+    "recentMessages": 12,
+    "recentMaxChars": 4000,
+    "searchLimit": 5,
+    "snippetChars": 240,
+    "detailMaxChars": 1600
+  },
+  "qq": {
+    "enabled": false,
+    "wsUrl": "ws://127.0.0.1:3001",
+    "tokenEnv": "SHIGUANG_ONEBOT_TOKEN",
+    "ownerQQ": "",
+    "allowedPrivate": [],
+    "allowedGroups": [],
+    "groupMentionOnly": true,
+    "actionTimeoutMs": 15000,
+    "reconnectMs": 3000
+  },
+  "bilibili": {
+    "enabled": false,
+    "allowComments": false,
+    "commentsPerDay": 10,
+    "minCommentIntervalMs": 60000,
+    "timeoutMs": 15000
+  }
+}
