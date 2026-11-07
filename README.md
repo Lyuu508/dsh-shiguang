@@ -2,7 +2,11 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.2.0 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.2.0) 页面进入下载。访问私有仓库及下载文件需要登录获授权的 GitHub 账号。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.1 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.1) 页面进入下载。访问私有仓库及下载文件需要登录获授权的 GitHub 账号。
+
+## 版本规则
+
+版本固定采用 `0.1.N`：`0.1.0 → 0.1.1 → 0.1.2 → 0.1.3`。以后每次发布只增加最后一段数字，超过 9 后为 `0.1.10`；不自动提升前两段。
 
 ## 在哪里打开面板
 
@@ -184,10 +188,10 @@ npm run benchmark
 
 ## 从 0.1.0 升级
 
-从 `downloads/` 下载 `dsh-shiguang-0.2.0.tgz`，再安装到原来的 profile：
+从 `downloads/` 下载 `dsh-shiguang-0.1.1.tgz`，再安装到原来的 profile：
 
 ```powershell
-dsh plugin --profile web add "你的文件夹\dsh-shiguang-0.2.0.tgz"
+dsh plugin --profile web add "你的文件夹\dsh-shiguang-0.1.1.tgz"
 ```
 
 重启 DSH 并刷新页面后打开 **设置 → 拾光**。原来的配置、Cookie 和记忆在用户数据目录中，升级安装包不会覆盖；数据库会先生成 `memory.sqlite.v1-backup`，再兼容添加回收站表，不清空原记录。数据库版本升为 2，旧版插件无法直接打开升级后的库；回退前需停用插件并使用备份。首次保存旧配置时会补入角色名字字段。

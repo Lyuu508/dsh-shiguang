@@ -1,10 +1,10 @@
-# 下载拾光 Shiguang v0.2.0
+# 下载拾光 Shiguang v0.1.1
 
 适配 DeepSeek Harness 0.2.2-rc.1，需要 Node.js 24.9 或更新。新增 **DSH 设置 → 拾光** 可视化面板，配置保存后即时生效。
 
-- **首次安装推荐：** `dsh-shiguang-0.2.0-source.zip`，含源码、已构建客户端与 Host 文件、中文说明和 Windows 安装脚本。
-- **预构建 DSH 包：** `dsh-shiguang-0.2.0.tgz`，可通过 DSH 插件安装命令安装或升级。
-- **校验：** `SHA256SUMS-0.2.0.txt`。
+- **首次安装推荐：** `dsh-shiguang-0.1.1-source.zip`，含源码、已构建客户端与 Host 文件、中文说明和 Windows 安装脚本。
+- **预构建 DSH 包：** `dsh-shiguang-0.1.1.tgz`，可通过 DSH 插件安装命令安装或升级。
+- **校验：** `SHA256SUMS-0.1.1.txt`。
 
 点击对应文件，再点 GitHub 的 **Download raw file / 下载原始文件**。私有仓库需要先登录获授权的 GitHub 账号。
 
