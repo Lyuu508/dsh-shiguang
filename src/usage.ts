@@ -3,7 +3,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session';
 import type { MemoryStore } from './memory.js';
 import { dayKey } from './memory.js';
 
-export interface UsageOrigin { session: string; source: 'qq' | 'dsh'; provider: string; model: string }
+export interface UsageOrigin { session: string; source: 'qq' | 'dsh' | 'bilibili'; provider: string; model: string }
 export interface UsageTotals {
   calls: number; missing: number; input: number; cacheRead: number; cacheWrite: number;
   output: number; reasoning: number; total: number;
@@ -22,7 +22,7 @@ function counters(usage?: TokenUsage): number[] {
 export function recordMediaUsage(memory: MemoryStore, origin: UsageOrigin, usage?: TokenUsage): void {
   recordSingleUsage(memory,origin,'qq-media',usage);
 }
-export function recordSingleUsage(memory:MemoryStore,origin:UsageOrigin,category:'qq-media'|'bilibili-auto'|'bilibili-video',usage?:TokenUsage):void {
+export function recordSingleUsage(memory:MemoryStore,origin:UsageOrigin,category:'qq-media'|'bilibili-auto'|'bilibili-video'|'qq-proactive',usage?:TokenUsage):void {
   const time=memory.clock();
   memory.db.prepare(`INSERT OR IGNORE INTO llm_usage
     (role,session,seq,day,time,source,category,provider,model,missing,input,cache_read,cache_write,output,reasoning)
@@ -31,7 +31,7 @@ export function recordSingleUsage(memory:MemoryStore,origin:UsageOrigin,category
 }
 /** One row per settled model attempt, including tool steps, retries and cancellations. */
 export function recordUsage(memory: MemoryStore, origin: UsageOrigin, events: readonly SessionEvent[]): void {
-  const category = events.some(e => e.type === 'tool/call' && e.data.name.startsWith('shiguang_bili_')) ? 'bilibili' : origin.source;
+  const category = events.some(e => e.type === 'tool/call' && e.data.name.startsWith('shiguang_bili_')) ? 'bilibili' : origin.source==='bilibili'?'bilibili-dm':origin.source;
   const insert = memory.db.prepare(`INSERT OR IGNORE INTO llm_usage
     (role,session,seq,day,time,source,category,provider,model,missing,input,cache_read,cache_write,output,reasoning)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);

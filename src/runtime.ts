@@ -15,6 +15,9 @@ import { NapCatManager } from './napcat.js';
 import {VoiceService,wantsVoice} from './voice.js';
 import {BiliVision} from './bili-vision.js';
 import type {QQMessage} from './onebot.js';
+import {BiliSocial} from './bili-social.js';
+import {Proactive} from './proactive.js';
+import {setState} from './initiative.js';
 
 export class ShiguangRuntime {
   readonly file: string;
@@ -25,12 +28,16 @@ export class ShiguangRuntime {
   autonomy!:Autonomy;
   voice!:VoiceService;
   biliVision!:BiliVision;
+  biliSocial!:BiliSocial;
+  proactive!:Proactive;
+  watchJob:{id:string;status:'idle'|'running'|'done'|'error';text:string}={id:'',status:'idle',text:''};
+  private watchAbort?:AbortController;
   private stopped = false; private queued = 0; private tail = Promise.resolve();
   private login?: { ticket: string; key: string; expires: number };
   private lastError = '';
   constructor(readonly ctx: Context, file = '', readonly fetcher: typeof fetch = fetch) {
     this.file = ensureSettings(file); this.open(loadSettings(this.file));
-    this.updates = new UpdateManager(ctx,this.settings.dataDir,fetcher);
+    this.updates = new UpdateManager(ctx,this.settings.dataDir,fetcher,()=>this.settings.updates);
     this.napcat = new NapCatManager(this.settings.dataDir,()=>this.settings,()=>this.token(),fetcher);
     this.napcat.configure();
   }
@@ -55,6 +62,7 @@ export class ShiguangRuntime {
         if (!q.enabled || (message.groupId ? !q.allowedGroups.includes(message.groupId) : !owner && !q.allowedPrivate.includes(message.userId))) return;
         const scope=owner?'owner':message.thread;
         if(this.memory.seen(message.id))return;
+        if(owner)setState(this.memory,'qq:last-owner',this.memory.clock());
         let media=message.media||[];
         const mediaQuote=!!message.replyId&&wantsMedia(message.text,'ask');
         if(media.length||mediaQuote){
@@ -77,7 +85,14 @@ export class ShiguangRuntime {
     },this.log,() => this.token());
     if (settings.qq.enabled) this.qq.start();
     this.autonomy=new Autonomy(this.ctx,settings,this.memory,this.bili,run=>this.enqueue(run),this.log,this.biliVision);this.autonomy.start();
+    this.biliSocial=new BiliSocial(settings,this.memory,this.bili,this.driver,run=>this.enqueue(run),this.log);this.biliSocial.start();
+    this.proactive=new Proactive(this.ctx,settings,this.memory,this.qq,run=>this.enqueue(run),this.log);this.proactive.start();
   }
+  startWatch(video:string,question:string,part:number,depth:'shallow'|'deep'){
+    if(this.watchJob.status==='running')return {...this.watchJob};const id=randomUUID(),abort=this.watchAbort=new AbortController();this.watchJob={id,status:'running',text:'正在后台读取视频，可以离开此页面'};
+    void this.enqueue(()=>this.biliVision.watch(video,question,part,abort.signal,depth)).then(text=>{this.watchJob={id,status:'done',text};},error=>{this.watchJob={id,status:'error',text:error instanceof Error?error.message:'视频识别未完成'};});return {...this.watchJob};
+  }
+  cancelWatch(){this.watchAbort?.abort();return {...this.watchJob};}
   private voiceSecret():string {try{return readFileSync(join(this.settings.dataDir,'voice.access-key'),'utf8').trim();}catch{return '';}}
   async saveVoiceSecret(secret:string){
     if(!secret.trim()||secret.length>4096||/[\s\0]/.test(secret))throw new Error('语音密钥格式无效，请填写语音服务的 Access Token / API Key');
@@ -110,7 +125,7 @@ export class ShiguangRuntime {
     return { settings: { ...this.settings, timezone: String(raw.timezone), dataDir: String(raw.dataDir) }, revision: this.revision(), tokenConfigured: !!this.token(), tokenFromEnvironment: !panelToken && !!(this.settings.qq.tokenEnv && process.env[this.settings.qq.tokenEnv]) };
   }
   status() {
-    return { displayName: this.settings.displayName, qq: this.settings.qq.enabled ? this.qq.status() : { state: 'disabled', message: 'QQ 回复已关闭' }, napcat:this.napcat.view(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
+    return { displayName: this.settings.displayName, qq: this.settings.qq.enabled ? this.qq.status() : { state: 'disabled', message: 'QQ 回复已关闭' }, napcat:this.napcat.view(),biliSocial:this.biliSocial.status(),proactive:this.proactive.status(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
   }
   async save(value: unknown, expected: string, newToken = '') {
     return this.enqueue(async () => {
@@ -132,7 +147,7 @@ export class ShiguangRuntime {
         if (newToken.trim()) this.atomicWrite(secretPath,previousToken || '');
         throw error;
       }
-      this.autonomy.stop();this.media.stop();this.biliVision.stop();this.voice.stop(); await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
+      this.biliSocial.stop();this.proactive.stop();this.autonomy.stop();this.media.stop();this.biliVision.stop();this.voice.stop(); await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
       this.napcat.configure();
       return this.view();
     });
@@ -157,6 +172,7 @@ export class ShiguangRuntime {
   logoutBili(): void { this.login=undefined; this.bili.logout(); }
   async stop(): Promise<void> {
     this.stopped = true;
+    this.biliSocial.stop();this.proactive.stop();this.watchAbort?.abort();
     this.voice.stop();this.biliVision.stop();
     await this.napcat.stop();
     this.autonomy.stop();

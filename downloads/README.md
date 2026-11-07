@@ -1,16 +1,16 @@
-# 下载拾光 Shiguang v0.1.6
+# 下载拾光 Shiguang v0.1.7
 
-适配 DeepSeek Harness 0.2.2-rc.1，需要 Node.js 24.9 或更新。新增 B 站关键帧 / 字幕内容识别、火山复刻语音和 QQ 语音回复，NapCat 支持并行、断点续传及可选加速前缀。
+适配 DeepSeek Harness 0.2.2-rc.1，需要 Node.js 24.9 或更新。新增后台更新修复、B 站自由醒来与分段深看、主人私信和 @ 推荐，以及 QQ 带权重的主动陪伴。
 
-- **首次安装推荐：** `dsh-shiguang-0.1.6.zip`，含源码、已构建客户端与 Host 文件、中文说明和 Windows 安装脚本。
-- **预构建 DSH 包：** `dsh-shiguang-0.1.6.tgz`，可通过 DSH 插件安装命令安装或升级。
-- **校验：** `SHA256SUMS-0.1.6.txt`。
+- **首次安装推荐：** `dsh-shiguang-0.1.7.zip`，含源码、已构建客户端与 Host 文件、中文说明和 Windows 安装脚本。
+- **预构建 DSH 包：** `dsh-shiguang-0.1.7.tgz`，可通过 DSH 插件安装命令安装或升级。
+- **校验：** `SHA256SUMS-0.1.7.txt`。
 
 点击对应文件，再点 GitHub 的 **Download raw file / 下载原始文件**。
 
 首次安装或升级后重启 DSH 并刷新页面，进入 **设置 → 拾光**。QQ 与 B 站账号仍需在你自己的本机登录。
 
-已安装 0.1.2 可在版本更新页面升级。0.1.1 及更早版本请先手动安装本包，重启后就有更新按钮。旧版文件保留供查阅。真实 Windows 与 QQ / B 站账号仍需本机联调；测试边界见仓库 `VALIDATION.md`。
+已安装旧版可在版本更新页面升级；旧按钮超时请用 README 顶部的 DSH 安装指令直接更新。0.1.1 及更早版本请先手动安装本包，重启后就有更新按钮。旧版文件保留供查阅。真实 Windows 与 QQ / B 站账号仍需本机联调；测试边界见仓库 `VALIDATION.md`。
 
 QQ 识图另需 FFmpeg / FFprobe 和支持图片的模型。功能默认关闭；使用方法见 [媒体指南](../docs/qq-media.md)。
 

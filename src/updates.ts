@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
+import {UPDATE_DEFAULTS,mirrorBaseUrl} from './config.js';
 
 export const VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),'utf8')).version;
 export const REPOSITORY = 'Lyuu508/dsh-shiguang';
@@ -13,6 +14,7 @@ export interface UpdateState {
   current: string; latest?: ReleaseInfo; installed?: string; available: boolean; checkedAt?: number;
   phase: 'idle' | 'checking' | 'downloading' | 'installing' | 'done' | 'error';
   message: string; canInstall: boolean;
+  downloaded?:number;total?:number;attempt?:number;
 }
 export function compareVersions(a: string, b: string): number {
   const x=a.split('.').map(Number), y=b.split('.').map(Number);
@@ -25,7 +27,8 @@ export function compareVersions(a: string, b: string): number {
 export class UpdateManager {
   private state: UpdateState = { current: VERSION, available: false, phase: 'idle', message: '尚未检查更新', canInstall: false };
   private job?: Promise<void>;
-  constructor(readonly ctx: Context, readonly dataDir: string, readonly fetcher: typeof fetch = fetch) {}
+  private controller=new AbortController();
+  constructor(readonly ctx: Context, readonly dataDir: string, readonly fetcher: typeof fetch = fetch,readonly options=()=>UPDATE_DEFAULTS) {}
   private get stateFile(): string { return join(this.dataDir,'updates','status.json'); }
   private save(): void {
     mkdirSync(join(this.dataDir,'updates'),{recursive:true,mode:0o700});
@@ -48,32 +51,54 @@ export class UpdateManager {
     } catch { /* No previous update, or a damaged status file: check again. */ }
     return { ...this.state, latest: this.state.latest && { ...this.state.latest }, canInstall: !!this.ctx.get('pluginManager') };
   }
-  private async get(url: string, max: number): Promise<Buffer> {
-    const response = await this.fetcher(url, { headers: { Accept: url.includes('api.github.com') ? 'application/vnd.github+json' : 'application/octet-stream', 'User-Agent': 'dsh-shiguang/'+VERSION }, signal: AbortSignal.timeout(60000) });
+  private async get(url: string, max: number,binary=false): Promise<Buffer> {
+    const options=this.options();
+    for(let attempt=1;attempt<=options.retries+1;attempt++){
+    this.controller.signal.throwIfAborted();this.state.attempt=attempt;this.save();
+    const target=binary&&options.mirrorUrl?mirrorBaseUrl(options.mirrorUrl).href+url:url;
+    try{
+    const response = await this.fetcher(target, { headers: { Accept: url.includes('api.github.com') ? 'application/vnd.github+json' : 'application/octet-stream', 'User-Agent': 'dsh-shiguang/'+VERSION },redirect:'error', signal: AbortSignal.any([this.controller.signal,AbortSignal.timeout(binary?options.downloadTimeoutMs:options.timeoutMs)]) });
     if (!response.ok) {
       await response.body?.cancel();
-      if ([401,403,404].includes(response.status)) throw new Error(`GitHub 暂时无法访问（${response.status}）：请检查仓库权限或 API 限额，也可从仓库手动下载安装包`);
+      if ([401,403,404,429].includes(response.status)) throw new Error(`GitHub 暂时无法访问（${response.status}）：请检查仓库权限或 API 限额，也可从仓库手动下载安装包`);
       throw new Error(`GitHub 下载失败（${response.status}），请稍后重试`);
     }
     if (!response.body) throw new Error('GitHub 返回空内容');
     const reader=response.body.getReader(), chunks:Uint8Array[]=[]; let length=0;
     try {
-      for (;;) { const {done,value}=await reader.read(); if(done)break; length+=value.length; if(length>max)throw new Error('更新文件超出大小限制'); chunks.push(value); }
+      for (;;) { const {done,value}=await reader.read(); if(done)break; length+=value.length; if(length>max)throw new Error('更新文件超出大小限制'); chunks.push(value);if(binary){this.state={...this.state,downloaded:length,total:Number(response.headers.get('content-length'))||undefined,message:`正在下载并校验安装包：${(length/1048576).toFixed(2)} MB`};this.save();} }
       return Buffer.concat(chunks);
     } finally { await reader.cancel().catch(()=>{}); }
+    }catch(error){
+      if(this.controller.signal.aborted)throw new Error('已取消更新网络请求，可重新检查或下载');
+      const message=error instanceof Error?error.message:'';
+      if(attempt>options.retries||/（(?:401|403|404|429)）|大小限制/.test(message))throw new Error(/timeout|aborted|fetch failed|network|terminated/i.test(message)?'连接 GitHub 超时或中断。可以重试、调整等待时间，或从版本页面手动安装。':message||'更新网络请求未完成');
+      this.state.message=`连接未完成，正在重试（${attempt+1}/${options.retries+1}）…`;this.save();
+    }
+    }throw new Error('更新下载未完成');
   }
-  async check(): Promise<UpdateState> {
+  beginCheck():UpdateState {
     this.view();
     if(this.job || ['checking','downloading','installing'].includes(this.state.phase)) return this.view();
     if(this.state.installed && compareVersions(this.state.installed,VERSION)>0) {
       this.state={...this.state,phase:'done',available:false,message:`已安装 ${this.state.installed}，请先重启 DSH 并刷新页面`};
       this.save(); return this.view();
     }
-    this.state={...this.state,phase:'checking',message:'正在检查 GitHub Release…'};
+    this.controller=new AbortController();
+    this.state={...this.state,phase:'checking',message:'正在后台检查 GitHub Release，可离开此页面…'};
     this.save();
+    this.job=this.performCheck().finally(()=>{this.job=undefined;});return this.view();
+  }
+  async check():Promise<UpdateState>{
+    this.view();if(this.job||['checking','downloading','installing'].includes(this.state.phase))return this.view();
+    this.beginCheck();await this.job;return this.view();
+  }
+  private async performCheck():Promise<void>{
     try {
       // Published preview releases are included; /releases/latest excludes them.
-      const data:unknown=JSON.parse((await this.get(`https://api.github.com/repos/${REPOSITORY}/releases?per_page=100`,2*1024*1024)).toString('utf8'));
+      let data:unknown;
+      try{data=JSON.parse((await this.get(`https://api.github.com/repos/${REPOSITORY}/releases?per_page=20`,2*1024*1024)).toString('utf8'));}
+      catch(error){if(this.controller.signal.aborted)throw error;const fallback=JSON.parse((await this.get(`https://raw.githubusercontent.com/${REPOSITORY}/main/downloads/latest.json`,65536)).toString('utf8'));if(!/^\d+\.\d+\.\d+$/.test(fallback.version))throw error;data=[{tag_name:'v'+fallback.version,body:fallback.notes,published_at:fallback.published}];}
       if(!Array.isArray(data))throw new Error('GitHub 版本列表格式无效');
       const versions:ReleaseInfo[]=data.flatMap(r=> {
         if(!r || r.draft || !/^v\d+\.\d+\.\d+$/.test(r.tag_name)) return [];
@@ -84,8 +109,8 @@ export class UpdateManager {
       this.state={...this.state,latest,available,checkedAt:Date.now(),phase:'idle',message:available?`发现新版本 ${latest.version}`:'当前已是最新版本'};
     } catch(error) { this.state={...this.state,phase:'error',message:error instanceof Error?error.message:'检查更新失败'}; }
     this.save();
-    return this.view();
   }
+  cancel():UpdateState{this.view();if(['checking','downloading'].includes(this.state.phase))this.controller.abort();return this.view();}
   start(version: string): UpdateState {
     this.view();
     if(this.job)return this.view();
@@ -93,7 +118,8 @@ export class UpdateManager {
     if(this.state.phase!=='idle' || !this.state.available || !this.state.latest || version!==this.state.latest.version)throw new Error('请先检查更新，再安装列表中的新版本');
     const installer=this.ctx.get('pluginManager');
     if(!installer)throw new Error('当前 DSH 未启用插件管理服务，请在插件管理中启用，或从版本页面手动安装');
-    this.state={...this.state,phase:'downloading',message:'正在下载并校验安装包…'};
+    this.controller=new AbortController();
+    this.state={...this.state,phase:'downloading',message:'正在后台下载并校验安装包…',downloaded:0,total:undefined};
     this.save();
     this.job=this.install(version,installer).catch(error=>{
       this.state={...this.state,phase:'error',message:error instanceof Error?error.message:'更新未完成'};
@@ -107,8 +133,9 @@ export class UpdateManager {
     const sums=(await this.get(base+`SHA256SUMS-${version}.txt`,16384)).toString('utf8');
     const expected=sums.split(/\r?\n/).map(line=>line.match(/^([a-fA-F0-9]{64})\s+\*?(.+)$/)).find(m=>m?.[2]===filename)?.[1]?.toLowerCase();
     if(!expected)throw new Error('版本缺少有效 SHA256 校验记录，已停止安装');
-    const bytes=await this.get(base+filename,32*1024*1024);
+    const bytes=await this.get(base+filename,32*1024*1024,true);
     if(createHash('sha256').update(bytes).digest('hex')!==expected)throw new Error('安装包 SHA256 校验失败，已停止安装，请重新检查更新');
+    this.controller.signal.throwIfAborted();
     const directory=join(this.dataDir,'updates',version); await mkdir(directory,{recursive:true,mode:0o700});
     const file=join(directory,filename); await writeFile(file+'.tmp',bytes,{mode:0o600}); await rename(file+'.tmp',file);
     this.state={...this.state,phase:'installing',message:'校验通过，DSH 正在安装；请等待完成…'};

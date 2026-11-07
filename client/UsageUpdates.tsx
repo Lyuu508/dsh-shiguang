@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import type { PanelApi } from './types.js';
+import type { PanelApi,Settings } from './types.js';
 import type { UsageReport, UsageTotals } from '../src/usage.js';
 import type { UpdateState } from '../src/updates.js';
 
 const message=(e:unknown)=>e instanceof Error?e.message:'读取失败，请重试';
 const number=(n:number)=>n.toLocaleString();
-const labels:Record<string,string>={qq:'QQ 聊天','qq-media':'QQ 视频 / 动图','bilibili-auto':'B 站自主生活','bilibili-video':'B 站视频识别',bilibili:'B 站任务',dsh:'DSH 对话'};
+const labels:Record<string,string>={'qq-proactive':'QQ 主动联系','bilibili-dm':'B 站私信',qq:'QQ 聊天','qq-media':'QQ 视频 / 动图','bilibili-auto':'B 站自主生活','bilibili-video':'B 站视频识别',bilibili:'B 站任务',dsh:'DSH 对话'};
 export function UsagePanel({api,today}:{api:PanelApi;today?:string}) {
   const [day,setDay]=useState(today||''),[report,setReport]=useState<UsageReport>(),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   useEffect(()=>{if(!day&&today)setDay(today);},[today,day]);
@@ -16,20 +16,23 @@ export function UsagePanel({api,today}:{api:PanelApi;today?:string}) {
     if(!report)return;const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`shiguang-usage-${day}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }}>导出当日记录</button></div><p className="sg-help">按设置时区 {report?.timezone||'—'} 统计。只记录本插件创建的模型调用，从本版本安装后开始积累；面板查询不会调用模型。</p>
   {error&&<p role="alert" className="sg-notice error">{error}</p>}
-  {report&&<><div className="sg-overview"><div className="sg-status"><span>当日已知总量</span><strong>{number(report.total.total)} Token</strong></div><div className="sg-status"><span>模型调用</span><strong>{number(report.total.calls)} 次</strong></div><div className="sg-status"><span>未返回用量</span><strong>{number(report.total.missing)} 次</strong></div></div><div className="sg-table"><table><caption>分类用量（不重复计数）</caption><thead><tr><th>任务</th><th>调用</th><th>未缓存输入</th><th>缓存读取</th><th>缓存写入</th><th>输出</th><th>已知合计</th><th>缺失</th></tr></thead><tbody>{['qq','qq-media','bilibili','bilibili-video','bilibili-auto','dsh'].map(category=>row(labels[category]!,report.categories.find(c=>c.category===category)||{calls:0,missing:0,input:0,cacheRead:0,cacheWrite:0,output:0,reasoning:0,total:0}))}{row('合计',report.total)}</tbody></table></div>
+  {report&&<><div className="sg-overview"><div className="sg-status"><span>当日已知总量</span><strong>{number(report.total.total)} Token</strong></div><div className="sg-status"><span>模型调用</span><strong>{number(report.total.calls)} 次</strong></div><div className="sg-status"><span>未返回用量</span><strong>{number(report.total.missing)} 次</strong></div></div><div className="sg-table"><table><caption>分类用量（不重复计数）</caption><thead><tr><th>任务</th><th>调用</th><th>未缓存输入</th><th>缓存读取</th><th>缓存写入</th><th>输出</th><th>已知合计</th><th>缺失</th></tr></thead><tbody>{['qq','qq-proactive','qq-media','bilibili','bilibili-dm','bilibili-video','bilibili-auto','dsh'].map(category=>row(labels[category]!,report.categories.find(c=>c.category===category)||{calls:0,missing:0,input:0,cacheRead:0,cacheWrite:0,output:0,reasoning:0,total:0}))}{row('合计',report.total)}</tbody></table></div>
   <p className="sg-help">调用过 B 站工具的整轮对话（包括工具前后生成）记为 B 站任务，QQ 视频 / 动图与 B 站自主生活按各自的单次模型调用独立归类；其余按 QQ / DSH 归类。B 站 HTTP 请求、扫码、手动查记忆本身不产生模型 Token。重试、失败及中断已返回的用量也会记录；缺失用量不会按 0 宣称实际消耗。</p>
   {report.models.length>0&&<details><summary>按模型查看</summary>{report.models.map(m=><p key={m.provider+'/'+m.model}>{m.provider} / {m.model}：{number(m.total)} Token，{m.calls} 次调用，{m.missing} 次缺失</p>)}</details>}
   {report.total.missing>0&&<p className="sg-notice">部分调用没有可用的 Token 数据，已知合计可能低于实际消耗；请结合模型服务商的账单核对。</p>}</>}
   <details><summary>怎样测试一天的消耗</summary><p>连接 QQ 与 B 站并选择固定模型。记下开始时的数字，先做普通 QQ 聊天，再明确追问旧事，最后通过主人私聊要求读取指定 B 站视频或发表评论。每组完成后刷新，比较各项增量；正常运行一天后导出当天记录，与服务商同一时区、同一 API Key 的用量核对。</p><p>每次模型请求都会计算实际发送的上下文。日常只带限量当天笔记、最近对话和当前输入；追问历史才加入检索片段。工具调用会增加模型轮次，当天内容也可能再次计入输入；缓存命中仍有独立用量。字符预算不等于 Token 数。</p></details></section>;
 }
 
-export function UpdatesPanel({api,dirty}:{api:PanelApi;dirty:boolean}) {
+export function UpdatesPanel({api,dirty,settings:s,onChange}:{api:PanelApi;dirty:boolean;settings:Settings;onChange:(s:Settings)=>void}) {
   const [state,setState]=useState<UpdateState>(),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   useEffect(()=>{const abort=new AbortController();const load=()=>void api.call<UpdateState>('update-status',{},abort.signal).then(setState).catch(e=>{if(!abort.signal.aborted)setError(message(e));});load();const timer=setInterval(load,2000);return()=>{abort.abort();clearInterval(timer);};},[api]);
   async function action(name:string){setBusy(true);setError('');try{setState(await api.call<UpdateState>(name,{version:state?.latest?.version}));}catch(e){setError(message(e));}finally{setBusy(false);}}
+  const edit=(patch:Partial<Settings['updates']>)=>onChange({...s,updates:{...s.updates,...patch}});
   const running=busy||!!state&&['checking','downloading','installing'].includes(state.phase);
   return <section className="sg-section"><h2>让拾光跟上新的变化</h2><p>仓库：<a href="https://github.com/Lyuu508/dsh-shiguang" target="_blank" rel="noreferrer">Lyuu508/dsh-shiguang</a></p><div className="sg-overview"><div className="sg-status"><span>正在运行</span><strong>{state?.current||'—'}</strong></div><div className="sg-status"><span>仓库最新</span><strong>{state?.latest?.version||'尚未检查'}</strong></div><div className="sg-status"><span>上次检查</span><strong>{state?.checkedAt?new Date(state.checkedAt).toLocaleString():'—'}</strong></div></div>
-  <div className="sg-row"><button disabled={running} onClick={()=>void action('update-check')}>检查更新</button><button className="sg-primary" disabled={running||dirty||!state?.available||!state.canInstall||state.phase!=='idle'} onClick={()=>void action('update-install')}>下载并安装更新</button>{state?.latest&&<a href={state.latest.url} target="_blank" rel="noreferrer">打开版本页面</a>}</div>
+  <div className="sg-row"><button disabled={running} onClick={()=>void action('update-check')}>检查更新</button><button className="sg-primary" disabled={running||dirty||!state?.available||!state.canInstall||state.phase!=='idle'} onClick={()=>void action('update-install')}>下载并安装更新</button>{state&&['checking','downloading'].includes(state.phase)&&<button onClick={()=>void action('update-cancel')}>取消当前网络请求</button>}{state?.latest&&<a href={state.latest.url} target="_blank" rel="noreferrer">打开版本页面</a>}</div>
+  {state?.phase==='downloading'&&state.total&&<progress max={state.total} value={state.downloaded||0}/>}
+  <details><summary>连接与下载设置</summary><p className="sg-help">检查和下载在后台运行，页面立即返回。GitHub API 不可用时改读仓库版本清单；安装包下载后仍须通过官方仓库的 SHA256 校验。</p><div className="sg-grid"><label>单次检查等待（秒）<input type="number" min={3} max={60} value={s.updates.timeoutMs/1000} onChange={e=>edit({timeoutMs:Number(e.target.value)*1000})}/></label><label>单次下载等待（秒）<input type="number" min={30} max={900} value={s.updates.downloadTimeoutMs/1000} onChange={e=>edit({downloadTimeoutMs:Number(e.target.value)*1000})}/></label><label>失败重试次数<input type="number" min={0} max={3} value={s.updates.retries} onChange={e=>edit({retries:Number(e.target.value)})}/></label></div><label>可选安装包加速前缀<input placeholder="https://你信任的加速服务/" value={s.updates.mirrorUrl} onChange={e=>edit({mirrorUrl:e.target.value})}/></label><p className="sg-help">留空直连 GitHub，只加速安装包；版本与校验记录仍从官方仓库读取。修改后先保存再重试。</p></details>
   {dirty&&<p className="sg-help">请先保存面板修改，再安装更新。</p>}<p className={state?.phase==='error'?'sg-notice error':'sg-notice'} role="status">{state?.message||'正在读取更新状态…'}</p>{error&&<p role="alert" className="sg-notice error">{error}</p>}
   {state&&!state.canInstall&&<p className="sg-help">当前 DSH 未启用插件管理服务，可从版本页面手动下载后安装。</p>}
   <p className="sg-help">从此仓库的已发布版本获取安装包（包含预览版），校验 SHA256 后由 DSH 安装。配置、登录凭据与记忆保留在原数据目录。DSH 替换插件时可能关闭设置页，重新打开本页可查看保存的进度；完成后按提示重启 DSH 并刷新页面。</p>

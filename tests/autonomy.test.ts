@@ -29,7 +29,7 @@ function platform(){
  return {calls,fetcher,setFail:()=>{failDynamic=true;}};
 }
 function configure(f:ReturnType<typeof fixture>){
- Object.assign(f.settings.bilibili,{enabled:true,allowedTags:['科技'],blockedTags:['广告'],allowComments:true,allowDynamics:true});Object.assign(f.settings.autonomy,{enabled:true,autoComment:true,autoDynamic:true});f.settings.provider='auto-test';f.settings.model='scripted';writeFileSync(join(f.dir,'bilibili.cookies.json'),JSON.stringify({SESSDATA:'fake-session',bili_jct:'fake-csrf'}));
+ Object.assign(f.settings.bilibili,{enabled:true,allowedTags:['科技'],blockedTags:['广告'],allowComments:true,allowDynamics:true});Object.assign(f.settings.autonomy,{enabled:true,chooseBrowsing:false,autoComment:true,autoDynamic:true});f.settings.provider='auto-test';f.settings.model='scripted';writeFileSync(join(f.dir,'bilibili.cookies.json'),JSON.stringify({SESSDATA:'fake-session',bili_jct:'fake-csrf'}));
 }
 class Planner extends LlmAdapter{
  requests:GenerateOptions[]=[];
@@ -84,6 +84,6 @@ test('夏令时重复时段和进程重启不重复醒来；手动执行计入�
 test('停止正在思考的自主任务，不排队等思考结束，不执行后续发布',async()=>{
  const f=fixture();configure(f);const ctx=new Context(),m=new MemoryStore(':memory:',f.settings.roleId,'UTC',f.settings.memory),p=platform();let auto:Autonomy|undefined,started:()=>void=()=>{};const ready=new Promise<void>(r=>{started=r;});
  class Waiting extends LlmAdapter{async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{started();await new Promise((_,reject)=>{if(options.signal?.aborted)return reject(new Error('cancelled'));options.signal?.addEventListener('abort',()=>reject(new Error('cancelled')),{once:true});});yield {type:'finish',reason:{kind:'stop'}};}}
- try{await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['auto-test'],new Waiting());auto=new Autonomy(ctx,f.settings,m,new BilibiliClient(f.settings,m,p.fetcher),async run=>run(),()=>{});const task=auto.run();await ready;auto.cancelCurrent();await assert.rejects(task,/未完整返回/);assert.equal(p.calls.filter(c=>c.init?.method==='POST').length,0);assert.equal(auto.status().runs[0]?.status,'failed');}
+ try{await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['auto-test'],new Waiting());auto=new Autonomy(ctx,f.settings,m,new BilibiliClient(f.settings,m,p.fetcher),async run=>run(),()=>{});const task=auto.run();await ready;auto.cancelCurrent();await assert.rejects(task,/未完整返回|abort|cancelled/);assert.equal(p.calls.filter(c=>c.init?.method==='POST').length,0);assert.equal(auto.status().runs[0]?.status,'failed');}
  finally{auto?.stop();await ctx.fiber.dispose();m.close();f.cleanup();}
 });

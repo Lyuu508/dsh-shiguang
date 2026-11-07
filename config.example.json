@@ -79,7 +79,15 @@
     "autoDynamic": false,
     "includeQQNotes": false,
     "maxOutputTokens": 700,
-    "contextChars": 1200
+    "contextChars": 1200,
+    "scheduleMode": "fixed",
+    "minWakeMinutes": 45,
+    "maxWakeMinutes": 240,
+    "quietStart": "23:00",
+    "quietEnd": "08:00",
+    "chooseBrowsing": true,
+    "allowDeep": false,
+    "recommendOwner": false
   },
   "biliVision": {
     "enabled": false,
@@ -94,7 +102,9 @@
     "maxOutputTokens": 480,
     "dailyLimit": 12,
     "subtitleChars": 1800,
-    "cacheHours": 24
+    "cacheHours": 24,
+    "deepSegmentSeconds": 90,
+    "deepMaxSegments": 8
   },
   "voice": {
     "enabled": false,
@@ -109,5 +119,36 @@
     "dailyLimit": 30,
     "timeoutMs": 30000,
     "speechRate": 0
+  },
+  "updates": {
+    "timeoutMs": 15000,
+    "downloadTimeoutMs": 300000,
+    "retries": 2,
+    "mirrorUrl": ""
+  },
+  "proactive": {
+    "enabled": false,
+    "activity": "normal",
+    "minGapMinutes": 60,
+    "maxGapMinutes": 240,
+    "maxPerDay": 4,
+    "decisionsPerDay": 8,
+    "quietStart": "23:00",
+    "quietEnd": "08:00",
+    "waitForReply": true,
+    "contextChars": 1200,
+    "maxTokens": 480,
+    "company": 30,
+    "care": 25,
+    "share": 20,
+    "play": 15,
+    "chat": 10
+  },
+  "biliSocial": {
+    "ownerUids": [],
+    "dmEnabled": false,
+    "pollSeconds": 60,
+    "repliesPerDay": 20,
+    "minReplySeconds": 10
   }
 }

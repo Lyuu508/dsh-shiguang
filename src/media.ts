@@ -50,6 +50,11 @@ export function pickFrames(pixels:Buffer,max:number):number[] {
   return selected.sort((a,b)=>a-b);
 }
 export interface FrameSheet { bytes:Buffer; duration:number; times:number[]; width:number; height:number }
+export async function frameSheetRange(file:string,dir:string,c:MediaSettings,signal:AbortSignal,start:number,duration:number):Promise<FrameSheet>{
+  const clip=join(dir,'segment.mp4');
+  await run(c.ffmpegPath,['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-format_whitelist',FORMATS,'-ss',String(start),'-i',file,'-t',String(duration),'-an','-sn','-dn','-vf','scale=640:-2','-c:v','libx264','-preset','ultrafast','-threads','1','-y',clip],signal);
+  return frameSheet(clip,dir,c,signal);
+}
 export async function frameSheet(file:string,dir:string,c:MediaSettings,signal:AbortSignal):Promise<FrameSheet> {
   const probe=JSON.parse((await run(c.ffprobePath,['-v','error','-protocol_whitelist','file,pipe','-format_whitelist',FORMATS,'-show_streams','-show_format','-of','json',file],signal,256*1024)).toString('utf8'));
   const video=probe.streams?.find((s:Record<string,unknown>)=>s.codec_type==='video');

@@ -17,7 +17,7 @@ import { recordUsage } from './usage.js';
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap { shiguang: { kind: 'shiguang' } }
 }
-export interface ChatInput { scope: string; thread: string; owner: boolean; platform: 'qq' | 'dsh'; text: string; externalKey?: string }
+export interface ChatInput { scope: string; thread: string; owner: boolean; platform: 'qq' | 'dsh' | 'bilibili'; text: string; externalKey?: string }
 const stringOutput = { schema: { type: 'string' as const }, render: (_args: unknown, value: string) => [{ type: 'text' as const, text: value }] };
 const stringField = { type: 'string', required: true } as const;
 
@@ -69,8 +69,8 @@ export function registerMemoryTools(ctx: Context, settings: Settings, memory: Me
 function registerBiliTools(ctx: Context, memory: MemoryStore, bili: BilibiliClient, scope: string,vision?:BiliVision): void {
   if(vision&&bili.settings.biliVision.enabled)ctx.tools.register(defineTool({
     name:'shiguang_bili_watch',description:'读取 B 站视频内部内容：下载有权限的视频，抽取关键帧并结合可用字幕做有限识别。不是逐秒观看，也没有原始音频转写。仅主人可用，遵守标签与预算。',
-    parameters:{video:{type:'string',required:true},question:{type:'string'},part:{type:'number',description:'分 P 编号，默认 1'}},output:stringOutput,
-    async execute(args,exec){return vision.watch(args.video,args.question,args.part??1,exec.signal);},
+    parameters:{video:{type:'string',required:true},question:{type:'string'},part:{type:'number',description:'分 P 编号，默认 1'},depth:{type:'string',enum:['shallow','deep'],description:'shallow 浅看一次；deep 按时间段覆盖整个分 P，每段单独消耗识别额度'}},output:stringOutput,
+    async execute(args,exec){return vision.watch(args.video,args.question,args.part??1,exec.signal,args.depth==='deep'?'deep':'shallow');},
   }));
   if(bili.settings.bilibili.allowedTags.length)ctx.tools.register(defineTool({
     name:'shiguang_bili_browse',description:'按已配置的标签白名单寻找视频，并核验真实标签排除黑名单。只读取介绍，不声称看过画面或听过声音。',parameters:{},output:stringOutput,

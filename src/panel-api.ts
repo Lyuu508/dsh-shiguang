@@ -30,9 +30,14 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'voice-key':return runtime.enqueue(()=>runtime.saveVoiceSecret(text(args.secret)));
     case 'voice-status':return runtime.voice.status();
     case 'voice-test':return runtime.enqueue(async()=>{const result=await runtime.voice.synthesize(text(args.text),'owner',signal);return {audio:'data:audio/mpeg;base64,'+result.bytes.toString('base64'),chars:result.chars,billedChars:result.billedChars,reused:result.reused,status:runtime.voice.status()};});
-    case 'bili-watch':return runtime.enqueue(()=>runtime.biliVision.watch(text(args.video),text(args.question,'概括视频里的主要内容'),typeof args.part==='number'?args.part:1,signal));
+    case 'bili-watch':return runtime.startWatch(text(args.video),text(args.question,'概括视频里的主要内容'),typeof args.part==='number'?args.part:1,args.depth==='deep'?'deep':'shallow');
+    case 'watch-status':return {...runtime.watchJob};
+    case 'watch-cancel':return runtime.cancelWatch();
+    case 'bili-dm-poll':return runtime.biliSocial.requestPoll();
+    case 'proactive-now':return runtime.proactive.consider();
+    case 'proactive-cancel':runtime.proactive.cancel();return runtime.proactive.status();
     case 'auto-status':return runtime.autonomy.status();
-    case 'wake-now':return runtime.enqueue(()=>runtime.autonomy.run());
+    case 'wake-now':return runtime.autonomy.wake();
     case 'wake-cancel':runtime.autonomy.cancelCurrent();return runtime.autonomy.status();
     case 'memory-export':return exportMemoryPage(runtime.memory,text(args.scope,'owner'),args.range==='today'?'today':'all',typeof args.after==='number'?args.after:0,typeof args.snapshot==='number'?args.snapshot:undefined,text(args.day,runtime.memory.today()));
     case 'memory-import': {
@@ -42,7 +47,8 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'usage': return dailyUsage(runtime.memory,text(args.day,runtime.memory.today()));
     case 'media-check': return checkMediaTools(runtime.settings.media);
     case 'update-status': return runtime.updates.view();
-    case 'update-check': return runtime.updates.check();
+    case 'update-check': return runtime.updates.beginCheck();
+    case 'update-cancel':return runtime.updates.cancel();
     case 'update-install': return runtime.updates.start(text(args.version));
     case 'save': return runtime.save(args.settings,text(args.revision),text(args.token));
     case 'qq-check': return runtime.enqueue(() => runtime.qq.check());

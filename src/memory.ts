@@ -41,8 +41,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 6) throw new Error('记忆数据库来自更新版本，请升级插件');
-    if ([1,2,3,4,5].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
+    if (Number(version) > 7) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if ([1,2,3,4,5,6].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -81,7 +81,12 @@ export class MemoryStore {
         chars INTEGER NOT NULL,billed_chars INTEGER,status TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS voice_usage_day ON voice_usage(role,day);
-      PRAGMA user_version=6;
+      CREATE TABLE IF NOT EXISTS scheduler_state(role TEXT NOT NULL,name TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(role,name));
+      CREATE TABLE IF NOT EXISTS initiative_runs(id TEXT PRIMARY KEY,role TEXT NOT NULL,day TEXT NOT NULL,time INTEGER NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL,summary TEXT NOT NULL DEFAULT '');
+      CREATE INDEX IF NOT EXISTS initiative_day ON initiative_runs(role,kind,day,time DESC);
+      CREATE TABLE IF NOT EXISTS bili_dm_cursor(role TEXT NOT NULL,account TEXT NOT NULL,uid TEXT NOT NULL,seq TEXT NOT NULL,PRIMARY KEY(role,account,uid));
+      CREATE TABLE IF NOT EXISTS bili_dm_receipts(role TEXT NOT NULL,account TEXT NOT NULL,uid TEXT NOT NULL,seq TEXT NOT NULL,status TEXT NOT NULL,PRIMARY KEY(role,account,uid,seq));
+      PRAGMA user_version=7;
     `);
   }
   today(): string { return dayKey(this.clock(), this.timezone); }
@@ -140,14 +145,14 @@ export class MemoryStore {
   reserveComment(key: string, perDay: number, intervalMs: number): void {
     this.reserveAction('bili-comment',key,perDay,intervalMs);
   }
-  actionQuota(kind:'bili-comment'|'bili-dynamic',day=this.today()):{today:number;last:number|null}{
+  actionQuota(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm',day=this.today()):{today:number;last:number|null}{
     const count=this.db.prepare('SELECT count(*) AS n FROM actions WHERE role=? AND kind=? AND day=?').get(this.roleId,kind,day);
     const last=this.db.prepare('SELECT time FROM actions WHERE role=? AND kind=? ORDER BY time DESC LIMIT 1').get(this.roleId,kind);
     return {today:Number(count?.n),last:last?Number(last.time):null};
   }
-  reserveAction(kind:'bili-comment'|'bili-dynamic',key:string,perDay:number,intervalMs:number):void {
+  reserveAction(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm',key:string,perDay:number,intervalMs:number):void {
     const day = this.today(), time = this.clock();
-    const label=kind==='bili-comment'?'评论':'动态';
+    const label=kind==='bili-comment'?'评论':kind==='bili-dynamic'?'动态':kind==='bili-dm'?'B 站私信':'QQ 主动联系';
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (this.db.prepare('SELECT key FROM actions WHERE key=?').get(key)) throw new Error(`这次${label}已提交过或结果待核实；请先去 B 站查看，插件不会重复发送`);

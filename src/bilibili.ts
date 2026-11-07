@@ -14,6 +14,12 @@ export class BiliApiError extends Error {
     super(`B 站接口未成功，code=${code}${[12015, -352, -412].includes(code) ? '，需要在官方客户端完成验证后重试' : code === -101 ? '，登录已过期，请重新扫码' : ''}`);
   }
 }
+export function losslessJSON(text:string):unknown {
+  let out='',quoted=false,escaped=false;
+  for(let i=0;i<text.length;i++){const ch=text[i]!;if(quoted){out+=ch;if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')quoted=false;continue;}if(ch==='"'){quoted=true;out+=ch;continue;}
+    if(ch==='-'||/\d/.test(ch)){const match=/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(text.slice(i));if(match){out+=/^-?\d{16,}$/.test(match[0])?JSON.stringify(match[0]):match[0];i+=match[0].length-1;continue;}}out+=ch;
+  }return JSON.parse(out);
+}
 const AGENT = 'Mozilla/5.0';
 export interface BiliVideo {aid:string;bvid:string;title:string;description:string;owner:string;url:string}
 export function normalizedTag(text:string):string{return text.normalize('NFKC').trim().replace(/^#+|#+$/g,'').toLowerCase();}
@@ -200,7 +206,7 @@ export class BilibiliClient {
     this.memory.settleAction(key,'sent',String(id));const url=`https://t.bilibili.com/${id}`;
     this.memory.append('owner','bilibili','bilibili','experience',`已发布文字动态：${text}；${url}`);return {id:String(id),url};
   }
-  async comment(input: string, text: string, root = '', parent = '', signal?: AbortSignal): Promise<{ rpid: string; url: string }> {
+  async comment(input: string, text: string, root = '', parent = '', signal?: AbortSignal,mentions:Record<string,string>={}): Promise<{ rpid: string; url: string }> {
     const b = this.settings.bilibili;
     if (!b.enabled || !b.allowComments) throw new Error('B 站评论尚未启用，请在本机配置 bilibili.allowComments');
     if (!text.trim() || [...text].length > 1000) throw new Error('评论应为 1–1000 字');
@@ -209,6 +215,7 @@ export class BilibiliClient {
     const video = await this.video(input, signal);
     const key = createHash('sha256').update(JSON.stringify([this.settings.roleId, this.memory.today(), video.aid, text.trim(), root, parent])).digest('hex');
     const form = new URLSearchParams({ type: '1', oid: video.aid, message: text.trim(), plat: '1', csrf: cookies.bili_jct!, ...(root ? { root, parent: parent || root } : {}) });
+    if(Object.keys(mentions).length){for(const [name,uid] of Object.entries(mentions))if(!this.settings.biliSocial.ownerUids.includes(uid)||!text.includes('@'+name))throw new Error('只能 @ 主人 UID 白名单中的已核验账号');form.set('at_name_to_mid',JSON.stringify(mentions));}
     this.memory.reserveComment(key, b.commentsPerDay, b.minCommentIntervalMs);
     let result: { data: ObjectValue; response: Response };
     try {
@@ -222,9 +229,50 @@ export class BilibiliClient {
     }
     if (result.data.need_captcha === true) { this.memory.settleAction(key, 'unknown', '需要验证码'); throw new Error('B 站要求验证码，请在官方客户端处理并核实评论状态'); }
     const rpid = result.data.rpid_str ?? result.data.rpid;
-    if (typeof rpid !== 'string' && typeof rpid !== 'number') { this.memory.settleAction(key, 'unknown', '无评论回执'); throw new Error('B 站未返回评论 ID，请先在客户端核实'); }
+    if (!/^[1-9]\d*$/.test(String(rpid)) || typeof rpid==='number'&&!Number.isSafeInteger(rpid)) { this.memory.settleAction(key, 'unknown', '无评论回执'); throw new Error('B 站未返回评论 ID，请先在客户端核实'); }
     this.memory.settleAction(key, 'sent', String(rpid));
     this.memory.append('owner', 'bilibili', 'bilibili', 'experience', `已在《${video.title}》评论：${text.trim()}；视频 ${video.url}；评论ID ${String(rpid)}`);
     return { rpid: String(rpid), url: `${video.url}#reply${String(rpid)}` };
+  }
+  async recommend(input:string,text:string,signal?:AbortSignal):Promise<{rpid:string;url:string}>{
+    const uids=this.settings.biliSocial.ownerUids;if(!this.settings.autonomy.recommendOwner||!uids.length)throw new Error('请先开启推荐并填写主人 UID 白名单');
+    const account=await this.account(signal);if(!account.loggedIn)throw new Error('B 站登录已过期');
+    const mentions:Record<string,string>={};
+    for(const uid of uids){if(uid===account.userId)continue;const data=await this.playerRequest('/x/space/wbi/acc/info',{mid:uid},signal);if(typeof data.name!=='string'||!data.name.trim()||data.name.length>80)throw new Error('未能核验主人昵称，本次不发送纯文字假 @');if(mentions[data.name]&&mentions[data.name]!==uid)throw new Error('主人昵称重复，无法准确 @，请缩小 UID 白名单');mentions[data.name]=uid;}
+    if(!Object.keys(mentions).length)throw new Error('无法通过评论 @ 当前登录账号自己，请填写主人的另一个 UID');
+    return this.comment(input,Object.keys(mentions).map(n=>'@'+n+' ').join('')+text,'','',signal,mentions);
+  }
+  private async vc(path:string,init:RequestInit={},signal?:AbortSignal):Promise<ObjectValue>{
+    const cookies=this.cookies(),response=await this.fetcher('https://api.vc.bilibili.com'+path,{...init,headers:{'User-Agent':AGENT,Referer:'https://message.bilibili.com/','Content-Type':'application/x-www-form-urlencoded',Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; '),...init.headers},redirect:'error',signal:AbortSignal.any([AbortSignal.timeout(this.settings.bilibili.timeoutMs),...(signal?[signal]:[])])});
+    if(!response.ok)throw new Error('B 站私信 HTTP '+response.status);
+    if(!response.body)throw new Error('B 站私信响应为空');const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
+    try{for(;;){const r=await reader.read();if(r.done)break;size+=r.value.length;if(size>1024*1024)throw new Error('B 站私信响应过大');chunks.push(r.value);}}finally{await reader.cancel().catch(()=>{});}
+    const value=object(losslessJSON(Buffer.concat(chunks).toString('utf8')));if(value.code!==0)throw new BiliApiError(Number(value.code));return object(value.data);
+  }
+  private dmAllowed(uid:string){if(!this.settings.bilibili.enabled||!this.settings.biliSocial.dmEnabled||!this.settings.biliSocial.ownerUids.includes(uid))throw new Error('该 UID 未获主人私信白名单授权');}
+  async directMessages(uid:string,after?:string,signal?:AbortSignal):Promise<{seq:string;messages:{seq:string;text:string}[]}>{
+    this.dmAllowed(uid);if(after!==undefined&&!/^\d+$/.test(after))throw new Error('私信游标无效');
+    let end:string|undefined;const rows:{seq:string;text:string}[]=[];let highest=after??'0';
+    for(let page=0;page<5;page++){
+      const query=new URLSearchParams({talker_id:uid,session_type:'1',size:'20',sender_device_id:'1',mobi_app:'web',build:'0',...(after!==undefined?{begin_seqno:after}:{}),...(end?{end_seqno:end}:{})});
+      const data=await this.vc('/svr_sync/v1/svr_sync/fetch_session_msgs?'+query,{},signal),messages=Array.isArray(data.messages)?data.messages:[];
+      const max=String(data.max_seqno??'0');if(/^\d+$/.test(max)&&BigInt(max)>BigInt(highest))highest=max;
+      if(after===undefined)return {seq:highest,messages:[]};
+      for(const row of messages){const seq=String(row?.msg_seqno??'');if(!/^\d+$/.test(seq)||BigInt(seq)<=BigInt(after)||String(row.sender_uid)!==uid||row.receiver_type!==1||row.msg_type!==1||row.msg_status!==0||typeof row.content!=='string')continue;let body:unknown;try{body=JSON.parse(row.content);}catch{continue;}const text=(body as {content?:unknown})?.content;if(typeof text==='string'&&text.trim()&&text.length<=10000)rows.push({seq,text});}
+      if(!data.has_more||!messages.length)return {seq:highest,messages:[...new Map(rows.map(r=>[r.seq,r])).values()].sort((a,b)=>BigInt(a.seq)<BigInt(b.seq)?-1:1)};
+      const min=String(data.min_seqno??'');if(!/^\d+$/.test(min)||BigInt(min)<=BigInt(after))return {seq:highest,messages:rows.sort((a,b)=>BigInt(a.seq)<BigInt(b.seq)?-1:1)};if(end===min)throw new Error('私信分页游标未前进，本轮不跳过消息');end=min;
+    }throw new Error('新私信积压超过本轮读取范围，本次未推进游标；请在官方客户端处理积压');
+  }
+  async sendDirect(uid:string,text:string,externalKey:string,signal?:AbortSignal):Promise<string>{
+    this.dmAllowed(uid);text=text.trim();if(!text||Buffer.byteLength(JSON.stringify({content:text}))>2000)throw new Error('B 站私信正文为空或超过 2000 字节');
+    const account=await this.account(signal);if(!account.loggedIn||!/^\d+$/.test(account.userId)||uid===account.userId)throw new Error('B 站私信账号无效或正在给自己发消息');
+    const cookies=this.cookies(),key=createHash('sha256').update(JSON.stringify([account.userId,uid,externalKey])).digest('hex');
+    this.memory.reserveAction('bili-dm',key,this.settings.biliSocial.repliesPerDay,this.settings.biliSocial.minReplySeconds*1000);
+    try{
+      // Same documented WBI image keys; no private session cookie leaves Bilibili.
+      if(!this.playbackKeys||this.playbackKeys.expires<this.memory.clock()){const {data}=await this.request('https://api.bilibili.com/x/web-interface/nav',{headers:{Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')}},signal);const keys=object(data.wbi_img),extract=(v:unknown)=>typeof v==='string'?new URL(v).pathname.split('/').at(-1)!.split('.')[0]!:'';this.playbackKeys={image:extract(keys.img_url),sub:extract(keys.sub_url),expires:this.memory.clock()+300000};}
+      const device=randomUUID(),query=wbiQuery({w_sender_uid:account.userId,w_receiver_id:uid,w_dev_id:device},this.playbackKeys.image,this.playbackKeys.sub,this.memory.clock()),form=new URLSearchParams({'msg[sender_uid]':account.userId,'msg[receiver_id]':uid,'msg[receiver_type]':'1','msg[msg_type]':'1','msg[msg_status]':'0','msg[dev_id]':device,'msg[timestamp]':String(Math.floor(Date.now()/1000)),'msg[new_face_version]':'1','msg[content]':JSON.stringify({content:text}),csrf:cookies.bili_jct!,csrf_token:cookies.bili_jct!,build:'0',mobi_app:'web'});
+      const data=await this.vc('/web_im/v1/web_im/send_msg?'+query,{method:'POST',body:form},signal),receipt=String(data.msg_key??'');if(!/^[1-9]\d*$/.test(receipt))throw new Error('未收到私信消息 ID');this.memory.settleAction(key,'sent',receipt);return receipt;
+    }catch(error){this.memory.settleAction(key,error instanceof BiliApiError?'failed':'unknown','需核实平台状态');if(error instanceof BiliApiError)throw error;throw new Error('B 站私信发送结果未知，不会自动重发，请在官方客户端核实');}
   }
 }

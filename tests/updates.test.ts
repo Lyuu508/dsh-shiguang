@@ -60,3 +60,20 @@ test('DSH 重建面板服务后继续显示安装进度和结果，旧进程中�
   const path=join(f.dir,'updates','status.json'),saved=JSON.parse(readFileSync(path,'utf8'));saved.boot='old-process';saved.state.phase='installing';writeFileSync(path,JSON.stringify(saved));assert.equal(new UpdateManager(ctx,f.dir,fetcher).view().phase,'error');
  }finally{await ctx.fiber.dispose();f.cleanup();}
 });
+
+test('慢检查立即返回后台状态；重复点击不重复请求，页面轮询取到完成结果',async()=>{
+ const f=fixture(),ctx=new Context();let release:(v:Response)=>void=()=>{},calls=0;
+ const update=new UpdateManager(ctx,f.dir,async()=>{calls++;return new Promise(r=>{release=r;});});
+ try{assert.equal(update.beginCheck().phase,'checking');assert.equal(update.beginCheck().phase,'checking');assert.equal(calls,1);release(Response.json([{tag_name:'v0.1.100'}]));await update.whenIdle();assert.equal(update.view().latest?.version,'0.1.100');}finally{await ctx.fiber.dispose();f.cleanup();}
+});
+test('GitHub API 限额时读取仓库版本清单；下载才使用指定加速，校验仍用官方地址',async()=>{
+ const f=fixture(),ctx=new Context(),bytes=Buffer.from('mock'),urls:string[]=[];ctx.provide('pluginManager',{installBundle:async()=>({application:'restart-required',version:'0.1.100'})} as never);
+ const u=new UpdateManager(ctx,f.dir,async url=>{urls.push(String(url));if(String(url).includes('api.github.com'))return new Response('',{status:403});if(String(url).endsWith('latest.json'))return Response.json({version:'0.1.100',notes:'备用版本清单'});if(String(url).endsWith('.txt'))return new Response(createHash('sha256').update(bytes).digest('hex')+'  dsh-shiguang-0.1.100.tgz');return new Response(bytes);},()=>({...f.settings.updates,mirrorUrl:'https://mirror.example.test/'}));
+ try{await u.check();assert.equal(u.view().latest?.version,'0.1.100');u.start('0.1.100');await u.whenIdle();assert.equal(u.view().phase,'done');assert.ok(urls[2]?.startsWith('https://raw.githubusercontent.com/'));assert.ok(urls[3]?.startsWith('https://mirror.example.test/https://raw.githubusercontent.com/'));}finally{await ctx.fiber.dispose();f.cleanup();}
+});
+test('连接超时重试次数有上限，错误中文化；取消检查会终止请求且不调用安装器',async()=>{
+ const f=fixture(),ctx=new Context();let calls=0;
+ try{const u=new UpdateManager(ctx,f.dir,async()=>{calls++;throw new DOMException('The operation was aborted due to timeout','TimeoutError');},()=>({...f.settings.updates,retries:1}));await u.check();assert.equal(calls,4);assert.match(u.view().message,/连接 GitHub 超时/);
+ const c=new UpdateManager(ctx,f.dir,async(_url,init)=>new Promise((_r,reject)=>init?.signal?.addEventListener('abort',()=>reject(new Error('aborted')),{once:true})));c.beginCheck();c.cancel();await c.whenIdle();assert.equal(c.view().phase,'error');assert.match(c.view().message,/已取消/);
+ }finally{await ctx.fiber.dispose();f.cleanup();}
+});
