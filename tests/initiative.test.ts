@@ -7,6 +7,7 @@ import {writeFileSync} from 'node:fs';import {join} from 'node:path';
 import {MemoryStore} from '../src/memory.js';import {BilibiliClient,losslessJSON} from '../src/bilibili.js';
 import {Proactive,chooseMotive} from '../src/proactive.js';import {BiliSocial} from '../src/bili-social.js';
 import {quietAt,stateValue,setState} from '../src/initiative.js';import {Autonomy} from '../src/autonomy.js';
+import {BodyClock} from '../src/body-clock.js';
 import {ChatDriver} from '../src/agent.js';import type {OneBotClient} from '../src/onebot.js';import type {BiliVision} from '../src/bili-vision.js';
 import {dailyUsage} from '../src/usage.js';import {fixture} from './helpers.js';
 class Planner extends LlmAdapter{
@@ -36,8 +37,8 @@ test('QQ 未知发送结果占额度且重启后未回复不再发送；限额�
  const f=fixture(),model=new Planner(()=>({send:true,text:'想分享今天的小事',reason:'分享'})),ctx=await harness(f,model);let now=Date.parse('2026-11-07T12:00Z');const m=new MemoryStore(join(f.dir,'m.sqlite'),f.settings.roleId,'UTC',f.settings.memory,()=>now);let sends=0;
  Object.assign(f.settings.qq,{enabled:true,ownerQQ:'10001'});f.settings.proactive.enabled=true;
  const qq={status:()=>({state:'connected'}),check:async()=>({online:true,userId:'10002'}),send:async()=>{sends++;throw Error('unknown send');}} as unknown as OneBotClient;
- let p=new Proactive(ctx,f.settings,m,qq,async r=>r(),()=>{});
- try{await assert.rejects(p.run(),/unknown/);assert.equal(m.actionQuota('qq-proactive').today,1);assert.equal(m.db.prepare("SELECT status FROM actions WHERE kind='qq-proactive'").get()?.status,'unknown');p.stop();now+=3600000;p=new Proactive(ctx,f.settings,m,qq,async r=>r(),()=>{});await p.run();assert.equal(sends,1);f.settings.proactive.waitForReply=false;f.settings.proactive.maxPerDay=1;await p.run();assert.equal(model.requests.length,1);f.settings.proactive.maxPerDay=4;now=Date.parse('2026-11-07T23:30Z');await p.run();assert.equal(model.requests.length,1);}finally{p.stop();await ctx.fiber.dispose();m.close();f.cleanup();}
+ f.settings.clock.enabled=true;let p=new Proactive(ctx,f.settings,m,qq,async r=>r(),()=>{},Math.random,()=>new BodyClock(f.settings,m).canAct());
+ try{await assert.rejects(p.run(),/unknown/);assert.equal(m.actionQuota('qq-proactive').today,1);assert.equal(m.db.prepare("SELECT status FROM actions WHERE kind='qq-proactive'").get()?.status,'unknown');p.stop();now+=3600000;p=new Proactive(ctx,f.settings,m,qq,async r=>r(),()=>{},Math.random,()=>new BodyClock(f.settings,m).canAct());await p.run();assert.equal(sends,1);f.settings.proactive.waitForReply=false;f.settings.proactive.maxPerDay=1;await p.run();assert.equal(model.requests.length,1);f.settings.proactive.maxPerDay=4;now=Date.parse('2026-11-07T23:30Z');await p.run();assert.equal(model.requests.length,1);}finally{p.stop();await ctx.fiber.dispose();m.close();f.cleanup();}
 });
 test('B 站自由醒来由意愿选取视频和深度；跳过的候选不识别不发布，下次间隔持久化',async()=>{
  const f=fixture(),model=new Planner(i=>i===0?{choices:[{bvid:good,depth:'deep'}],reason:'想细看这个知识',nextWakeMinutes:90}:{reason:'先记下来',dynamic:null,comment:null,recommend:null}),ctx=await harness(f,model),now=Date.parse('2026-11-07T12:00Z'),m=new MemoryStore(':memory:',f.settings.roleId,'UTC',f.settings.memory,()=>now);login(f);

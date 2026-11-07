@@ -20,7 +20,7 @@ class Vision extends LlmAdapter {
 }
 const video={aid:123,bvid:'BV1xx411c7mD',title:'吉他演示',desc:'基础姿势',owner:{name:'测试作者'},cid:999,duration:2,pages:[{cid:999,duration:2}]};
 test('B 站内容使用真实 FFmpeg 与 DSH 视觉：一张关键帧图及字幕、摘要复用、独立用量和临时文件清理',async()=>{
- const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory),model=new Vision();let reader:BiliVision|undefined,videoDownloads=0,preview=false,blocked=false;
+ const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory),model=new Vision();let reader:BiliVision|undefined,videoDownloads=0,preview=false,blocked=false,prepared=0;
  try{
   const file=join(f.dir,'source.mp4');execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=red:s=320x180:r=5:d=2','-threads','1','-pix_fmt','yuv420p','-y',file]);const bytes=readFileSync(file);
   f.settings.bilibili.enabled=true;Object.assign(f.settings.biliVision,{enabled:true,provider:'bili-vision-test',model:'image',dailyLimit:2});
@@ -37,10 +37,10 @@ test('B 站内容使用真实 FFmpeg 与 DSH 视觉：一张关键帧图及字�
    throw Error('Unexpected request '+u.pathname);
   };
   await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['bili-vision-test'],model);
-  reader=new BiliVision(ctx,f.settings,memory,new BilibiliClient(f.settings,memory,fetcher),fetcher);
+  reader=new BiliVision(ctx,f.settings,memory,new BilibiliClient(f.settings,memory,fetcher),fetcher,async()=>{prepared++;});
   const result=await reader.watch(video.bvid,'视频里在做什么？');assert.match(result,/持琴/);assert.match(result,/节选的平台字幕/);assert.equal(model.requests.length,1);assert.equal(videoDownloads,1);
   const request=model.requests[0]!;assert.equal(request.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,1);assert.equal(request.maxTokens,480);assert.equal(request.tools,undefined);assert.match(JSON.stringify(request.messages),/注意放松手腕/);assert.doesNotMatch(JSON.stringify(request),/test-session|test-csrf/);
-  assert.match(await reader.watch(video.bvid,'还有什么？'),/复用/);assert.equal(videoDownloads,1);assert.equal(model.requests.length,1);
+  assert.match(await reader.watch(video.bvid,'还有什么？'),/复用/);assert.equal(prepared,1);assert.equal(videoDownloads,1);assert.equal(model.requests.length,1);
   const usage=dailyUsage(memory);assert.equal(usage.total.total,380);assert.equal(usage.categories[0]?.category,'bilibili-video');assert.match(memory.fastContext('owner','bilibili').todayNotes,/识别视频/);assert.deepEqual(readdirSync(join(f.dir,'bili-video-tmp')),[]);
   memory.db.exec('DELETE FROM media_cache');preview=true;await assert.rejects(reader.watch(video.bvid),/播放权限/);assert.equal(model.requests.length,1);
   preview=false;blocked=true;await assert.rejects(reader.watch(video.bvid),/视频流/);assert.equal(model.requests.length,1);

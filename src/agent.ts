@@ -119,9 +119,11 @@ export class ChatDriver {
     if (!selection) throw new Error('尚无可用模型路由：请先在 DSH 打开一个已选择模型的会话，或在 Shiguang 本机配置中填写 provider 和 model');
     // Read before append so the current message is not duplicated in recent context.
     const fast = this.memory.fastContext(input.scope, input.thread);
+    const history = historyRequested(input.text);
+    const recalled=history?this.memory.search(input.scope,input.text.slice(0,200),'all'):[];
+    const recalledText=JSON.stringify(recalled).slice(0,this.settings.memory.recentMaxChars);
     const saved = this.memory.append(input.scope, input.platform, input.thread, 'user', input.text, input.externalKey);
     if (!saved) return null;
-    const history = historyRequested(input.text);
     const allowedTools = ['shiguang_search_memory', 'shiguang_read_memory', 'shiguang_note_today', ...(input.owner && this.settings.bilibili.enabled ? ['shiguang_bili_video',...(this.vision&&this.settings.biliVision.enabled?['shiguang_bili_watch']:[]),...(this.settings.bilibili.allowedTags.length?['shiguang_bili_browse']:[]),...(this.settings.bilibili.allowDynamics?['shiguang_bili_dynamic']:[]), ...(this.settings.bilibili.allowLikes?['shiguang_bili_like']:[]), ...(this.settings.bilibili.allowComments ? ['shiguang_bili_comment'] : [])] : [])];
     const sessionId = `shiguang-${randomUUID()}`;
     const handle = await this.ctx.agents.create({
@@ -137,7 +139,7 @@ export class ChatDriver {
         scoped.systemPrompt.suppressRuntimeContext();
         scoped.systemPrompt.context({ name: 'shiguang:today', order: 500, interpolate: false, required: true, text: () => {
           const current = this.memory.fastContext(input.scope, input.thread);
-          return `当前日期：${current.day}，时区：${this.settings.timezone}。\n今天的重要事实：\n${current.todayNotes || '暂无'}\n本次输入前的近期对话：\n${fast.recent || '暂无'}\n记忆规则：日常聊天只使用以上今天的信息。${history ? '用户提到旧事，可以先搜索短片段，确有必要再展开。' : '本轮禁止读取历史；不能为了聊天自动遍历归档。'}\n用户问今天早些时候的事但这里没有时，可搜索 today。不要编造记忆。新事实可调用 shiguang_note_today 简短保存。`;
+          return `当前日期：${current.day}，时区：${this.settings.timezone}。\n跨 QQ / B 站的相关往事片段（仅有权限且仍记得的记录）：\n${recalled.length?recalledText:'未预先命中；如用户追问往事，可用具体主题检索。'}\n今天的重要事实：\n${current.todayNotes || '暂无'}\n本次输入前的近期对话：\n${fast.recent || '暂无'}\n记忆规则：日常聊天只使用以上今天的信息。${history ? '用户提到旧事，可以先搜索短片段，确有必要再展开。' : '本轮禁止读取历史；不能为了聊天自动遍历归档。'}\n用户问今天早些时候的事但这里没有时，可搜索 today。不要编造记忆。新事实可调用 shiguang_note_today 简短保存。`;
         } });
       },
     });

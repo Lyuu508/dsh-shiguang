@@ -9,13 +9,6 @@
   "replyTimeoutMs": 90000,
   "maxReplyChars": 1500,
   "maxQueue": 20,
-  "napcat": {
-    "mode": "managed",
-    "autoInstall": true,
-    "webuiUrl": "http://127.0.0.1:6099",
-    "downloadConnections": 4,
-    "mirrorUrl": ""
-  },
   "memory": {
     "todayMaxChars": 2600,
     "recentMessages": 12,
@@ -37,6 +30,7 @@
   },
   "bilibili": {
     "enabled": false,
+    "tagWeights": {},
     "manualWhitelist": false,
     "allowLikes": false,
     "likesPerDay": 20,
@@ -172,5 +166,16 @@
     "allowGroups": false,
     "maxFileMB": 5,
     "maxOutputTokens": 240
+  },
+  "snowluma": {
+    "directory": "",
+    "qqPath": "",
+    "webuiUrl": "http://127.0.0.1:5099",
+    "autoStart": false
+  },
+  "retention": {
+    "enabled": true,
+    "forgetAfterDays": 30,
+    "promoteAfter": 5
   }
 }

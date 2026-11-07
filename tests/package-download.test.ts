@@ -9,7 +9,7 @@ import {downloadPackage,type DownloadProgress} from '../src/package-download.js'
 import {fixture} from './helpers.js';
 
 const bytes=Buffer.from(Array.from({length:65536},(_,i)=>(i*31+i%13)%256));
-const asset={url:'https://github.com/NapNeko/NapCatQQ/releases/download/v4.18.42/NapCat.Shell.Windows.Node.zip',size:bytes.length,digest:createHash('sha256').update(bytes).digest('hex')};
+const asset={url:'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip',size:bytes.length,digest:createHash('sha256').update(bytes).digest('hex')};
 test('真实 HTTP Range 并行下载，断网重试保留断点，再次只下载剩余部分并校验合并结果',async()=>{
  const f=fixture();let fail=true,active=0,maxActive=0;const ranges:string[]=[];
  const server=createServer((req,res)=>{

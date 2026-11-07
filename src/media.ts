@@ -53,7 +53,7 @@ export function pickFrames(pixels:Buffer,max:number):number[] {
 export interface FrameSheet { bytes:Buffer; duration:number; times:number[]; width:number; height:number }
 export async function frameSheetRange(file:string,dir:string,c:MediaSettings,signal:AbortSignal,start:number,duration:number):Promise<FrameSheet>{
   const clip=join(dir,'segment.mp4');
-  await run(c.ffmpegPath,['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-format_whitelist',FORMATS,'-ss',String(start),'-i',file,'-t',String(duration),'-an','-sn','-dn','-vf','scale=640:-2','-c:v','libx264','-preset','ultrafast','-threads','1','-y',clip],signal);
+  await run(c.ffmpegPath,['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-format_whitelist',FORMATS,'-ss',String(start),'-i',file,'-t',String(duration),'-an','-sn','-dn','-vf','scale=640:-2','-c:v','mpeg4','-q:v','4','-threads','1','-y',clip],signal);
   return frameSheet(clip,dir,c,signal);
 }
 export async function frameSheet(file:string,dir:string,c:MediaSettings,signal:AbortSignal):Promise<FrameSheet> {
@@ -87,9 +87,10 @@ export function parseVisionAnswer(text:string):{summary:string;reply:string} {
 export interface MediaObservation {id:string;bytes:Buffer;summary:string;source:QQMediaRef}
 export class MediaReader {
   lastObservation?:MediaObservation;
+  ensureTools(){return this.prepare?.()??Promise.resolve();}
   readSource(media:QQMediaRef,qq:OneBotClient,signal:AbortSignal){return this.source(media,qq,signal);}
   private abort=new AbortController();
-  constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly fetcher:typeof fetch=fetch){}
+  constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly fetcher:typeof fetch=fetch,readonly prepare?:()=>Promise<void>){}
   stop():void{this.abort.abort();}
   private route(){
     if(this.settings.media.provider)return {provider:this.settings.media.provider,model:this.settings.media.model};
@@ -120,14 +121,14 @@ export class MediaReader {
     const root=this.settings.media.localMediaDir;
     if(root&&typeof info.file==='string'){
       const allowed=await realpath(root),path=await realpath(info.file.startsWith('file:')?fileURLToPath(info.file):info.file);
-      const part=relative(allowed,path);if(!part||part.startsWith('..')||isAbsolute(part))throw new MediaError('NapCat 媒体文件不在允许的缓存目录中');
-      const details=await stat(path);if(!details.isFile()||details.size>limit)throw new MediaError('NapCat 媒体文件过大或不是普通文件');
+      const part=relative(allowed,path);if(!part||part.startsWith('..')||isAbsolute(part))throw new MediaError('SnowLuma 媒体文件不在允许的缓存目录中');
+      const details=await stat(path);if(!details.isFile()||details.size>limit)throw new MediaError('SnowLuma 媒体文件过大或不是普通文件');
       const handle=await open(path,'r'),chunks:Buffer[]=[];let size=0;
-      try{for(;;){signal.throwIfAborted();const chunk=Buffer.alloc(Math.min(65536,limit-size+1)),read=await handle.read(chunk,0,chunk.length,null);if(!read.bytesRead)break;size+=read.bytesRead;if(size>limit)throw new MediaError('NapCat 媒体文件超过大小限制');chunks.push(chunk.subarray(0,read.bytesRead));}return Buffer.concat(chunks);}
+      try{for(;;){signal.throwIfAborted();const chunk=Buffer.alloc(Math.min(65536,limit-size+1)),read=await handle.read(chunk,0,chunk.length,null);if(!read.bytesRead)break;size+=read.bytesRead;if(size>limit)throw new MediaError('SnowLuma 媒体文件超过大小限制');chunks.push(chunk.subarray(0,read.bytesRead));}return Buffer.concat(chunks);}
       finally{await handle.close();}
     }
     if(failure)throw failure;
-    throw new MediaError('NapCat 未提供可用媒体地址；本机部署可在 QQ 识图中填写 NapCat 媒体缓存目录');
+    throw new MediaError('SnowLuma 未提供可用媒体地址；本机部署可在 QQ 识图中填写 SnowLuma 媒体缓存目录');
   }
   async reply(message:QQMessage,qq:OneBotClient,media:QQMediaRef[],previous?:ReturnType<MemoryStore['fastContext']>):Promise<string>{
     const c=this.settings.media;
@@ -135,16 +136,17 @@ export class MediaReader {
     if(!wantsMedia(message.text,c.mode))return '收到媒体了。想让我看主要画面，请引用这条消息说“看看”；也可以在 QQ 识图中开启自动识别。';
     const used=this.memory.db.prepare("SELECT count(*) AS n FROM llm_usage WHERE role=? AND day=? AND category='qq-media'").get(this.memory.roleId,this.memory.today());
     if(Number(used?.n)>=c.dailyLimit)return '今天的媒体识别调用额度已用完，可明天再看或在 QQ 识图中调整上限。';
-    const route=this.route(),signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs)]);
+    const route=this.route();let signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs)]);
     const llm=this.ctx.get('llm'),attachments=this.ctx.get('attachments');if(!llm||!attachments)throw new MediaError('当前 DSH 缺少模型或图片附件服务，请启用对应服务后重试');
     const model=await llm.resolveModelInfo(route.provider,route.model,signal);
     if(!model.inputModalities?.includes('image'))throw new MediaError('所选模型尚未声明支持图片输入，请在 QQ 识图中选择视觉模型；普通纯文本模型不能看视频');
-    const processing=AbortSignal.any([signal,timeoutSignal(c.timeoutMs)]),source=media.find(m=>m.type==='video')??media[0];if(!source)throw new MediaError('引用消息中没有可读取的视频或动图');
+    let processing=AbortSignal.any([signal,timeoutSignal(c.timeoutMs)]),source=media.find(m=>m.type==='video')??media[0];if(!source)throw new MediaError('引用消息中没有可读取的视频或动图');
     const bytes=await this.source(source,qq,processing),digest=createHash('sha256').update(bytes).digest('hex');
     const cacheKey=createHash('sha256').update(JSON.stringify([digest,c.frames,c.sheetSize,c.maxDurationSeconds,c.cacheHours,route.provider,route.model,'vision-v1'])).digest('hex');
     const cache=this.memory.db.prepare('SELECT summary FROM media_cache WHERE role=? AND scope=? AND key=? AND expires>?').get(this.memory.roleId,message.scope,cacheKey,this.memory.clock());
     let sheet:FrameSheet|undefined;
     if(!cache){
+      await this.ensureTools();signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs)]);processing=AbortSignal.any([signal,timeoutSignal(c.timeoutMs)]);processing.throwIfAborted();
       const tools=await checkMediaTools(c);if(!tools.ready)throw new MediaError(tools.message);
       const parent=join(this.settings.dataDir,'media-tmp');await mkdir(parent,{recursive:true,mode:0o700});const dir=await mkdtemp(join(parent,'read-'));
       try{const input=join(dir,'input');await writeFile(input,bytes,{mode:0o600});sheet=await frameSheet(input,dir,c,processing);}

@@ -7,7 +7,7 @@ import type {Settings} from './config.js';
 import type {MemoryStore} from './memory.js';
 import {BilibiliClient} from './bilibili.js';
 import {recordSingleUsage} from './usage.js';
-import {stateValue,setState,quietAt,jitterMinutes,think,jsonDecision} from './initiative.js';
+import {stateValue,setState,jitterMinutes,think,jsonDecision} from './initiative.js';
 
 export function localMinute(time:number,timezone:string):number {
   const p=new Intl.DateTimeFormat('en-GB',{timeZone:timezone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(time);
@@ -49,7 +49,7 @@ export class Autonomy {
     const a=this.settings.autonomy;
     if(a.scheduleMode==='free'){
       const due=stateValue<number>(this.memory,'bili:next',0);if(!due){setState(this.memory,'bili:next',this.memory.clock()+jitterMinutes(a.minWakeMinutes,a.maxWakeMinutes)*60000);return;}
-      if(this.memory.clock()<due||quietAt(this.memory.clock(),this.settings.timezone,a.quietStart,a.quietEnd))return;
+      if(this.memory.clock()<due)return;
       setState(this.memory,'bili:next',this.memory.clock()+jitterMinutes(a.minWakeMinutes,a.maxWakeMinutes)*60000);await this.run('free:'+due);return;
     }
     const slot=dueWake(this.settings.autonomy.wakeTimes,this.memory.clock(),this.settings.timezone);if(!slot)return;

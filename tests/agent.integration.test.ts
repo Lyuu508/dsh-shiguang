@@ -84,6 +84,14 @@ test('真实 AgentLoop 多步 B站任务把工具前后用量一起归入 B站�
 function toolChunks(name: string, args: object): StreamChunk[] {
   return [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'block-end', index: 0, block: { type: 'tool-call', id: brandString<ToolCallId>('shiguang-test-call'), name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 }
+test('主人在 QQ 追问 B 站旧事直接命中限量索引片段，普通聊天和群聊不注入主人历史',async()=>{
+ const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory),adapter=new ScriptedAdapter(()=>textChunks('记得。'));f.settings.provider='recall-test';f.settings.model='scripted';let driver:ChatDriver|undefined;
+ try{await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['recall-test'],adapter);memory.append('owner','bilibili','bilibili','experience','以前观看猎户星云纪录片，看到了恒星诞生',undefined,Date.now()-86400000);memory.append('owner','qq','p','user','昨天私人咖啡小事',undefined,Date.now()-86400000);driver=new ChatDriver(ctx,f.settings,memory,new BilibiliClient(f.settings,memory));
+  await driver.reply({scope:'owner',thread:'qq:private:1',platform:'qq',owner:true,text:'之前看过的猎户星云纪录片讲了什么？'+'请简单回答。'.repeat(50)});const request=JSON.stringify(adapter.requests[0]?.messages);assert.match(request,/恒星诞生/);assert.doesNotMatch(request,/私人咖啡小事/);assert.equal(adapter.requests.length,1);
+  await driver.reply({scope:'owner',thread:'qq:private:1',platform:'qq',owner:true,text:'你好'});assert.doesNotMatch(JSON.stringify(adapter.requests[1]?.messages),/恒星诞生/);
+  await driver.reply({scope:'qq:group:7',thread:'qq:group:7',platform:'qq',owner:false,text:'之前看过的猎户星云纪录片？'});assert.doesNotMatch(JSON.stringify(adapter.requests[2]?.messages),/恒星诞生/);
+ }finally{await driver?.stop();await ctx.fiber.dispose();memory.close();f.cleanup();}
+});
 for (const recall of [false, true]) test(`真实 DSH 工具执行：${recall ? '追问旧事才返回索引片段' : '日常聊天尝试查历史会被拒绝'}`, async () => {
   const f = fixture(), ctx = new Context();
   f.settings.provider = 'shiguang-test'; f.settings.model = 'scripted';

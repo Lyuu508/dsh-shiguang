@@ -2,7 +2,7 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.8 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.8) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.9 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.9) 页面进入下载。
 
 ## 在哪里打开面板
 
@@ -10,7 +10,7 @@
 
 - **角色与回复**：名字、人设、时区、模型选择、回复等待时间、字数和生物钟。
 - **语音**：火山复刻音色配置、试听、QQ 语音回复与独立字符用量，见 [语音指南](voice.md)。
-- **QQ 连接**：NapCat 自动安装、QQ 扫码、后台入口、主人号、白名单、在线检测、QQ 识图及[主动陪伴](social.md)。
+- **QQ 连接**：启动本机 SnowLuma、桌面 QQ 原生扫码、后台入口、主人号、白名单、在线检测、QQ 识图及[主动陪伴](social.md)。
 - **B 站账号**：二维码登录、评论权限、标签白黑名单、固定 / 自由自主生活、主人 UID 私信、@ 推荐、文字动态及浅看 / 分段深看视频识别，见 [视频内容指南](bili-video.md)。
 - **记忆**：读取预算、当天记录、历史搜索、分页原文、移入回收站与撤销。
 - **Token 用量**：按日期分别查看 QQ 聊天、B 站任务、DSH 对话的模型用量，区分未缓存输入、缓存与输出，支持导出 JSON。
@@ -22,15 +22,15 @@
 
 ### 从旧版升级
 
-0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.8 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.8.tgz)，在文件页面点 **Download raw file**，然后执行：
+0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.9 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.9.tgz)，在文件页面点 **Download raw file**，然后执行：
 
 ```powershell
-dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.8.tgz"
+dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.9.tgz"
 ```
 
 重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。
 
-配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会按原版本生成 `memory.sqlite.v1-backup`、`.v2-backup` 、`.v3-backup` 、`.v4-backup` 、`.v5-backup` 、`.v6-backup` 或 `.v7-backup`。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
+配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会按原版本生成 `memory.sqlite.v1-backup`、`.v2-backup` 、`.v3-backup` 、`.v4-backup` 、`.v5-backup` 、`.v6-backup` 、`.v7-backup` 或 `.v8-backup`。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
 
 ## Token 是多少个中文？
 
@@ -61,7 +61,7 @@ Token 是模型分词后的计量单位，不是字数。汉字、标点、英�
 
 ## 已实现
 
-- 通过 NapCat 的 OneBot 11 正向 WebSocket，接收个人 QQ 的白名单私聊、群聊并回复文本。主人私聊默认允许，群聊默认仅在被 @ 时回复。
+- 通过 SnowLuma 的 OneBot 11 正向 WebSocket，接收个人 QQ 的白名单私聊、群聊并回复文本。主人私聊默认允许，群聊默认仅在被 @ 时回复。
 - B 站手机扫码登录，在本机保存 Cookie；按要求读取视频标题、简介和作者，发表评论或回复已有评论。
 - QQ 主人私聊、B 站操作和 DSH 的 `shiguang_chat` 共用同一角色的记忆。其他私人会话、各个群聊分别隔离。
 - 正常聊天仅注入**当天重要笔记＋当前聊天最近 12 条消息**。分别限制为 2600 和 4000 字符，不加载整个历史档案。
@@ -69,13 +69,13 @@ Token 是模型分词后的计量单位，不是字数。汉字、标点、英�
 - 按本机配置时区划分“今天”。过零点后昨天的内容不再自动注入，但仍可检索。
 - 使用 DSH 自己的模型连接；插件不需要额外的模型 API Key。
 
-尚未包含：无范围限制的推荐流浏览、原始音频转写、B 站私信、QQ 空间动态、QQ 语音、断线历史补拉、语义向量搜索。视频简介读取不等于观看或理解视频内容。
+尚未包含：无范围限制的推荐流浏览、原始音频转写、QQ 空间动态、QQ 语音输入识别、断线历史补拉、语义向量搜索。视频简介读取不等于观看或理解视频内容。
 
 ## 环境
 
 - Node.js **24.9 或更新**，包含内置 SQLite / FTS5。
 - 本版按 **DSH 0.2.2-rc.1** 的公开插件 API 编写、锁定对应依赖；其他版本需先适配，不能保证直接安装。
-- Windows x64 首次启动会自动准备 [NapCat](https://napneko.github.io/) 官方便携运行包，插件内扫码；其他系统连接已有实例。详见 [NapCat 安装与后台](napcat.md)。
+- Windows 先安装官方桌面 QQ 和 [SnowLuma](https://snowluma.github.io/zh/)，插件可启动本机已有程序；在 QQ 原生窗口扫码。详见 [SnowLuma 安装与后台](snowluma.md)。
 - B 站使用普通账号的 Web 会话接口，并非官方开放平台授权应用；这些接口可能调整，验证码和账号验证需要在官方客户端处理。
 
 ## Windows 安装
@@ -105,10 +105,10 @@ $env:DSH_SHIGUANG_CONFIG = "D:\ShiguangData\config.json"
 
 ## 连接个人 QQ
 
-推荐 Windows x64 使用 QQ 页的自动安装与扫码流程，见 [NapCat 安装与后台](napcat.md)。以下步骤适用于选择“连接已有 NapCat”的用户：
+先从官方安装并在拾光填写 SnowLuma 目录，见 [SnowLuma 安装与后台](snowluma.md)。
 
-1. 在 NapCat 本机界面完成个人 QQ 扫码登录。
-2. 在网络设置添加 **WebSocket 服务端（正向 WS）**，例如 `127.0.0.1:3001`，配置访问 Token，消息上报格式选择 **Array**，启用后保存。Token 不是 NapCat WebUI 密码。
+1. 启动 SnowLuma，在桌面 QQ 原生窗口扫码登录。
+2. 在网络设置添加 **WebSocket 服务端（正向 WS）**，例如 `127.0.0.1:3001`，配置访问 Token，消息上报格式选择 **Array**，启用后保存。Token 不是 SnowLuma WebUI 密码。
 3. 推荐在 **设置 → 拾光 → QQ 连接** 填写地址、Token、主人 QQ 号和白名单，开启 QQ 回复后保存。Token 存入本机 `dataDir/onebot.token`，不会回显到页面或发送给模型。
 
 如果你更习惯手动配置，也可以编辑配置中的 `qq`：
@@ -127,12 +127,12 @@ $env:DSH_SHIGUANG_CONFIG = "D:\ShiguangData\config.json"
 }
 ```
 
-所有 QQ 号、群号都用**字符串**填写。`ownerQQ` 是向机器人发消息的主人账号，不是 NapCat 登录的机器人账号。其他允许私聊的人放入 `allowedPrivate`，群号放入 `allowedGroups`。
+所有 QQ 号、群号都用**字符串**填写。`ownerQQ` 是向机器人发消息的主人账号，不是 SnowLuma 登录的机器人账号。其他允许私聊的人放入 `allowedPrivate`，群号放入 `allowedGroups`。
 
 4. 如果已通过面板保存 Token，不必设置环境变量。沿用旧版环境变量方式时，在启动 DSH 的同一 PowerShell 窗口中设置：
 
 ```powershell
-$env:SHIGUANG_ONEBOT_TOKEN = "你在NapCat设置的Token"
+$env:SHIGUANG_ONEBOT_TOKEN = "你在SnowLuma设置的Token"
 dsh web
 ```
 
@@ -195,7 +195,7 @@ npm run memory:today
 npm run memory:search -- 吉他
 ```
 
-面板中的“移入回收站”会同时从正常聊天和检索结果中移除该记录；“撤销移除”可恢复原文与索引。回收站位于本机数据库中，移入回收站不等于物理擦除。默认不自动删除历史记录，也不永久记住每个过去事实。固定人格 `persona` 另行配置，不把过去的私人档案作为人格常驻注入。
+面板中的“移入回收站”会同时从正常聊天和检索结果中移除该记录；“撤销移除”可恢复原文与索引。回收站位于本机数据库中，移入回收站不等于物理擦除。普通记录约 30 天未提起会从检索淡出，仍可恢复；明确教导和频繁知识会提高权重长期保留，见 [记忆保留规则](memory.md)。固定人格 `persona` 另行配置，不把过去的私人档案作为人格常驻注入。
 
 [版本检查超时与手动升级](updates.md)。
 
@@ -218,7 +218,7 @@ npm run benchmark
 | 现象 | 检查 |
 |---|---|
 | 插件拒绝安装 | DSH 版本是否满足 `engines.dsh`；本版依赖锁定 0.2.2-rc.1 |
-| QQ 连不上 | 正向 WS 地址、Token 环境变量、NapCat 登录状态和服务是否启用 |
+| QQ 连不上 | 正向 WS 地址、Token 环境变量、SnowLuma 登录状态和服务是否启用 |
 | QQ 连上却没反应 | Array 上报格式、主人号、私聊或群白名单、群里是否 @；查看 `[Shiguang]` 日志 |
 | 没有模型路由 | 先打开一个已选择模型的 DSH 会话，或填写 provider/model |
 | B站要求重新登录 | 执行 `npm run bili:login`；不要把登录 Cookie 发给 AI |
@@ -230,7 +230,7 @@ npm run benchmark
 
 ## 旧数据库与回退
 
-从旧版本升级沿用原 profile 和数据目录，步骤见上方“从旧版升级”。数据库版本升为 8，升级前先保存对应的 `.v1-backup`、`.v2-backup`、`.v3-backup` 、`.v4-backup` 、`.v5-backup` 、`.v6-backup` 或 `.v7-backup`，再添加缺失的表，不清空原记忆和评论账本。旧版插件无法直接打开新版数据库；回退前需停止插件、另外保留当前数据目录，并使用相应的旧库备份，避免丢失更新后的记录。首次保存 0.1.0 配置时会补入角色名字字段。
+从旧版本升级沿用原 profile 和数据目录，步骤见上方“从旧版升级”。数据库版本升为 9，升级前先保存对应的 `.v1-backup`、`.v2-backup`、`.v3-backup` 、`.v4-backup` 、`.v5-backup` 、`.v6-backup` 、`.v7-backup` 或 `.v8-backup`，再添加缺失的表，不清空原记忆和评论账本。旧版插件无法直接打开新版数据库；回退前需停止插件、另外保留当前数据目录，并使用相应的旧库备份，避免丢失更新后的记录。首次保存 0.1.0 配置时会补入角色名字字段。
 
 ## 工程结构
 
@@ -249,8 +249,10 @@ npm run benchmark
 | `src/updates.ts` | GitHub Release 检查、包校验、安装与进度保存 |
 | `tests/` | 记忆、平台和真实 DSH 调用链测试 |
 
-依赖的接口文档：[DSH 插件开发](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/)、[DSH 工具定义](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/tool)、[NapCat 连接设置](https://napneko.github.io/config/basic)、[B站扫码接口收集](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/login/login_action/QR.md)、[B站评论接口收集](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/comment/action.md)。
+依赖的接口文档：[DSH 插件开发](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/)、[DSH 工具定义](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/tool)、[SnowLuma 连接设置](https://snowluma.github.io/zh/docs/guide/configuration)、[B站扫码接口收集](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/login/login_action/QR.md)、[B站评论接口收集](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/comment/action.md)。
 
 MIT 许可。第三方组件按各自许可使用。
 
 设置用途与推荐值见 [设置说明](settings.md)，生物钟和 QQ 表情收藏见 [专门指南](clock-emoji.md)。记忆页支持按天、精确到秒的 QQ / B 站活动筛选。
+
+本版支持 [新建与切换角色](../README.md#8-新建或切换角色)、主人独立 B 站账号的最近观看标签选择，以及拖动白名单标签 / 1–10 权重。QQ 与 B 站统一使用角色页生物钟；两个平台不再单独设置起床睡觉时间。视频识别页可检测或下载 FFmpeg / FFprobe 并自动填写路径。

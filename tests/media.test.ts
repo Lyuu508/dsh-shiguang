@@ -51,14 +51,14 @@ const message:QQMessage={id:'media-test-1',selfId:'2',userId:'1',thread:'qq:priv
 const reference={type:'video' as const,file:'qq-file-id',url:'https://multimedia.nt.qq.com/sample.mp4'};
 const qq={mediaInfo:async()=>({})} as unknown as OneBotClient;
 test('真实 DSH LLM 与附件服务：一次视觉调用、缓存只传文字、跨会话不复用、每日额度生效',async()=>{
- const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory),adapter=new Vision();let reader:MediaReader|undefined,fetches=0;
+ const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory),adapter=new Vision();let reader:MediaReader|undefined,fetches=0,prepared=0;
  try{
   const bytes=clip(f.dir);f.settings.media.enabled=true;f.settings.media.provider='vision-test';f.settings.media.model='image-model';f.settings.media.dailyLimit=3;
   await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});ctx.llm.registerAdapter(['vision-test'],adapter);
-  reader=new MediaReader(ctx,f.settings,memory,async()=>{fetches++;return new Response(bytes);});
+  reader=new MediaReader(ctx,f.settings,memory,async()=>{fetches++;return new Response(bytes);},async()=>{prepared++;});
   assert.match(await reader.reply(message,qq,[reference]),/抽样 3 帧/);assert.equal(adapter.requests.length,1);
   const first=adapter.requests[0]!;assert.equal(first.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,1);assert.equal(first.maxTokens,320);assert.equal(first.tools,undefined);
-  assert.match(await reader.reply({...message,id:'2',text:'看看还有什么'},qq,[reference]),/复用/);assert.equal(adapter.requests.length,2);assert.equal(adapter.requests[1]!.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,0);
+  assert.match(await reader.reply({...message,id:'2',text:'看看还有什么'},qq,[reference]),/复用/);assert.equal(adapter.requests.length,2);assert.equal(prepared,1);assert.equal(adapter.requests[1]!.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,0);
   assert.equal(memory.db.prepare("SELECT count(*) AS n FROM memories WHERE kind='experience'").get()?.n,1);
   await reader.reply({...message,id:'3',scope:'qq:group:5',thread:'qq:group:5',owner:false},qq,[reference]);assert.equal(adapter.requests[2]!.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,1);
   assert.match(await reader.reply({...message,id:'4'},qq,[reference]),/额度已用完/);assert.equal(fetches,3);

@@ -18,7 +18,7 @@ import {recordUsage} from '../../src/usage.js';
 import type {SessionEvent} from '@deepseek-ai/dsh-session';
 const f=fixture(),ctx=new Context(),qq=new WebSocketServer({port:0,host:'127.0.0.1'});
 await once(qq,'listening');const address=qq.address();if(!address||typeof address==='string')throw new Error('mock QQ did not bind');
-f.settings.napcat.mode='external';f.settings.qq.wsUrl=`ws://127.0.0.1:${address.port}`;f.settings.qq.ownerQQ='10001';
+f.settings.qq.wsUrl=`ws://127.0.0.1:${address.port}`;f.settings.qq.ownerQQ='10001';
 qq.on('connection',socket=>socket.on('message',raw=>{const request=JSON.parse(raw.toString());socket.send(JSON.stringify({status:'ok',retcode:0,echo:request.echo,data:request.action==='get_status'?{online:true,good:true}:{user_id:10002,nickname:'模拟QQ伙伴'}}));}));
 const audio=execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=0.2','-f','mp3','pipe:1']);
 const videoFile=join(f.dir,'browser-video.mp4');execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=red:s=320x180:r=5:d=2','-threads','1','-pix_fmt','yuv420p','-y',videoFile]);const videoBytes=readFileSync(videoFile);
@@ -32,15 +32,11 @@ const platform:typeof fetch=async(url)=>{
  if(String(url).includes('openspeech.bytedance.com'))return new Response(JSON.stringify({code:0,data:audio.toString('base64'),usage:{text_words:12}})+'\n'+JSON.stringify({code:20000000}));
  if(String(url).includes('upos-test.bilivideo.com'))return new Response(videoBytes);
  if(String(url).includes('aisubtitle.hdslb.com'))return Response.json({body:[{from:0,content:'吉他持琴姿势'}]});
- if(String(url).includes('/x/tag/archive/tags'))return Response.json({code:0,data:[{tag_name:'科技'}]});
+ if(String(url).includes('/x/web-interface/history/cursor'))return Response.json({code:0,data:{list:[{history:{business:'archive',bvid:'BV1xx411c7mD'}}],cursor:{}}});
+ if(String(url).includes('/x/tag/archive/tags'))return Response.json({code:0,data:[{tag_name:'科技'},{tag_name:'天文'}]});
  if(String(url).includes('/x/web-interface/view'))return Response.json({code:0,data:{aid:123,bvid:'BV1xx411c7mD',title:'测试吉他视频',desc:'持琴姿势',owner:{name:'测试作者'},cid:999,duration:2,pages:[{cid:999,duration:2}]}});
  if(String(url).includes('/x/player/wbi/playurl'))return Response.json({code:0,data:{timelength:2000,dash:{duration:2,video:[{id:16,codecid:7,baseUrl:'https://upos-test.bilivideo.com/video.mp4'}]}}});
  if(String(url).includes('/x/player/wbi/v2'))return Response.json({code:0,data:{subtitle:{subtitles:[{lan:'zh-CN',subtitle_url:'//aisubtitle.hdslb.com/subtitle.json'}]}}});
- if(String(url).includes('127.0.0.1:6099')){
-  if(String(url).includes('/auth/login'))return Response.json({code:0,data:{Credential:'browser-napcat-credential'}});
-  if(String(url).includes('RefreshQRcode')){qqPolls=0;return Response.json({code:0,data:{qrcodeurl:'https://txz.qq.com/p?k=refreshed'}});}
-  return Response.json({code:0,data:{isLogin:++qqPolls>=2,loginPhase:'waiting_qrcode',qrcodeurl:'https://txz.qq.com/p?k=browser-qq'}});
- }
  if(String(url).includes('api.github.com'))return Response.json([{tag_name:'v0.1.100',prerelease:true,body:'测试更新说明：保留原有记忆。'}]);
  if(String(url).includes('raw.githubusercontent.com'))return new Response(String(url).endsWith('.txt')?createHash('sha256').update('browser-package').digest('hex')+'  dsh-shiguang-0.1.100.tgz':'browser-package');
  if(String(url).includes('/generate')){polls=0;return Response.json({code:0,data:{url:'https://account.bilibili.com/h5/account-h5/auth/scan-web?qrcode_key=browser-test',qrcode_key:'browser-test'}});}
@@ -51,7 +47,7 @@ const platform:typeof fetch=async(url)=>{
  const r=Response.json({code:0,data:{code:0}});r.headers.append('Set-Cookie','SESSDATA=browser-fake-session; Path=/');r.headers.append('Set-Cookie','bili_jct=browser-fake-csrf; Path=/');return r;
 };
 const file=join(f.dir,'config.json');writeFileSync(file,JSON.stringify(f.settings));
-const runtime=new ShiguangRuntime(ctx,file,platform);runtime.napcat.saveWebuiToken('browser-napcat-token');runtime.memory.append('owner','qq','p','note','今天练习 C 和弦');runtime.memory.append('owner','bilibili','bilibili','experience','上周选了雅马哈吉他',undefined,Date.now()-86400000);
+const runtime=new ShiguangRuntime(ctx,file,platform);runtime.memory.append('owner','qq','p','note','今天练习 C 和弦');runtime.memory.append('owner','bilibili','bilibili','experience','上周选了雅马哈吉他',undefined,Date.now()-86400000);
 runtime.memory.append('qq:group:20001','qq','qq:group:20001','user','测试群今天讨论天文');runtime.memory.append('owner','bilibili','bilibili','experience','观看测试科普视频的抽样画面',undefined,Date.now(),'watch');runtime.memory.append('owner','bilibili','bilibili','experience','在测试科普视频留言：这个实验很清楚。',undefined,Date.now(),'comment');runtime.memory.append('owner','bilibili','bilibili','experience','已点赞测试科普视频',undefined,Date.now(),'like');
 ctx.provide('pluginManager',{installBundle:async()=>({application:'restart-required',version:'0.1.100'})} as never);
 recordUsage(runtime.memory,{session:'browser-fixture',source:'qq',provider:'fixture',model:'test'},[{type:'assistant/message',seq:1,time:Date.now(),data:{usage:{inputTokens:120,cacheReadTokens:300,outputTokens:80},stream:[],message:{content:[]}}}] as unknown as SessionEvent[]);

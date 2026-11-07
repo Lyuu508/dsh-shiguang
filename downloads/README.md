@@ -1,17 +1,17 @@
-# 下载拾光 Shiguang v0.1.8
+# 下载拾光 Shiguang v0.1.9
 
-适配 DeepSeek Harness 0.2.2-rc.1，需要 Node.js 24.9 或更新。新增生物钟、QQ 自主收藏表情、按秒分类时间线与 B 站点赞，修复手动视频误拦与后台入口；设置显示用途和推荐值并放开旧数值上限。
+适配 DSH 0.2.2-rc.1、Node.js 24.9+。本版改接 SnowLuma，新增 FFmpeg / FFprobe 修复、主人观看兴趣与标签权重、多角色和记忆淡忘；统一作息并整理面板。
 
-- **首次安装推荐：** `dsh-shiguang-0.1.8.zip`，含源码、已构建客户端与 Host 文件、中文说明和 Windows 安装脚本。
-- **预构建 DSH 包：** `dsh-shiguang-0.1.8.tgz`，可通过 DSH 插件安装命令安装或升级。
-- **校验：** `SHA256SUMS-0.1.8.txt`。
+- **源码与预构建文件：** [dsh-shiguang-0.1.9.zip](dsh-shiguang-0.1.9.zip)。
+- **推荐交给 DSH 安装：** [dsh-shiguang-0.1.9.tgz](dsh-shiguang-0.1.9.tgz)。
+- **校验：** [SHA256SUMS-0.1.9.txt](SHA256SUMS-0.1.9.txt)。
 
-点击对应文件，再点 GitHub 的 **Download raw file / 下载原始文件**。
+点击文件后选 GitHub 的 **Download raw file / 下载原始文件**。也可在 [版本页](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.9) 进入下载。
 
-首次安装或升级后重启 DSH 并刷新页面，进入 **设置 → 拾光**。QQ 与 B 站账号仍需在你自己的本机登录。
+安装后重启 DSH 并刷新页面 → 设置 → 拾光；旧版可从版本更新页升级，检查超时可用 README 顶部安装指令。已有配置与记忆沿用本机目录，旧文件保留供查阅。
 
-已安装旧版可在版本更新页面升级；旧按钮超时请用 README 顶部的 DSH 安装指令直接更新。0.1.1 及更早版本请先手动安装本包，重启后就有更新按钮。旧版文件保留供查阅。真实 Windows 与 QQ / B 站账号仍需本机联调；测试边界见仓库 `VALIDATION.md`。
+QQ 需先安装官方 SnowLuma 与桌面 QQ，随后从面板启动并在 QQ 原生窗口扫码。拾光遵循其 EULA，不内嵌专有组件或自动代装。FFmpeg / FFprobe 可在 Windows x64 面板校验下载；支持图片的模型仍需在 DSH 配置。
 
-QQ 识图另需 FFmpeg / FFprobe 和支持图片的模型。功能默认关闭；使用方法见 [媒体指南](../docs/qq-media.md)。
+主人 B 站兴趣登录与伙伴账号分开；角色各有独立记忆，同一角色内主人 QQ / B 站共享记忆。普通记录约一月未提起淡忘后可恢复。QQ / B 站作息只在角色页设置。
 
-自主浏览和发布默认关闭，在“B 站账号 → 自主生活”配置。记忆归档使用日期视图，旧记录仍保留。
+[安装到扫码完整步骤](../README.md#从安装到扫码登录) · [验证范围](../VALIDATION.md)。没有使用真实 Windows / 平台账号联调，不包含你的登录凭据或记忆。

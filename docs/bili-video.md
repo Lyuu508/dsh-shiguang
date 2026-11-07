@@ -1,6 +1,6 @@
 # 看 B 站视频内部内容
 
-在 **设置 → 拾光 → B 站账号** 开启“B 站视频内容识别”，配置视觉模型并保存。需要先扫码登录、启用 B 站工具，并安装 FFmpeg / FFprobe；程序路径与 QQ 识图共用。
+在 **设置 → 拾光 → B 站账号** 开启“B 站视频内容识别”，配置视觉模型并保存。需要先扫码登录、启用 B 站工具，在本页“视频识别工具”检测 FFmpeg / FFprobe；Windows x64 可点“安装 / 修复视频识别工具”，也可由首次读取准备。校验下载后自动应用路径，QQ 与 B 站共用。
 
 主人 QQ 私聊可说：“看看这个视频里的内容，主要在讲什么：完整视频链接”。也可以在 B 站设置页输入 BV / av 编号、完整链接和分 P 编号，点击“识别这个 B 站视频”。群聊不能使用主人的 B 站账号读取视频。
 
@@ -33,3 +33,5 @@
 接口仅从固定 B 站 API 取得地址，只从官方 HTTPS 媒体域名下载；Cookie 不传给媒体 CDN，也不传给视觉模型。临时视频和拼图处理完即清理。
 
 接口字段依据 [播放地址](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/video/videostream_url.md) 和 [播放器字幕](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/video/player.md) 收集文档，并通过生成的视频、字幕夹具、真实 FFmpeg 和 DSH 模型服务测试。真实账号的播放权限、字幕可用性及视觉效果仍需本机验证。
+
+出现“找不到 FFmpeg / FFprobe”时，在本页工具区域检测或安装后重试，无需再到 QQ 页寻找设置。其他系统请手动安装并填写路径。便携工具取自 BtbN 官方 LGPL 构建，核验 Release SHA256；包较大，支持断点和更新页中的可选加速前缀。深看使用 LGPL 构建自带编码器。

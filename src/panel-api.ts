@@ -2,7 +2,6 @@ import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-connection';
 import type { ShiguangRuntime } from './runtime.js';
 import { dailyUsage } from './usage.js';
-import { checkMediaTools } from './media.js';
 import {exportMemoryPage,importMemory} from './memory-transfer.js';
 
 function object(value: unknown): Record<string,unknown> {
@@ -18,15 +17,18 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
   signal.throwIfAborted();
   const args = object(payload ?? {});
   switch (action) {
+    case 'role-create':return runtime.createRole(text(args.name),text(args.persona),args.copy===true,text(args.revision));
+    case 'role-switch':return runtime.switchRole(text(args.id),text(args.revision));
+    case 'memory-concepts':return runtime.memory.concepts(text(args.scope,'owner'),text(args.query));
+    case 'memory-concept-save':return runtime.enqueue(async()=>{runtime.memory.setConcept(text(args.scope,'owner'),text(args.term),Number(args.weight),args.pinned===true);return {ok:true};});
+    case 'memory-remember':return runtime.enqueue(async()=>{runtime.memory.remember(text(args.id),args.pinned===true);return {ok:true};});
+    case 'memory-sweep':return runtime.enqueue(async()=>runtime.memory.sweep());
     case 'load': return { ...runtime.view(), status: runtime.status() };
     case 'status': return runtime.status();
-    case 'napcat-status':return runtime.napcat.view();
-    case 'napcat-start':return runtime.napcat.start();
-    case 'napcat-pause':return runtime.napcat.pause();
-    case 'napcat-token':return runtime.napcat.saveWebuiToken(text(args.token));
-    case 'napcat-console':return runtime.napcat.consoleUrl();
-    case 'napcat-login':return runtime.napcat.loginStatus(signal);
-    case 'napcat-refresh':return runtime.napcat.refreshQR(signal);
+    case 'snowluma-status':return runtime.snowluma.view();
+    case 'snowluma-start':return runtime.snowluma.start();
+    case 'snowluma-qq':return runtime.snowluma.openQQ();
+    case 'snowluma-console':return runtime.snowluma.consoleUrl();
     case 'voice-key':return runtime.enqueue(()=>runtime.saveVoiceSecret(text(args.secret)));
     case 'voice-status':return runtime.voice.status();
     case 'voice-test':return runtime.enqueue(async()=>{const result=await runtime.voice.synthesize(text(args.text),'owner',signal);return {audio:'data:audio/mpeg;base64,'+result.bytes.toString('base64'),chars:result.chars,billedChars:result.billedChars,reused:result.reused,status:runtime.voice.status()};});
@@ -45,13 +47,22 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
       return runtime.enqueue(async()=>importMemory(runtime.memory,text(args.scope,'owner'),args.target==='today'?'today':'all',args.document as string,args.fileType==='text'?'text':'json'));
     }
     case 'usage': return dailyUsage(runtime.memory,text(args.day,runtime.memory.today()));
-    case 'media-check': return checkMediaTools(runtime.settings.media);
+    case 'media-check': return runtime.mediaTools.check();
+    case 'media-tools-status':return runtime.mediaTools.view();
+    case 'media-tools-install':return runtime.mediaTools.start();
+    case 'media-tools-pause':return runtime.mediaTools.pause();
     case 'update-status': return runtime.updates.view();
     case 'update-check': return runtime.updates.beginCheck();
     case 'update-cancel':return runtime.updates.cancel();
     case 'update-install': return runtime.updates.start(text(args.version));
     case 'save': return runtime.save(args.settings,text(args.revision),text(args.token));
     case 'qq-check': return runtime.enqueue(() => runtime.qq.check());
+    case 'owner-bili-start':return runtime.enqueue(()=>runtime.startLogin(signal,'owner'));
+    case 'owner-bili-poll':return runtime.enqueue(()=>runtime.pollOwnerLogin(text(args.ticket)));
+    case 'owner-bili-check':return runtime.enqueue(()=>runtime.ownerBili.account(signal));
+    case 'owner-bili-logout':return runtime.enqueue(async()=>{runtime.logoutOwnerBili();return {ok:true};});
+    case 'owner-interests-start':return runtime.startInterestScan(typeof args.count==='number'?args.count:30);
+    case 'owner-interests-status':return {...runtime.interestJob};
     case 'bili-check': return runtime.enqueue(() => runtime.bili.account(signal));
     case 'bili-start': return runtime.enqueue(() => runtime.startLogin(signal));
     case 'bili-poll': return runtime.enqueue(() => runtime.pollLogin(text(args.ticket)));
@@ -62,7 +73,7 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
       const provider = text(args.provider);
       return { providers: llm.listProviders().map(p => ({ id: p.id, name: p.name || p.id })), models: provider ? (await llm.listModels(provider)).map(m => ({ id: m.id, name: m.name || m.id, inputModalities: m.inputModalities })) : [] };
     }
-    case 'memory-timeline':return runtime.memory.timeline({scope:text(args.scope,'*'),platform:text(args.platform,'all'),channel:text(args.channel,'all'),category:text(args.category,'all'),day:text(args.day,runtime.memory.today()),query:text(args.query),before:typeof args.before==='number'?args.before:0,beforeTime:typeof args.beforeTime==='number'?args.beforeTime:0});
+    case 'memory-timeline':return runtime.memory.timeline({state:text(args.state,'active'),scope:text(args.scope,'*'),platform:text(args.platform,'all'),channel:text(args.channel,'all'),category:text(args.category,'all'),day:text(args.day,runtime.memory.today()),query:text(args.query),before:typeof args.before==='number'?args.before:0,beforeTime:typeof args.beforeTime==='number'?args.beforeTime:0});
     case 'memory-list': return runtime.memory.list(text(args.scope,'owner'),text(args.day,runtime.memory.today()),typeof args.before === 'number' ? args.before : 0);
     case 'memory-search': return { hits: runtime.memory.search(text(args.scope,'owner'),text(args.query),args.range === 'today' ? 'today' :args.range==='all'?'all': 'history',args.day ? text(args.day) : undefined) };
     case 'memory-detail': return runtime.memory.detail(text(args.scope,'owner'),text(args.id),typeof args.offset === 'number' ? args.offset : 0);

@@ -21,17 +21,17 @@ export async function downloadPackage(asset:DownloadAsset,target:string,cacheRoo
     let url=initial;
     for(let i=0;i<6;i++){
       const u=new URL(url),allowed=['github.com','release-assets.githubusercontent.com','objects.githubusercontent.com',...(mirror?[mirror.hostname]:[])];
-      if(u.protocol!=='https:'||u.port||u.username||u.password||!allowed.includes(u.hostname))throw new Error('NapCat 下载跳转地址异常');
+      if(u.protocol!=='https:'||u.port||u.username||u.password||!allowed.includes(u.hostname))throw new Error('安装包下载跳转地址异常');
       const response=await fetcher(url,{headers:{'User-Agent':'dsh-shiguang','Accept-Encoding':'identity',Range:`bytes=${start}-${end}`},redirect:'manual',signal:combined});
       if(![301,302,303,307,308].includes(response.status))return response;
-      const location=response.headers.get('location');await response.body?.cancel();if(!location)throw new Error('NapCat 下载跳转地址缺失');url=new URL(location,url).href;
-    }throw new Error('NapCat 下载跳转次数过多');
+      const location=response.headers.get('location');await response.body?.cancel();if(!location)throw new Error('安装包下载跳转地址缺失');url=new URL(location,url).href;
+    }throw new Error('安装包下载跳转次数过多');
   }
   const spans=Array.from({length:count},(_,i)=>({start:Math.floor(i*asset.size/count),end:Math.floor((i+1)*asset.size/count)-1,file:join(directory,`part-${i}`),bytes:0}));
   for(const span of spans){try{const size=(await stat(span.file)).size;if(size>span.end-span.start+1){await rm(span.file);}else span.bytes=size;}catch{/* First attempt. */}total+=span.bytes;}
   resumed=total;report();
   async function consume(response:Response,file:string,max:number,append:boolean):Promise<number>{
-    if(!response.ok||!response.body){await response.body?.cancel();throw new Error(`NapCat 下载 HTTP ${response.status}，可稍后继续`);}
+    if(!response.ok||!response.body){await response.body?.cancel();throw new Error(`安装包下载 HTTP ${response.status}，可稍后继续`);}
     const encoding=response.headers.get('content-encoding');if(encoding&&encoding!=='identity'){await response.body.cancel();throw new Error('下载服务器没有按原始字节返回安装包');}
     const fd=await open(file,append?'a':'w',0o600),reader=response.body.getReader();let bytes=0;
     try{for(;;){const result=await reader.read();if(result.done)break;combined.throwIfAborted();bytes+=result.value.length;if(bytes>max)throw new Error('安装包下载内容超出声明范围');await fd.writeFile(result.value);total+=result.value.length;report();}if(bytes!==max)throw new Error('安装包下载中断，已保存断点');return bytes;}finally{await reader.cancel().catch(()=>{});await fd.close();}
@@ -67,13 +67,13 @@ export async function downloadPackage(asset:DownloadAsset,target:string,cacheRoo
   }catch(error){
     if(signal.aborted)throw new Error('下载已暂停，断点已保存，下次可继续');
     if(error instanceof Error&&/校验/.test(error.message))await rm(directory,{recursive:true,force:true});
-    throw error instanceof Error?error:new Error('NapCat 下载未完成，已保留断点');
+    throw error instanceof Error?error:new Error('安装包下载未完成，已保留断点');
   }
   async function assemble(parts:string[]):Promise<void>{
     combined.throwIfAborted();const temporary=target+'.part',fd=await open(temporary,'w',0o600),hash=createHash('sha256');let bytes=0;
     try{
       for(const part of parts){for await(const chunk of createReadStream(part)){combined.throwIfAborted();bytes+=chunk.length;if(bytes>asset.size)throw new Error('安装包大小校验失败');hash.update(chunk);await fd.writeFile(chunk);}}
-      if(bytes!==asset.size||hash.digest('hex')!==asset.digest)throw new Error('NapCat 安装包 SHA256 或大小校验失败，未解压或启动');
+      if(bytes!==asset.size||hash.digest('hex')!==asset.digest)throw new Error('安装包 SHA256 或大小校验失败，未解压或启动');
       await fd.close();await rename(temporary,target);await rm(directory,{recursive:true,force:true});total=asset.size;report();
     }finally{await fd.close().catch(()=>{});await rm(temporary,{force:true});}
   }

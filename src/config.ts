@@ -16,11 +16,12 @@ export const AUTONOMY_DEFAULTS = {
   scheduleMode:'fixed' as 'fixed'|'free',minWakeMinutes:45,maxWakeMinutes:240,quietStart:'23:00',quietEnd:'08:00',chooseBrowsing:true,allowDeep:false,recommendOwner:false,autoLike:false,
 };
 export type AutonomySettings = typeof AUTONOMY_DEFAULTS;
-export const NAPCAT_DEFAULTS = { mode: 'managed' as 'managed' | 'external', autoInstall: true, webuiUrl: 'http://127.0.0.1:6099', downloadConnections:4, mirrorUrl:'' };
 export const BILI_VISION_DEFAULTS = {enabled:false,autoBrowse:false,provider:'',model:'',frames:4,sheetSize:768,maxFileMB:40,maxDurationSeconds:600,timeoutMs:90000,maxOutputTokens:480,dailyLimit:12,subtitleChars:1800,cacheHours:24,deepSegmentSeconds:90,deepMaxSegments:8};
 export const UPDATE_DEFAULTS={timeoutMs:15000,downloadTimeoutMs:300000,retries:2,mirrorUrl:''};
 export const PROACTIVE_DEFAULTS={enabled:false,activity:'normal' as 'silent'|'low'|'normal'|'active',minGapMinutes:60,maxGapMinutes:240,maxPerDay:4,decisionsPerDay:8,quietStart:'23:00',quietEnd:'08:00',waitForReply:true,contextChars:1200,maxTokens:480,company:30,care:25,share:20,play:15,chat:10};
 export const BILI_SOCIAL_DEFAULTS={ownerUids:[] as string[],dmEnabled:false,pollSeconds:60,repliesPerDay:20,minReplySeconds:10};
+export const SNOWLUMA_DEFAULTS={directory:'',qqPath:'',webuiUrl:'http://127.0.0.1:5099',autoStart:false};
+export const RETENTION_DEFAULTS={enabled:true,forgetAfterDays:30,promoteAfter:5};
 export const CLOCK_DEFAULTS={enabled:false,wakeAt:'08:00',sleepAt:'23:00',wakeOnMention:true,wakeChance:25,awakeMinutes:10,minWakeGapMinutes:30};
 export const EMOJI_DEFAULTS={enabled:false,dailyLimit:3,decisionsPerDay:8,allowGroups:false,maxFileMB:5,maxOutputTokens:240};
 export const VOICE_DEFAULTS = {enabled:false,authMode:'app' as 'app'|'apiKey',appId:'',speakerId:'',resourceId:'seed-icl-2.0',mode:'ask' as 'ask'|'auto',sendText:true,allowGroups:false,maxChars:200,dailyLimit:30,timeoutMs:30000,speechRate:0};
@@ -30,11 +31,6 @@ export function mirrorBaseUrl(value:string):URL {
   if(!u.pathname.endsWith('/'))u.pathname+='/';return u;
 }
 
-export function napcatBaseUrl(value: string): URL {
-  const u = new URL(value);
-  if (u.protocol !== 'http:' || !['127.0.0.1','localhost','[::1]'].includes(u.hostname) || u.username || u.password || u.search || u.hash || u.pathname !== '/') throw new Error('NapCat 后台地址应为本机 HTTP 地址，例如 http://127.0.0.1:6099');
-  return u;
-}
 
 export interface Settings {
   roleId: string; displayName: string; persona: string; timezone: string; dataDir: string;
@@ -42,16 +38,16 @@ export interface Settings {
   memory: { todayMaxChars: number; recentMessages: number; recentMaxChars: number; searchLimit: number; snippetChars: number; detailMaxChars: number };
   media: MediaSettings;
   autonomy: AutonomySettings;
-  napcat: typeof NAPCAT_DEFAULTS;
   biliVision: typeof BILI_VISION_DEFAULTS;
   voice: typeof VOICE_DEFAULTS;
   updates:typeof UPDATE_DEFAULTS;
   proactive:typeof PROACTIVE_DEFAULTS;
   biliSocial:typeof BILI_SOCIAL_DEFAULTS;
+  snowluma:typeof SNOWLUMA_DEFAULTS;retention:typeof RETENTION_DEFAULTS;
   clock:typeof CLOCK_DEFAULTS;
   emoji:typeof EMOJI_DEFAULTS;
   qq: { enabled: boolean; wsUrl: string; tokenEnv: string; ownerQQ: string; allowedPrivate: string[]; allowedGroups: string[]; groupMentionOnly: boolean; actionTimeoutMs: number; reconnectMs: number };
-  bilibili: { enabled: boolean; allowComments: boolean;manualWhitelist:boolean;allowLikes:boolean;likesPerDay:number;minLikeIntervalMs:number; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number; allowedTags:string[];blockedTags:string[];allowDynamics:boolean;dynamicsPerDay:number;minDynamicIntervalMs:number };
+  bilibili: { enabled: boolean; tagWeights:Record<string,number>;allowComments: boolean;manualWhitelist:boolean;allowLikes:boolean;likesPerDay:number;minLikeIntervalMs:number; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number; allowedTags:string[];blockedTags:string[];allowDynamics:boolean;dynamicsPerDay:number;minDynamicIntervalMs:number };
 }
 
 function object(v: unknown, key: string): Record<string, unknown> {
@@ -85,11 +81,10 @@ export function parseSettings(value: unknown, file: string): Settings {
   const c = object(value, 'root'), m = object(c.memory, 'memory'), q = object(c.qq, 'qq'), b = object(c.bilibili, 'bilibili');
   const v = { ...MEDIA_DEFAULTS, ...(c.media === undefined ? {} : object(c.media,'media')) };
   const a = { ...AUTONOMY_DEFAULTS, ...(c.autonomy===undefined?{}:object(c.autonomy,'autonomy')) };
-  // Preserve existing manually configured bridges when upgrading older profiles.
-  const n = { ...NAPCAT_DEFAULTS, mode: q.enabled ? 'external' : 'managed', ...(c.napcat === undefined ? {} : object(c.napcat,'napcat')) };
   const bv={...BILI_VISION_DEFAULTS,...(c.biliVision===undefined?{}:object(c.biliVision,'biliVision'))},vo={...VOICE_DEFAULTS,...(c.voice===undefined?{}:object(c.voice,'voice'))};
   const up={...UPDATE_DEFAULTS,...(c.updates===undefined?{}:object(c.updates,'updates'))},pr={...PROACTIVE_DEFAULTS,...(c.proactive===undefined?{}:object(c.proactive,'proactive'))},bs={...BILI_SOCIAL_DEFAULTS,...(c.biliSocial===undefined?{}:object(c.biliSocial,'biliSocial'))};
   const clock={...CLOCK_DEFAULTS,...(c.clock===undefined?{}:object(c.clock,'clock'))},emoji={...EMOJI_DEFAULTS,...(c.emoji===undefined?{}:object(c.emoji,'emoji'))};
+  const snow={...SNOWLUMA_DEFAULTS,...(c.snowluma===undefined?{}:object(c.snowluma,'snowluma'))},retention={...RETENTION_DEFAULTS,...(c.retention===undefined?{}:object(c.retention,'retention'))};
   const zone = string(c.timezone, 'timezone');
   const timezone = zone === 'system' ? Intl.DateTimeFormat().resolvedOptions().timeZone : zone;
   new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
@@ -117,7 +112,6 @@ export function parseSettings(value: unknown, file: string): Settings {
       timeoutMs: integer(v.timeoutMs,'media.timeoutMs',1000), maxOutputTokens: integer(v.maxOutputTokens,'media.maxOutputTokens',128),
       dailyLimit: integer(v.dailyLimit,'media.dailyLimit',0), contextChars: integer(v.contextChars,'media.contextChars',0), cacheHours: integer(v.cacheHours,'media.cacheHours',1),
     },
-    napcat: { mode: string(n.mode,'napcat.mode') as 'managed'|'external', autoInstall: boolean(n.autoInstall,'napcat.autoInstall'), webuiUrl: string(n.webuiUrl,'napcat.webuiUrl'),downloadConnections:integer(n.downloadConnections,'napcat.downloadConnections',1),mirrorUrl:string(n.mirrorUrl,'napcat.mirrorUrl') },
     biliVision:{enabled:boolean(bv.enabled,'biliVision.enabled'),autoBrowse:boolean(bv.autoBrowse,'biliVision.autoBrowse'),provider:string(bv.provider,'biliVision.provider'),model:string(bv.model,'biliVision.model'),frames:integer(bv.frames,'biliVision.frames',1),sheetSize:integer(bv.sheetSize,'biliVision.sheetSize',256),maxFileMB:integer(bv.maxFileMB,'biliVision.maxFileMB',1),maxDurationSeconds:integer(bv.maxDurationSeconds,'biliVision.maxDurationSeconds',1),timeoutMs:integer(bv.timeoutMs,'biliVision.timeoutMs',1000),maxOutputTokens:integer(bv.maxOutputTokens,'biliVision.maxOutputTokens',128),dailyLimit:integer(bv.dailyLimit,'biliVision.dailyLimit',0),subtitleChars:integer(bv.subtitleChars,'biliVision.subtitleChars',0),cacheHours:integer(bv.cacheHours,'biliVision.cacheHours',1),deepSegmentSeconds:integer(bv.deepSegmentSeconds,'biliVision.deepSegmentSeconds',15),deepMaxSegments:integer(bv.deepMaxSegments,'biliVision.deepMaxSegments',1)},
     voice:{enabled:boolean(vo.enabled,'voice.enabled'),authMode:string(vo.authMode,'voice.authMode') as 'app'|'apiKey',appId:string(vo.appId,'voice.appId'),speakerId:string(vo.speakerId,'voice.speakerId'),resourceId:string(vo.resourceId,'voice.resourceId'),mode:string(vo.mode,'voice.mode') as 'ask'|'auto',sendText:boolean(vo.sendText,'voice.sendText'),allowGroups:boolean(vo.allowGroups,'voice.allowGroups'),maxChars:integer(vo.maxChars,'voice.maxChars',20),dailyLimit:integer(vo.dailyLimit,'voice.dailyLimit',0),timeoutMs:integer(vo.timeoutMs,'voice.timeoutMs',1000),speechRate:integer(vo.speechRate,'voice.speechRate',-50)},
     qq: {
@@ -126,6 +120,8 @@ export function parseSettings(value: unknown, file: string): Settings {
       groupMentionOnly: boolean(q.groupMentionOnly, 'qq.groupMentionOnly'),
       actionTimeoutMs: integer(q.actionTimeoutMs, 'qq.actionTimeoutMs',1000), reconnectMs: integer(q.reconnectMs, 'qq.reconnectMs',500),
     },
+    snowluma:{directory:string(snow.directory,'snowluma.directory'),qqPath:string(snow.qqPath,'snowluma.qqPath'),webuiUrl:string(snow.webuiUrl,'snowluma.webuiUrl'),autoStart:boolean(snow.autoStart,'snowluma.autoStart')},
+    retention:{enabled:boolean(retention.enabled,'retention.enabled'),forgetAfterDays:integer(retention.forgetAfterDays,'retention.forgetAfterDays',1),promoteAfter:integer(retention.promoteAfter,'retention.promoteAfter',2)},
     clock:{enabled:boolean(clock.enabled,'clock.enabled'),wakeAt:string(clock.wakeAt,'clock.wakeAt'),sleepAt:string(clock.sleepAt,'clock.sleepAt'),wakeOnMention:boolean(clock.wakeOnMention,'clock.wakeOnMention'),wakeChance:integer(clock.wakeChance,'clock.wakeChance',0),awakeMinutes:integer(clock.awakeMinutes,'clock.awakeMinutes',1),minWakeGapMinutes:integer(clock.minWakeGapMinutes,'clock.minWakeGapMinutes',0)},
     emoji:{enabled:boolean(emoji.enabled,'emoji.enabled'),dailyLimit:integer(emoji.dailyLimit,'emoji.dailyLimit',0),decisionsPerDay:integer(emoji.decisionsPerDay,'emoji.decisionsPerDay',0),allowGroups:boolean(emoji.allowGroups,'emoji.allowGroups'),maxFileMB:integer(emoji.maxFileMB,'emoji.maxFileMB',1),maxOutputTokens:integer(emoji.maxOutputTokens,'emoji.maxOutputTokens',1)},
     updates:{timeoutMs:integer(up.timeoutMs,'updates.timeoutMs',3000),downloadTimeoutMs:integer(up.downloadTimeoutMs,'updates.downloadTimeoutMs',30000),retries:integer(up.retries,'updates.retries',0),mirrorUrl:string(up.mirrorUrl,'updates.mirrorUrl')},
@@ -139,7 +135,7 @@ export function parseSettings(value: unknown, file: string): Settings {
       scheduleMode:string(a.scheduleMode,'autonomy.scheduleMode') as 'fixed'|'free',minWakeMinutes:integer(a.minWakeMinutes,'autonomy.minWakeMinutes',15),maxWakeMinutes:integer(a.maxWakeMinutes,'autonomy.maxWakeMinutes',15),quietStart:string(a.quietStart,'autonomy.quietStart'),quietEnd:string(a.quietEnd,'autonomy.quietEnd'),chooseBrowsing:boolean(a.chooseBrowsing,'autonomy.chooseBrowsing'),allowDeep:boolean(a.allowDeep,'autonomy.allowDeep'),recommendOwner:boolean(a.recommendOwner,'autonomy.recommendOwner'),autoLike:boolean(a.autoLike,'autonomy.autoLike'),
     },
     bilibili: {
-      enabled: boolean(b.enabled, 'bilibili.enabled'),manualWhitelist:boolean(b.manualWhitelist??false,'bilibili.manualWhitelist'),allowLikes:boolean(b.allowLikes??false,'bilibili.allowLikes'),likesPerDay:integer(b.likesPerDay??20,'bilibili.likesPerDay',0),minLikeIntervalMs:integer(b.minLikeIntervalMs??60000,'bilibili.minLikeIntervalMs',0), allowComments: boolean(b.allowComments, 'bilibili.allowComments'),
+      enabled: boolean(b.enabled, 'bilibili.enabled'),tagWeights:Object.fromEntries(Object.entries(b.tagWeights===undefined?{}:object(b.tagWeights,'bilibili.tagWeights')).map(([tag,weight])=>{const w=integer(weight,'bilibili.tagWeights',1);if(w>10)throw new Error('标签权重为 1–10');return [tag,w];})),manualWhitelist:boolean(b.manualWhitelist??false,'bilibili.manualWhitelist'),allowLikes:boolean(b.allowLikes??false,'bilibili.allowLikes'),likesPerDay:integer(b.likesPerDay??20,'bilibili.likesPerDay',0),minLikeIntervalMs:integer(b.minLikeIntervalMs??60000,'bilibili.minLikeIntervalMs',0), allowComments: boolean(b.allowComments, 'bilibili.allowComments'),
       commentsPerDay: integer(b.commentsPerDay, 'bilibili.commentsPerDay',0),
       minCommentIntervalMs: integer(b.minCommentIntervalMs, 'bilibili.minCommentIntervalMs',1000),
       timeoutMs: integer(b.timeoutMs, 'bilibili.timeoutMs',1000),
@@ -153,10 +149,9 @@ export function parseSettings(value: unknown, file: string): Settings {
   if (!['ask','auto'].includes(s.media.mode)) throw new Error('视频识别模式或拼图尺寸无效');
   if (Boolean(s.media.provider) !== Boolean(s.media.model)) throw new Error('视觉模型的 provider 和 model 必须同时填写或同时留空');
   if ([s.media.ffmpegPath,s.media.ffprobePath].some(p=>!p.trim() || /[\r\n\0]/.test(p))) throw new Error('请填写有效的 FFmpeg / FFprobe 程序路径');
+  const snowUrl=new URL(s.snowluma.webuiUrl);if(snowUrl.protocol!=='http:'||!['localhost','127.0.0.1','[::1]'].includes(snowUrl.hostname)||snowUrl.username||snowUrl.password||snowUrl.search||snowUrl.hash||snowUrl.pathname!=='/')throw new Error('SnowLuma 后台请使用本机 HTTP 地址，例如 http://127.0.0.1:5099');
+  if([s.snowluma.directory,s.snowluma.qqPath].some(p=>/[\r\n\0]/.test(p)))throw new Error('SnowLuma 或 QQ 路径格式无效');
   const u = new URL(s.qq.wsUrl);
-  if (!['managed','external'].includes(s.napcat.mode)) throw new Error('NapCat 安装模式无效');
-  napcatBaseUrl(s.napcat.webuiUrl);
-  if(s.napcat.mirrorUrl)mirrorBaseUrl(s.napcat.mirrorUrl);
   if(s.updates.mirrorUrl)mirrorBaseUrl(s.updates.mirrorUrl);
   for(const value of [s.clock.wakeAt,s.clock.sleepAt,s.autonomy.quietStart,s.autonomy.quietEnd,s.proactive.quietStart,s.proactive.quietEnd])if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(value))throw new Error('安静时段使用 HH:mm');
   if(!['fixed','free'].includes(s.autonomy.scheduleMode)||s.autonomy.minWakeMinutes>s.autonomy.maxWakeMinutes)throw new Error('自主醒来模式或间隔范围无效');
@@ -173,6 +168,7 @@ export function parseSettings(value: unknown, file: string): Settings {
   if(s.autonomy.enabled&&(!s.bilibili.enabled||!s.bilibili.allowedTags.length||s.autonomy.scheduleMode==='fixed'&&!s.autonomy.wakeTimes.length))throw new Error('启用自主生活前需要开启 B 站、填写白名单标签和所需醒来时间');
   if(s.clock.wakeChance>100)throw new Error('被 @ 唤醒概率应在 0–100% 之间');
   if(s.voice.speechRate < -50 || s.voice.speechRate>100)throw new Error('火山语音协议要求语速在 -50–100 之间');
+  s.proactive.quietStart=s.clock.sleepAt;s.proactive.quietEnd=s.clock.wakeAt;s.autonomy.quietStart=s.clock.sleepAt;s.autonomy.quietEnd=s.clock.wakeAt;
   return s;
 }
 export function ensureSettings(path = ''): string {

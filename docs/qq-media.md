@@ -4,7 +4,7 @@
 
 ## 开启
 
-1. 先配置 NapCat 与 QQ 连接，使用 Array 消息格式。
+1. 先配置 SnowLuma 与 QQ 连接，使用 Array 消息格式。
 2. 安装 FFmpeg（含 FFprobe）。Windows 可执行 `winget install --id Gyan.FFmpeg -e`，安装后重启 DSH；也可以从 [FFmpeg 官网](https://ffmpeg.org/download.html) 安装并在面板填两个程序的完整路径。
 3. 在 DSH 配置支持图片输入的模型。普通纯文本模型不能看图；插件要求该模型路由声明 `image` 输入能力。
 4. 打开 **设置 → 拾光 → QQ 连接 → QQ 识图**，开启识别，填写视觉模型提供方和模型名。两项都留空时继承聊天模型。
@@ -39,9 +39,9 @@ FFmpeg 路径示例：`C:\ffmpeg\bin\ffmpeg.exe`、`C:\ffmpeg\bin\ffprobe.exe`�
 
 ## 数据与下载
 
-优先使用 NapCat `get_image` / `get_file` 返回的 QQ 媒体下载地址，或消息自带的 QQ 地址。只允许 QQ 媒体域名的 HTTP(S) 下载，重定向也逐次校验；不下载聊天文本中的任意链接。
+优先使用 SnowLuma `get_image` / `get_file` 返回的 QQ 媒体下载地址，或消息自带的 QQ 地址。只允许 QQ 媒体域名的 HTTP(S) 下载，重定向也逐次校验；不下载聊天文本中的任意链接。
 
-NapCat 与 DSH 同机、但 NapCat 仅提供本机文件路径时，可以填写“NapCat 本机媒体缓存目录”。插件只接受 NapCat 回包给出的文件，且其真实路径必须位于此目录内，不接受消息中的任意文件路径。远程 NapCat 的本地路径无法在 DSH 机器上直接读取，需要可用的 QQ 下载地址。
+SnowLuma 与 DSH 同机、但 SnowLuma 仅提供本机文件路径时，可以填写“SnowLuma 本机媒体缓存目录”。插件只接受 SnowLuma 回包给出的文件，且其真实路径必须位于此目录内，不接受消息中的任意文件路径。远程 SnowLuma 的本地路径无法在 DSH 机器上直接读取，需要可用的 QQ 下载地址。
 
 临时原媒体与抽帧文件在处理结束后删除。插件的 SQLite 记忆和缓存保存短文字；DSH 自己的附件服务会保存发给视觉模型的缩略拼图，沿用 DSH 的附件存储规则。不要将整个运行数据目录提交 GitHub。
 

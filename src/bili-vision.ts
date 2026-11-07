@@ -26,7 +26,7 @@ export function sampleSubtitles(value:unknown,max:number,range?:{start:number;en
 }
 export class BiliVision {
   private abort=new AbortController();
-  constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly bili:BilibiliClient,readonly fetcher:typeof fetch=fetch){}
+  constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly bili:BilibiliClient,readonly fetcher:typeof fetch=fetch,readonly prepare?:()=>Promise<void>){}
   stop(){this.abort.abort();}
   private async download(url:string,limit:number,signal:AbortSignal,subtitle=false):Promise<Buffer>{
     let target=biliContentURL(url,subtitle);
@@ -41,7 +41,7 @@ export class BiliVision {
   }
   async watch(input:string,question='概括视频里的主要内容',part=1,externalSignal?:AbortSignal,depth:'shallow'|'deep'='shallow'):Promise<string>{
     const c=this.settings.biliVision;if(!c.enabled)throw new Error('请先在 B 站账号页面开启视频内容识别并保存');
-    const signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs*(depth==='deep'?c.deepMaxSegments:1)),...(externalSignal?[externalSignal]:[])]);
+    let signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs*(depth==='deep'?c.deepMaxSegments:1)),...(externalSignal?[externalSignal]:[])]);
     const source=await this.bili.videoPart(input,part,signal);
     if(source.duration>c.maxDurationSeconds)throw new Error(`这个分 P 超过 ${c.maxDurationSeconds} 秒的识别上限，请提高上限或换短视频`);
     const segments=depth==='deep'?Math.ceil(source.duration/c.deepSegmentSeconds):1;if(segments>c.deepMaxSegments)throw new Error(`深度浏览需要 ${segments} 段，超过 ${c.deepMaxSegments} 段预算，尚未浏览整个视频；可调大分段长度或选择浅看`);
@@ -53,6 +53,8 @@ export class BiliVision {
     const route=c.provider?{provider:c.provider,model:c.model}:this.settings.media.provider?{provider:this.settings.media.provider,model:this.settings.media.model}:this.settings.provider?{provider:this.settings.provider,model:this.settings.model}:this.ctx.agents.list().filter(a=>!String(a.id).startsWith('shiguang-')).map(a=>a.model.current()).find(Boolean);
     const llm=this.ctx.get('llm'),attachments=this.ctx.get('attachments');if(!route||!llm||!attachments)throw new Error('请配置视觉模型，并启用 DSH 模型与附件服务');
     const model=await llm.resolveModelInfo(route.provider,route.model,signal);if(!model.inputModalities?.includes('image'))throw new Error('B 站视频识别需要支持图片输入的模型');
+    await this.prepare?.();
+    signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs*(depth==='deep'?c.deepMaxSegments:1)),...(externalSignal?[externalSignal]:[])]);signal.throwIfAborted();
     const tools=await checkMediaTools(this.settings.media);if(!tools.ready)throw new Error(tools.message);
     const processing=signal,playback=await this.bili.playback(source.video.bvid,source.cid,processing);
     if(playback.duration>c.maxDurationSeconds||Math.abs(playback.duration-source.duration)>Math.max(5,source.duration*.05))throw new Error('播放时长与完整视频不符，可能仅可试看，本次不识别');

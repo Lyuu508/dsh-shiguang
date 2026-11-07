@@ -59,7 +59,7 @@ export class OneBotClient {
   start(): void {
     if (this.stopped) return;
     if (!this.token()) { this.statusMessage = '请先在设置面板填写 OneBot Token'; return; }
-    this.state = 'connecting'; this.statusMessage = '正在连接 NapCat';
+    this.state = 'connecting'; this.statusMessage = '正在连接 SnowLuma';
     const socket = new WebSocket(this.config.wsUrl, {
       headers: { Authorization: `Bearer ${this.token()}` },
       maxPayload: 1024 * 1024, handshakeTimeout: 0,
@@ -73,13 +73,13 @@ export class OneBotClient {
       if (typeof value.echo === 'string' && this.pending.has(value.echo)) {
         const request = this.pending.get(value.echo)!; request.timer.clear(); this.pending.delete(value.echo);
         if (value.status === 'ok' && value.retcode === 0 && record(value.data)) request.resolve(value.data);
-        else request.reject(new Error(`QQ 操作未成功，retcode=${String(value.retcode)}；请检查 NapCat 日志`));
+        else request.reject(new Error(`QQ 操作未成功，retcode=${String(value.retcode)}；请检查 SnowLuma 日志`));
         return;
       }
       const message = parseMessage(value, this.config,true);
       if (message) this.onMessage(message);
     });
-    socket.on('error', () => this.log('QQ 连接异常，请检查 NapCat 地址、Token 和登录状态'));
+    socket.on('error', () => this.log('QQ 连接异常，请检查 SnowLuma 地址、Token 和登录状态'));
     socket.on('close', () => { handshake.clear();
       this.state = 'disconnected'; this.statusMessage = this.stopped ? '连接已停止' : '连接断开，正在等待重连';
       for (const request of this.pending.values()) { request.timer.clear(); request.reject(new Error('QQ 连接断开，发送结果未知；请到 QQ 核实，插件不会自动重发')); }

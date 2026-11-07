@@ -4,7 +4,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import type {Settings} from './config.js';
 import type {MemoryStore} from './memory.js';
 import type {OneBotClient,QQMessage} from './onebot.js';
-import {stateValue,setState,quietAt,jitterMinutes,think,jsonDecision} from './initiative.js';
+import {stateValue,setState,jitterMinutes,think,jsonDecision} from './initiative.js';
 
 export const MOTIVES={company:'陪伴',care:'关心',share:'分享',play:'玩耍',chat:'只是想聊天'};
 export function chooseMotive(settings:Settings['proactive'],random=Math.random):keyof typeof MOTIVES {
@@ -23,7 +23,7 @@ export class Proactive {
   async run(){
     const c=this.settings.proactive,q=this.settings.qq,now=this.memory.clock();
     if(!this.canAct()||this.stopped||!c.enabled||c.activity==='silent'||!q.enabled||!q.ownerQQ)return this.status();
-    if(quietAt(now,this.settings.timezone,c.quietStart,c.quietEnd))return this.status();
+
     const quota=this.memory.actionQuota('qq-proactive');if(quota.today>=c.maxPerDay||this.status().decisionsToday>=c.decisionsPerDay||quota.last!==null&&now-quota.last<c.minGapMinutes*60000)return this.status();
     const lastOwner=stateValue<number>(this.memory,'qq:last-owner',0),lastSent=stateValue<number>(this.memory,'qq:last-initiative',0);
     if(lastOwner&&now-lastOwner<10*60000||c.waitForReply&&lastSent>0&&lastSent>=lastOwner)return this.status();

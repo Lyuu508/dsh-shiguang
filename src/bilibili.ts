@@ -27,6 +27,7 @@ export function normalizedTag(text:string):string{return text.normalize('NFKC').
 export function tagsAllowed(tags:string[],allowed:string[],blocked:string[]):boolean {
   const values=tags.map(normalizedTag);return !blocked.some(t=>values.includes(normalizedTag(t)))&&(!allowed.length||allowed.some(t=>values.includes(normalizedTag(t))));
 }
+export function weightedTag(tags:string[],weights:Record<string,number>,random=Math.random){const sum=tags.reduce((n,t)=>n+(weights[t]??5),0);let point=random()*sum;for(const tag of tags){point-=weights[tag]??5;if(point<0)return tag;}return tags.at(-1)!;}
 const MIXIN=[46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52];
 export function wbiQuery(params:Record<string,string>,imageKey:string,subKey:string,time=Date.now()):string {
   if(!/^[a-f\d]{32}$/i.test(imageKey)||!/^[a-f\d]{32}$/i.test(subKey))throw new Error('B 站 WBI 签名密钥无效');
@@ -49,8 +50,8 @@ export class BilibiliClient {
   private readonly cookiesPath: string;
   private tagCache=new Map<string,{time:number;tags:string[]}>();
   private playbackKeys?:{image:string;sub:string;expires:number};
-  constructor(readonly settings: Settings, readonly memory: MemoryStore, readonly fetcher: typeof fetch = fetch) {
-    this.cookiesPath = join(settings.dataDir, 'bilibili.cookies.json');
+  constructor(readonly settings: Settings, readonly memory: MemoryStore, readonly fetcher: typeof fetch = fetch,readonly identity:'companion'|'owner'='companion') {
+    this.cookiesPath = join(settings.dataDir,identity==='owner'?'bilibili.owner.cookies.json':'bilibili.cookies.json');
   }
   hasLogin(): boolean {
     try { const cookies = this.cookies(); return Boolean(cookies.SESSDATA && cookies.bili_jct); } catch { return false; }
@@ -170,6 +171,17 @@ export class BilibiliClient {
     const tags=data.flatMap(row=>row&&typeof row==='object'&&typeof (row as ObjectValue).tag_name==='string'?[String((row as ObjectValue).tag_name).slice(0,80)]:[]).slice(0,100);
     if(this.tagCache.size>200)this.tagCache.clear();this.tagCache.set(key,{time:this.memory.clock(),tags});return tags;
   }
+  async recentInterestTags(limit=30,signal?:AbortSignal){
+    if(this.identity!=='owner')throw new Error('请先登录独立的主人账号');if(!Number.isSafeInteger(limit)||limit<1)throw new Error('读取数量应为正整数');
+    const account=await this.account(signal);if(!account.loggedIn)throw new Error('主人账号登录已过期，请重新扫码');
+    const cookies=this.cookies(),headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')},ids:string[]=[],seen=new Set<string>();let cursor:Record<string,string>={};
+    while(ids.length<limit){const query=new URLSearchParams({ps:'30',type:'archive',...cursor}),{data}=await this.request('https://api.bilibili.com/x/web-interface/history/cursor?'+query,{headers},signal);if(!Array.isArray(data.list))throw new Error('主人观看历史格式异常');let added=0;for(const item of data.list){const history=item?.history;if(!history||history.business!=='archive')continue;const id=typeof history.bvid==='string'&&/^BV[\dA-Za-z]{10}$/.test(history.bvid)?history.bvid:typeof history.oid==='number'&&history.oid>0?'av'+history.oid:'';if(id&&!seen.has(id)){seen.add(id);ids.push(id);added++;if(ids.length>=limit)break;}}
+      if(!added||ids.length>=limit||!data.cursor||typeof data.cursor!=='object')break;const next=data.cursor as ObjectValue;cursor={max:String(next.max??''),view_at:String(next.view_at??''),business:String(next.business??'archive')};if(!cursor.max)break;
+    }
+    const counts=new Map<string,{tag:string;count:number}>();let failed=0;
+    for(let i=0;i<ids.length;i+=3){const rows=await Promise.allSettled(ids.slice(i,i+3).map(id=>this.tags(id,signal)));for(const row of rows){if(row.status==='rejected'){signal?.throwIfAborted();failed++;continue;}for(const tag of row.value){if(this.settings.bilibili.blockedTags.some(x=>normalizedTag(x)===normalizedTag(tag)))continue;const key=normalizedTag(tag),entry=counts.get(key);counts.set(key,{tag:entry?.tag||tag,count:(entry?.count||0)+1});}}}
+    return {videos:ids.length,failed,tags:[...counts.values()].sort((a,b)=>b.count-a.count||a.tag.localeCompare(b.tag)),ownerName:account.name};
+  }
   async browse(rotation=0,signal?:AbortSignal):Promise<(BiliVideo&{tags:string[]})[]>{
     const b=this.settings.bilibili,a=this.settings.autonomy;
     if(!b.enabled||!b.allowedTags.length)throw new Error('浏览前需要启用 B 站并填写标签白名单');
@@ -182,7 +194,7 @@ export class BilibiliClient {
     const headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')};
     const {data:nav}=await this.request('https://api.bilibili.com/x/web-interface/nav',{headers},signal),keys=object(nav.wbi_img);
     const extract=(v:unknown)=>typeof v==='string'?new URL(v).pathname.split('/').at(-1)!.split('.')[0]!:'';
-    const keyword=b.allowedTags[Math.abs(rotation)%b.allowedTags.length]!;
+    const keyword=weightedTag(b.allowedTags,b.tagWeights);
     const query=wbiQuery({search_type:'video',keyword,page:String(1+Math.floor(Math.abs(rotation)/b.allowedTags.length)%3),page_size:'20',order:'pubdate'},extract(keys.img_url),extract(keys.sub_url),this.memory.clock());
     const {data}=await this.request(`https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`,{headers},signal);
     if(!Array.isArray(data.result))throw new Error('B 站搜索未返回可用视频');
@@ -202,6 +214,7 @@ export class BilibiliClient {
     return videos;
   }
   async dynamic(text:string,signal?:AbortSignal):Promise<{id:string;url:string}>{
+    if(this.identity==='owner')throw new Error('主人账号仅用于读取观看兴趣，不能发送互动');
     const b=this.settings.bilibili;if(!b.enabled||!b.allowDynamics)throw new Error('B 站动态发布尚未开启');
     text=text.trim();if(!text||[...text].length>500)throw new Error('文字动态应为 1–500 字');
     if(b.blockedTags.some(t=>normalizedTag(text).includes(normalizedTag(t))))throw new Error('动态包含黑名单标签词，本次不发布');
@@ -218,6 +231,7 @@ export class BilibiliClient {
     this.memory.append('owner','bilibili','bilibili','experience',`已发布文字动态：${text}；${url}`);return {id:String(id),url};
   }
   async comment(input: string, text: string, root = '', parent = '', signal?: AbortSignal,mentions:Record<string,string>={}): Promise<{ rpid: string; url: string }> {
+    if(this.identity==='owner')throw new Error('主人账号仅用于读取观看兴趣，不能发送互动');
     const b = this.settings.bilibili;
     if (!b.enabled || !b.allowComments) throw new Error('B 站评论尚未启用，请在本机配置 bilibili.allowComments');
     if (!text.trim() || [...text].length > 1000) throw new Error('评论应为 1–1000 字');
@@ -246,6 +260,7 @@ export class BilibiliClient {
     return { rpid: String(rpid), url: `${video.url}#reply${String(rpid)}` };
   }
   async like(input:string,signal?:AbortSignal):Promise<{liked:boolean;url:string}>{
+    if(this.identity==='owner')throw new Error('主人账号仅用于读取观看兴趣，不能发送互动');
     const c=this.settings.bilibili;if(!c.enabled||!c.allowLikes)throw new Error('请先在 B 站账号开启点赞权限');
     const video=await this.video(input,signal),cookies=this.cookies(),key=createHash('sha256').update(JSON.stringify([this.settings.roleId,this.memory.today(),'like',video.aid])).digest('hex');
     this.memory.reserveAction('bili-like',key,c.likesPerDay,c.minLikeIntervalMs);
@@ -254,6 +269,7 @@ export class BilibiliClient {
     this.memory.settleAction(key,'sent','点赞接口返回成功');this.memory.append('owner','bilibili','bilibili','experience',`已点赞《${video.title}》；${video.url}`,undefined,this.memory.clock(),'like');return {liked:true,url:video.url};
   }
   async recommend(input:string,text:string,signal?:AbortSignal):Promise<{rpid:string;url:string}>{
+    if(this.identity==='owner')throw new Error('主人账号仅用于读取观看兴趣，不能发送互动');
     const uids=this.settings.biliSocial.ownerUids;if(!this.settings.autonomy.recommendOwner||!uids.length)throw new Error('请先开启推荐并填写主人 UID 白名单');
     const account=await this.account(signal);if(!account.loggedIn)throw new Error('B 站登录已过期');
     const mentions:Record<string,string>={};
@@ -283,6 +299,7 @@ export class BilibiliClient {
     }throw new Error('新私信积压超过本轮读取范围，本次未推进游标；请在官方客户端处理积压');
   }
   async sendDirect(uid:string,text:string,externalKey:string,signal?:AbortSignal):Promise<string>{
+    if(this.identity==='owner')throw new Error('主人账号仅用于读取观看兴趣，不能发送互动');
     this.dmAllowed(uid);text=text.trim();if(!text||Buffer.byteLength(JSON.stringify({content:text}))>2000)throw new Error('B 站私信正文为空或超过 2000 字节');
     const account=await this.account(signal);if(!account.loggedIn||!/^\d+$/.test(account.userId)||uid===account.userId)throw new Error('B 站私信账号无效或正在给自己发消息');
     const cookies=this.cookies(),key=createHash('sha256').update(JSON.stringify([account.userId,uid,externalKey])).digest('hex');

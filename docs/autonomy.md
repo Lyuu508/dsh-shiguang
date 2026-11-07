@@ -49,3 +49,11 @@
 接口参考：[WBI 搜索](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/search/search_request.md)、[视频标签](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/video/tags.md)、[发布动态](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/dynamic/publish.md)。
 
 生物钟开启后，睡眠时不开始新的自主任务；发布前再次检查状态，已经到睡眠时间则不再互动。另可开启账号点赞权限和“浏览时可自主点赞”，每轮按意愿至多点赞一条，继续遵守独立点赞额度与间隔。见 [生物钟说明](clock-emoji.md)。
+
+## 主人的兴趣与标签权重
+
+在 B 站页单独扫码登录主人账号，读取最近观看视频的真实标签；选择后加入伙伴浏览白名单并保存。读取仅使用平台接口，不调用模型，不把整份主人历史写进共享记忆。主人凭据单独存放，写操作在代码中拒绝；停用主人凭据不会退出伙伴账号。
+
+白名单标签可拖动排序，也可按上移 / 下移按钮；权重为 1–10，推荐先设 5。主题选择按权重抽样，并非必选最高项；实际视频仍须命中白名单且避开黑名单。排序改变列表展示顺序，概率由权重决定。
+
+起床睡觉统一在角色页生物钟设置；固定浏览时刻或自由考虑间隔仅决定清醒期间何时想去浏览，不另设 B 站作息。
