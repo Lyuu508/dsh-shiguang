@@ -20,6 +20,7 @@ import {VoiceService,wantsVoice} from './voice.js';
 import {BiliBrowser,biliBrowseIntent} from './bili-browser.js';
 import {BiliVision} from './bili-vision.js';
 import type {QQMessage} from './onebot.js';
+import {BiliMentions} from './bili-mentions.js';
 import {BiliSocial} from './bili-social.js';
 import {Proactive} from './proactive.js';
 import {BodyClock} from './body-clock.js';
@@ -44,7 +45,7 @@ export class ShiguangRuntime {
   voice!:VoiceService;
   biliVision!:BiliVision;
   biliBrowser!:BiliBrowser;
-  biliSocial!:BiliSocial;
+  biliSocial!:BiliSocial;biliMentions!:BiliMentions;
   proactive!:Proactive;
   qqConversation!:QQConversation;
   bodyClock!:BodyClock;emoji!:EmojiCollector;
@@ -78,7 +79,7 @@ export class ShiguangRuntime {
     this.bili = new BilibiliClient(settings,this.memory,this.fetcher);this.ownerBili=new BilibiliClient(settings,this.memory,this.fetcher,'owner');
     this.biliVision=new BiliVision(this.ctx,settings,this.memory,this.bili,this.fetcher,()=>this.mediaTools.ensure());
     this.voice=new VoiceService(settings,this.memory,()=>this.voiceSecret(),this.fetcher);
-    this.biliBrowser=new BiliBrowser(settings,this.memory,this.bili,this.biliVision);
+    this.biliBrowser=new BiliBrowser(settings,this.memory,this.bili,this.biliVision,this.ctx,()=>this.bodyClock.canAct());
     this.driver = new ChatDriver(this.ctx,settings,this.memory,this.bili,this.biliVision,this.biliBrowser);
     this.media = new MediaReader(this.ctx,settings,this.memory,this.fetcher,()=>this.mediaTools.ensure());
     this.emoji=new EmojiCollector(this.ctx,settings,this.memory,this.media,()=>this.bodyClock.canAct());
@@ -101,7 +102,7 @@ export class ShiguangRuntime {
     this.qq=reuseQQ||new OneBotClient(settings.qq,receive,this.log,()=>this.token());this.qq.configure(settings.qq,receive);
     this.qq.start();
     this.autonomy=new Autonomy(this.ctx,settings,this.memory,this.bili,run=>this.enqueue(run),this.log,this.biliVision,()=>this.bodyClock.canAct());this.autonomy.start();
-    this.biliSocial=new BiliSocial(settings,this.memory,this.bili,this.driver,run=>this.enqueue(run),this.log,()=>this.bodyClock.canAct());this.biliSocial.start();
+    this.biliSocial=new BiliSocial(settings,this.memory,this.bili,this.driver,run=>this.enqueue(run),this.log,()=>this.bodyClock.canAct());this.biliSocial.start();this.biliMentions=new BiliMentions(settings,this.memory,this.bili,this.driver,run=>this.enqueue(run),this.log,()=>this.bodyClock.canAct());this.biliMentions.start();
     this.proactive=new Proactive(this.ctx,settings,this.memory,this.qq,run=>this.enqueue(run),this.log,Math.random,()=>this.bodyClock.canAct());this.proactive.start();
   }
   recoverUsage(day:string){
@@ -166,7 +167,7 @@ export class ShiguangRuntime {
     return {roles:this.roles.list(this.settings.roleId), settings: { ...this.settings, timezone: String(raw.timezone), dataDir: String(raw.dataDir) }, revision: this.revision(), tokenConfigured: !!this.token(), tokenFromEnvironment: !panelToken && !!(this.settings.qq.tokenEnv && process.env[this.settings.qq.tokenEnv]) };
   }
   status() {
-    return {revision:this.revision(),version:VERSION,roleId:this.settings.roleId, displayName: this.settings.displayName,clock:this.bodyClock.status(),mediaTools:this.mediaTools.view(), biliBrowsing:{...this.biliBrowser.status(),selection:this.bili.browseStatus()},qqConversation:this.qqConversation.status(),qq:{...this.qq.status(),repliesEnabled:this.settings.qq.enabled}, snowluma:this.snowluma.view(),biliSocial:this.biliSocial.status(),proactive:this.proactive.status(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin(),ownerCredentialSaved:this.ownerBili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, usageError:this.usageObserver.lastError,lastMessage: this.lastError };
+    return {revision:this.revision(),version:VERSION,roleId:this.settings.roleId, displayName: this.settings.displayName,clock:this.bodyClock.status(),mediaTools:this.mediaTools.view(), biliBrowsing:{...this.biliBrowser.status(),selection:this.bili.browseStatus()},qqConversation:this.qqConversation.status(),qq:{...this.qq.status(),repliesEnabled:this.settings.qq.enabled}, snowluma:this.snowluma.view(),biliSocial:this.biliSocial.status(),biliMentions:this.biliMentions.status(),proactive:this.proactive.status(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin(),ownerCredentialSaved:this.ownerBili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, usageError:this.usageObserver.lastError,lastMessage: this.lastError };
   }
   async save(value: unknown, expected: string, newToken = '', allowRole=false) {
     return this.enqueue(async () => {
@@ -190,7 +191,7 @@ export class ShiguangRuntime {
         if (newToken.trim()) this.atomicWrite(secretPath,previousToken || '');
         throw error;
       }
-      this.syncBusy=true;try{this.recoveryAbort?.abort();this.qqConversation.stop();this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.proactive.stop();this.autonomy.stop();this.media.stop();this.biliBrowser.stop();this.biliVision.stop();this.voice.stop(); await this.driver.stop();await Promise.allSettled([...this.qqSends]); if(!reuseQQ)this.qq.stop(); this.memory.close(); this.open(next,reuseQQ); this.lastError = '';
+      this.syncBusy=true;try{this.recoveryAbort?.abort();this.qqConversation.stop();this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.biliMentions.stop();this.proactive.stop();this.autonomy.stop();this.media.stop();this.biliBrowser.stop();this.biliVision.stop();this.voice.stop(); await this.driver.stop();await Promise.allSettled([...this.qqSends]); if(!reuseQQ)this.qq.stop(); this.memory.close(); this.open(next,reuseQQ); this.lastError = '';
       this.roles.remember(this.settings);this.snowluma.configure();
       return this.view();}finally{this.syncBusy=false;}
     });
@@ -251,7 +252,7 @@ export class ShiguangRuntime {
   logoutBili(): void { this.login=undefined; this.bili.logout(); }
   async stop(): Promise<void> {
     this.recoveryAbort?.abort();this.interestAbort?.abort();this.mediaTools.stop();this.stopped = true;if(this.connectionTimer)clearInterval(this.connectionTimer);await this.setupJob;if(this.retentionTimer)clearInterval(this.retentionTimer);
-    this.qqConversation.stop();this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.proactive.stop();this.watchAbort?.abort();
+    this.qqConversation.stop();this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.biliMentions.stop();this.proactive.stop();this.watchAbort?.abort();
     this.voice.stop();this.biliBrowser.stop();this.biliVision.stop();
     await this.snowluma.stop();
     this.autonomy.stop();

@@ -44,6 +44,8 @@ const platform:typeof fetch=async(url)=>{
  if(String(url).includes('/generate')){polls=0;return Response.json({code:0,data:{url:'https://account.bilibili.com/h5/account-h5/auth/scan-web?qrcode_key=browser-test',qrcode_key:'browser-test'}});}
  if(String(url).includes('/spi'))return Response.json({code:0,data:{b_3:'browser-buvid'}});
  if(String(url).includes('search/type'))return Response.json({code:0,data:{result:[]}});
+ if(String(url).includes('/x/msgfeed/at'))return Response.json({code:0,data:{cursor:{is_end:true},items:[]}});
+ if(String(url).includes('/fetch_session_msgs'))return Response.json({code:0,data:{max_seqno:'0',has_more:0,messages:[]}});
  if(String(url).includes('/nav'))return Response.json({code:0,data:{isLogin:true,mid:123456,uname:'测试B站伙伴',wbi_img:{img_url:'https://i0.hdslb.com/bfs/wbi/'+'a'.repeat(32)+'.png',sub_url:'https://i0.hdslb.com/bfs/wbi/'+'b'.repeat(32)+'.png'}}});
  if(++polls<2)return Response.json({code:0,data:{code:86101}});
  const r=Response.json({code:0,data:{code:0}});r.headers.append('Set-Cookie','SESSDATA=browser-fake-session; Path=/');r.headers.append('Set-Cookie','bili_jct=browser-fake-csrf; Path=/');return r;

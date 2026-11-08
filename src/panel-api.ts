@@ -46,6 +46,7 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'bili-watch':return runtime.startWatch(text(args.video),text(args.question,'概括视频里的主要内容'),typeof args.part==='number'?args.part:1,args.depth==='deep'?'deep':'shallow');
     case 'watch-status':return {...runtime.watchJob};
     case 'watch-cancel':return runtime.cancelWatch();
+    case 'bili-mentions-poll':return runtime.biliMentions.requestPoll();
     case 'bili-dm-poll':return runtime.biliSocial.requestPoll();
     case 'proactive-now':return runtime.proactive.consider();
     case 'proactive-cancel':runtime.proactive.cancel();return runtime.proactive.status();

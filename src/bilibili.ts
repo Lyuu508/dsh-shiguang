@@ -23,7 +23,7 @@ export function losslessJSON(text:string):unknown {
   }return JSON.parse(out);
 }
 const AGENT = 'Mozilla/5.0';
-export interface BiliVideo {aid:string;bvid:string;title:string;description:string;owner:string;url:string}
+export interface BiliVideo {views?:number;aid:string;bvid:string;title:string;description:string;owner:string;url:string}
 export function normalizedTag(text:string):string{return text.normalize('NFKC').trim().replace(/^#+|#+$/g,'').toLowerCase();}
 export function tagsAllowed(tags:string[],allowed:string[],blocked:string[]):boolean {
   const values=tags.map(normalizedTag);return !blocked.some(t=>values.includes(normalizedTag(t)))&&(!allowed.length||allowed.some(t=>values.includes(normalizedTag(t))));
@@ -46,6 +46,15 @@ export function videoId(input: string): { bvid: string } | { aid: string } {
   const match = /^\/video\/(BV[0-9A-Za-z]{10}|av\d+)\/?$/.exec(u.pathname);
   if (!match) throw new Error('链接中未找到有效视频编号');
   return videoId(match[1]!);
+}
+export interface BiliComment {id:string;root:string;uid:string;name:string;text:string;mentions:string[];likes:number}
+export interface BiliMention {id:string;time:number;uid:string;name:string;aid:string;root:string;parent:string}
+function decimalId(value:unknown){const id=String(value??'');return /^[1-9]\d*$/.test(id)&&!(typeof value==='number'&&!Number.isSafeInteger(value))?id:'';}
+function parsedComment(value:unknown,aid:string):BiliComment|undefined{
+ if(!value||typeof value!=='object')return;const r=value as any,id=decimalId(r.rpid_str??r.rpid),uid=decimalId(r.member?.mid??r.mid);
+ if(!id||!uid||r.oid!==undefined&&String(r.oid)!==aid||r.type!==undefined&&Number(r.type)!==1||typeof r.content?.message!=='string'||r.state!==undefined&&Number(r.state)!==0)return;
+ const root=decimalId(r.root_str??r.root)||id;
+ return {id,root,uid,name:String(r.member?.uname||uid).slice(0,80),text:r.content.message.slice(0,10000),mentions:Array.isArray(r.content.members)?r.content.members.flatMap((m:any)=>decimalId(m?.mid)||[]):[],likes:Number.isSafeInteger(r.like)&&r.like>=0?r.like:0};
 }
 export class BilibiliClient {
   private readonly cookiesPath: string;
@@ -78,7 +87,7 @@ export class BilibiliClient {
     const combined = signal ? AbortSignal.any([signal, timeoutSignal(this.settings.bilibili.timeoutMs)]) : timeoutSignal(this.settings.bilibili.timeoutMs);
     const response = await this.fetcher(url, { ...init, headers: { 'User-Agent': AGENT, Referer: 'https://www.bilibili.com/', ...init.headers }, redirect: 'error', signal: combined });
     if (!response.ok) throw new Error(`B 站返回 HTTP ${response.status}，请检查登录或稍后重试`);
-    const value = object(await response.json());
+    const value = object(losslessJSON(await response.text()));
     if (value.code !== 0) throw new BiliApiError(Number(value.code));
     if(array&&!Array.isArray(value.data))throw new Error('B 站标签数据格式无效');
     return { data:(array?value.data:object(value.data??{})) as T,response };
@@ -123,7 +132,7 @@ export class BilibiliClient {
       if(blocked.length)throw new Error(`这个视频命中黑名单标签：${blocked.join('、')}。视频实际标签：${tags.join('、')||'无'}。请在 B 站账号中调整黑名单后再读取。`);
       if(b.manualWhitelist&&!tagsAllowed(tags,b.allowedTags,[]))throw new Error(`这个视频没有命中白名单：${b.allowedTags.join('、')}。视频实际标签：${tags.join('、')||'无'}。手动指定的视频可关闭“手动读取也要求白名单”后再试；自动浏览仍按白名单筛选。`);
     }
-    return { aid: String(data.aid), bvid: data.bvid, title: data.title, description: String(data.desc || '').slice(0, 2000), owner: String(owner.name || ''), url: `https://www.bilibili.com/video/${data.bvid}` };
+    return { ...(Number.isSafeInteger((data.stat as any)?.view)&&(data.stat as any).view>=0?{views:(data.stat as any).view}:{}),aid: String(data.aid), bvid: data.bvid, title: data.title, description: String(data.desc || '').slice(0, 2000), owner: String(owner.name || ''), url: `https://www.bilibili.com/video/${data.bvid}` };
   }
   private async playerRequest(path:string,params:Record<string,string>,signal?:AbortSignal):Promise<ObjectValue>{
     const cookies=this.cookies(),headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')};
@@ -197,25 +206,33 @@ export class BilibiliClient {
     const {data:nav}=await this.request('https://api.bilibili.com/x/web-interface/nav',{headers},signal),keys=object(nav.wbi_img);
     const extract=(v:unknown)=>typeof v==='string'?new URL(v).pathname.split('/').at(-1)!.split('.')[0]!:'';
     const keyword=weightedTag(b.allowedTags,b.tagWeights);
-    const progress=(examined:number,selected:number,message:string)=>setState(this.memory,'bili:selection',{at:this.memory.clock(),tag:keyword,examined,selected,message});progress(0,0,'已按标签权重选择主题，正在搜索');
-    const query=wbiQuery({search_type:'video',keyword,page:String(1+Math.floor(Math.abs(rotation)/b.allowedTags.length)%3),page_size:'20',order:'pubdate'},extract(keys.img_url),extract(keys.sub_url),this.memory.clock());
-    const {data}=await this.request(`https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`,{headers},signal);
-    if(!Array.isArray(data.result))throw new Error('B 站搜索未返回可用视频');
-    const videos:(BiliVideo&{tags:string[]})[]=[];let batch=data,examined=0,page=Number(new URLSearchParams(query).get('page'));
-    while(examined<a.candidatesPerWake){
-    for(const entry of (batch.result as unknown[])){
-      const row=entry as ObjectValue;
-      if(examined++>=a.candidatesPerWake)break;
-      signal?.throwIfAborted();if(!row||typeof row!=='object'||typeof row.bvid!=='string'||!/^BV[\dA-Za-z]{10}$/.test(row.bvid))continue;
-      if(this.memory.seen('bili:browse:'+row.bvid)||videos.some(v=>v.bvid===row.bvid))continue;
-      const tags=await this.tags(row.bvid,signal);if(!tagsAllowed(tags,b.allowedTags,b.blockedTags))continue;
-      const video=await this.video(row.bvid,signal);videos.push({...video,tags});if(videos.length>=a.videosPerWake){progress(examined,videos.length,'已找到通过真实标签筛选的视频');return videos;}
+    const progress=(examined:number,selected:number,message:string)=>setState(this.memory,'bili:selection',{at:this.memory.clock(),tag:keyword,examined,selected,message,order:b.browseOrder,minViews:b.minViews});progress(0,0,'已按标签权重选择主题，正在搜索');
+    const pageKey='bili:search-cursor:'+createHash('sha256').update(JSON.stringify([normalizedTag(keyword),b.browseOrder,b.minViews,b.blockedTags])).digest('hex');
+    const stored=stateValue(this.memory,pageKey,{day:'',page:1,offset:0}),today=this.memory.today();
+    let page=stored.day===today&&Number.isSafeInteger(stored.page)&&stored.page>0?stored.page:b.browseOrder==='pubdate'?1+Math.floor(Math.abs(rotation)/b.allowedTags.length)%3:1;
+    let offset=stored.day===today&&Number.isSafeInteger(stored.offset)&&stored.offset>=0?stored.offset:0,examined=0;
+    const videos:(BiliVideo&{tags:string[]})[]=[],checkpoint=(position:number)=>setState(this.memory,pageKey,{day:today,page,offset:position});
+    // Already-viewed rows are local lookups and do not consume tag/API candidate
+    // budget. Retain page+position so popular rankings cannot get stuck at page 1.
+    for(let fetched=0;fetched<a.candidatesPerWake&&examined<a.candidatesPerWake;fetched++){
+      const query=wbiQuery({search_type:'video',keyword,page:String(page),page_size:'20',order:b.browseOrder},extract(keys.img_url),extract(keys.sub_url),this.memory.clock());
+      const {data}=await this.request('https://api.bilibili.com/x/web-interface/wbi/search/type?'+query,{headers},signal);
+      if(!Array.isArray(data.result))throw new Error('B 站搜索未返回可用视频');
+      let index=offset;
+      for(;index<data.result.length&&examined<a.candidatesPerWake;index++){
+        signal?.throwIfAborted();const row=data.result[index] as ObjectValue;
+        if(!row||typeof row!=='object'||typeof row.bvid!=='string'||!/^BV[\dA-Za-z]{10}$/.test(row.bvid)||this.memory.seen('bili:browse:'+row.bvid)||videos.some(v=>v.bvid===row.bvid)){checkpoint(index+1);continue;}
+        examined++;const tags=await this.tags(row.bvid,signal);if(!tagsAllowed(tags,b.allowedTags,b.blockedTags)){checkpoint(index+1);continue;}
+        const video=await this.video(row.bvid,signal);if(b.minViews&&(!Number.isSafeInteger(video.views)||video.views!<b.minViews)){checkpoint(index+1);continue;}
+        videos.push({...video,tags});checkpoint(index+1);if(videos.length>=a.videosPerWake){progress(examined,videos.length,'已找到通过真实标签筛选的视频');return videos;}
+      }
+      if(index<data.result.length)break;
+      if(data.result.length<20){page=1;checkpoint(0);break;}
+      page++;offset=0;checkpoint(0);
     }
-    if(examined>=a.candidatesPerWake||!Array.isArray(batch.result)||batch.result.length<20)break;
-    const next=wbiQuery({search_type:'video',keyword,page:String(++page),page_size:'20',order:'pubdate'},extract(keys.img_url),extract(keys.sub_url),this.memory.clock());batch=(await this.request('https://api.bilibili.com/x/web-interface/wbi/search/type?'+next,{headers},signal)).data;if(!Array.isArray(batch.result))throw new Error('B 站搜索分页格式无效');
-    }
-    progress(examined,videos.length,videos.length?'已完成筛选':'候选已看过、未通过标签或没有结果，可增加候选数量或调整标签');return videos;
+    progress(examined,videos.length,videos.length?'已完成筛选':'本轮没有通过标签 / 播放量门槛的新视频；已保留搜索位置，下轮继续');return videos;
   }
+
   async dynamic(text:string,signal?:AbortSignal):Promise<{id:string;url:string}>{
     if(this.identity==='owner')throw new Error('主人账号仅用于读取观看兴趣，不能发送互动');
     const b=this.settings.bilibili;if(!b.enabled||!b.allowDynamics)throw new Error('B 站动态发布尚未开启');
@@ -280,6 +297,36 @@ export class BilibiliClient {
     if(!Object.keys(mentions).length)throw new Error('无法通过评论 @ 当前登录账号自己，请填写主人的另一个 UID');
     return this.comment(input,Object.keys(mentions).map(n=>'@'+n+' ').join('')+text,'','',signal,mentions);
   }
+  async topComments(input:string,limit=5,signal?:AbortSignal):Promise<BiliComment[]>{
+    const video=await this.video(input,signal),cookies=this.cookies(),headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')};
+    const rows:BiliComment[]=[];for(let page=1;rows.length<limit;page++){
+      const query=new URLSearchParams({type:'1',oid:video.aid,sort:'1',pn:String(page),ps:String(Math.min(20,limit-rows.length))});
+      const {data}=await this.request('https://api.bilibili.com/x/v2/reply?'+query,{headers},signal);
+      const raw=Array.isArray(data.replies)?data.replies:[];for(const row of raw){const comment=parsedComment(row,video.aid);if(comment&&!rows.some(r=>r.id===comment.id))rows.push(comment);}
+      if(raw.length<Math.min(20,limit-rows.length+raw.length)||!raw.length||page>=Math.ceil(limit/20)+1)break;
+    }return rows.slice(0,limit);
+  }
+  async mentionsPage(cursor?:{id:string;time:number},signal?:AbortSignal):Promise<{items:BiliMention[];oldestTime:number;newest:{id:string;time:number};next?:{id:string;time:number}}>{
+    if(!this.settings.bilibili.enabled||!this.settings.biliSocial.mentionEnabled||this.identity==='owner')throw new Error('请先开启伙伴账号的评论 @ 监听');
+    const cookies=this.cookies(),headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')},query=new URLSearchParams({platform:'web',build:'0',mobi_app:'web',...(cursor?{id:cursor.id,at_time:String(cursor.time)}:{})});
+    const {data}=await this.request('https://api.bilibili.com/x/msgfeed/at?'+query,{headers:{...headers,Referer:'https://message.bilibili.com/'}},signal),items:BiliMention[]=[];let oldestTime=Infinity,newest={id:'0',time:0};
+    if(!Array.isArray(data.items))throw new Error('B 站 @ 通知格式异常');
+    for(const raw of data.items){const n=raw as any,t=Number(n?.at_time),nid=decimalId(n?.id);if(Number.isSafeInteger(t)&&nid){oldestTime=Math.min(oldestTime,t);if(t>newest.time||t===newest.time&&BigInt(nid)>BigInt(newest.id))newest={id:nid,time:t};}const r=raw as any,item=r?.item,id=decimalId(r?.id),uid=decimalId(r?.user?.mid),aid=decimalId(item?.subject_id),parent=decimalId(item?.source_id),time=Number(r?.at_time);
+      if(!id||!uid||!aid||!parent||Number(item?.business_id)!==1||!Number.isSafeInteger(time)||time<0)continue;
+      items.push({id,time,uid,name:String(r.user?.nickname||uid).slice(0,80),aid,parent,root:decimalId(item.root_id)||parent});
+    }
+    const c=data.cursor as any,next=c&&!c.is_end&&decimalId(c.id)&&Number.isSafeInteger(Number(c.time))?{id:String(c.id),time:Number(c.time)}:undefined;return {items,oldestTime,newest,next};
+  }
+  async verifyMention(notice:BiliMention,selfId:string,signal?:AbortSignal):Promise<BiliComment>{
+    if(!this.settings.biliSocial.ownerUids.includes(notice.uid))throw new Error('该评论作者不是主人 UID 白名单');
+    const cookies=this.cookies(),headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')};
+    for(let page=1;page<=5;page++){
+      const query=new URLSearchParams({type:'1',oid:notice.aid,root:notice.root,pn:String(page),ps:'20'}),{data}=await this.request('https://api.bilibili.com/x/v2/reply/reply?'+query,{headers},signal);
+      const replies=Array.isArray(data.replies)?data.replies:[],raw=[data.root,...replies];
+      for(const row of raw){const comment=parsedComment(row,notice.aid);if(comment?.id!==notice.parent)continue;if(comment.uid!==notice.uid||comment.root!==notice.root||!comment.mentions.includes(selfId))throw new Error('评论作者、楼层或真实 @ 对象与通知不一致，本次不执行');return comment;}
+      if(replies.length<20)break;
+    }throw new Error('未能从原评论楼层核实这条 @，可能已删除、撤回或超出本轮读取范围');
+  }
   private async vc(path:string,init:RequestInit={},signal?:AbortSignal):Promise<ObjectValue>{
     const cookies=this.cookies(),response=await this.fetcher('https://api.vc.bilibili.com'+path,{...init,headers:{'User-Agent':AGENT,Referer:'https://message.bilibili.com/','Content-Type':'application/x-www-form-urlencoded',Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; '),...init.headers},redirect:'error',signal:AbortSignal.any([timeoutSignal(this.settings.bilibili.timeoutMs),...(signal?[signal]:[])])});
     if(!response.ok)throw new Error('B 站私信 HTTP '+response.status);
@@ -295,8 +342,9 @@ export class BilibiliClient {
       const query=new URLSearchParams({talker_id:uid,session_type:'1',size:'20',sender_device_id:'1',mobi_app:'web',build:'0',...(after!==undefined?{begin_seqno:after}:{}),...(end?{end_seqno:end}:{})});
       const data=await this.vc('/svr_sync/v1/svr_sync/fetch_session_msgs?'+query,{},signal),messages=Array.isArray(data.messages)?data.messages:[];
       const max=String(data.max_seqno??'0');if(/^\d+$/.test(max)&&BigInt(max)>BigInt(highest))highest=max;
+      for(const row of messages){const seq=String(row?.msg_seqno??'');if(/^\d+$/.test(seq)&&BigInt(seq)>BigInt(highest))highest=seq;}
       if(after===undefined)return {seq:highest,messages:[]};
-      for(const row of messages){const seq=String(row?.msg_seqno??'');if(!/^\d+$/.test(seq)||BigInt(seq)<=BigInt(after)||String(row.sender_uid)!==uid||row.receiver_type!==1||row.msg_type!==1||row.msg_status!==0||typeof row.content!=='string')continue;let body:unknown;try{body=JSON.parse(row.content);}catch{continue;}const text=(body as {content?:unknown})?.content;if(typeof text==='string'&&text.trim()&&text.length<=10000)rows.push({seq,text});}
+      for(const row of messages){const seq=String(row?.msg_seqno??'');if(!/^\d+$/.test(seq)||BigInt(seq)<=BigInt(after)||String(row.sender_uid)!==uid||Number(row.receiver_type)!==1||Number(row.msg_type)!==1||row.msg_status!==undefined&&row.msg_status!==null&&Number(row.msg_status)!==0||typeof row.content!=='string')continue;let body:unknown;try{body=JSON.parse(row.content);}catch{continue;}const text=(body as {content?:unknown})?.content;if(typeof text==='string'&&text.trim()&&text.length<=10000)rows.push({seq,text});}
       if(!data.has_more||!messages.length)return {seq:highest,messages:[...new Map(rows.map(r=>[r.seq,r])).values()].sort((a,b)=>BigInt(a.seq)<BigInt(b.seq)?-1:1)};
       const min=String(data.min_seqno??'');if(!/^\d+$/.test(min)||BigInt(min)<=BigInt(after))return {seq:highest,messages:rows.sort((a,b)=>BigInt(a.seq)<BigInt(b.seq)?-1:1)};if(end===min)throw new Error('私信分页游标未前进，本轮不跳过消息');end=min;
     }throw new Error('新私信积压超过本轮读取范围，本次未推进游标；请在官方客户端处理积压');

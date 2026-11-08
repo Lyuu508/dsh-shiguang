@@ -46,8 +46,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 12) throw new Error('记忆数据库来自更新版本，请升级插件');
-    if ([1,2,3,4,5,6,7,8,9,10,11].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
+    if (Number(version) > 13) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if ([1,2,3,4,5,6,7,8,9,10,11,12].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -123,7 +123,8 @@ export class MemoryStore {
       CREATE TABLE IF NOT EXISTS provider_bills(day TEXT PRIMARY KEY,label TEXT NOT NULL,total_tokens INTEGER NOT NULL,calls INTEGER,amount TEXT NOT NULL,recorded_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS slang_entries(role TEXT NOT NULL,scope TEXT NOT NULL,term TEXT NOT NULL,meaning TEXT NOT NULL,response TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(role,scope,term));
       CREATE TABLE IF NOT EXISTS slang_tokens(role TEXT NOT NULL,scope TEXT NOT NULL,token TEXT NOT NULL,term TEXT NOT NULL,PRIMARY KEY(role,scope,token,term));
-      PRAGMA user_version=12;`);
+      CREATE TABLE IF NOT EXISTS bili_mention_receipts(role TEXT NOT NULL,account TEXT NOT NULL,notice_id TEXT NOT NULL,time INTEGER NOT NULL,status TEXT NOT NULL,summary TEXT NOT NULL DEFAULT '',PRIMARY KEY(role,account,notice_id));
+      PRAGMA user_version=13;`);
     this.db.exec("CREATE INDEX IF NOT EXISTS memories_recent ON memories(role,scope,day,time DESC,rowid DESC) WHERE kind IN ('user','assistant')");
     this.db.exec('CREATE INDEX IF NOT EXISTS memories_turn ON memories(role,scope,thread,turn_id,time,rowid); CREATE INDEX IF NOT EXISTS memories_pair ON memories(role,scope,thread,kind,rowid DESC);');
 
@@ -194,14 +195,14 @@ export class MemoryStore {
   reserveComment(key: string, perDay: number, intervalMs: number): void {
     this.reserveAction('bili-comment',key,perDay,intervalMs);
   }
-  actionQuota(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji',day=this.today()):{today:number;last:number|null}{
+  actionQuota(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention',day=this.today()):{today:number;last:number|null}{
     const count=this.db.prepare('SELECT count(*) AS n FROM actions WHERE role=? AND kind=? AND day=?').get(this.roleId,kind,day);
     const last=this.db.prepare('SELECT time FROM actions WHERE role=? AND kind=? ORDER BY time DESC LIMIT 1').get(this.roleId,kind);
     return {today:Number(count?.n),last:last?Number(last.time):null};
   }
-  reserveAction(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji',key:string,perDay:number,intervalMs:number):void {
+  reserveAction(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention',key:string,perDay:number,intervalMs:number):void {
     const day = this.today(), time = this.clock();
-    const label=kind==='bili-comment'?'评论':kind==='bili-dynamic'?'动态':kind==='bili-dm'?'B 站私信':kind==='bili-like'?'B 站点赞':kind==='qq-emoji'?'QQ 表情收藏':'QQ 主动联系';
+    const label=kind==='bili-comment'?'评论':kind==='bili-dynamic'?'动态':kind==='bili-dm'?'B 站私信':kind==='bili-mention'?'B站评论 @ 回复':kind==='bili-like'?'B 站点赞':kind==='qq-emoji'?'QQ 表情收藏':'QQ 主动联系';
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (this.db.prepare('SELECT key FROM actions WHERE key=?').get(key)) throw new Error(`这次${label}已提交过或结果待核实；请先去 B 站查看，插件不会重复发送`);

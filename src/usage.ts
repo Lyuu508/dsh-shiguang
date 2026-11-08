@@ -5,7 +5,7 @@ import type {SessionEvent} from '@deepseek-ai/dsh-session';
 import type {MemoryStore} from './memory.js';
 import {dayKey} from './memory.js';
 export const usageSession=(session:string)=>brandString<SessionId>(session);
-export interface UsageOrigin {session:string;source:'qq'|'dsh'|'bilibili';provider:string;model:string}
+export interface UsageOrigin {session:string;category?:'bilibili-mention';source:'qq'|'dsh'|'bilibili';provider:string;model:string}
 export interface UsageTotals {calls:number;missing:number;input:number;cacheRead:number;cacheWrite:number;output:number;reasoning:number;total:number;exactCalls:number;exactTotal:number;partialCalls:number;unclassified:number;mismatches:number;pending:number}
 export interface UsageReport {day:string;timezone:string;scope:'plugin'|'dsh';total:UsageTotals;categories:(UsageTotals&{category:string})[];models:(UsageTotals&{provider:string;model:string})[];bill?:{label:string;totalTokens:number;calls:number|null;amount:string;recordedAt:number};coverageStarted:number|null}
 export const validCount=(n:unknown):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0;
@@ -27,7 +27,7 @@ export function recordMediaUsage(memory:MemoryStore,origin:UsageOrigin,usage?:To
 export function recordSingleUsage(memory:MemoryStore,origin:UsageOrigin,category:'qq-media'|'bilibili-auto'|'bilibili-video'|'qq-proactive'|'qq-emoji',usage?:TokenUsage){const time=memory.clock();memory.db.prepare(upsert).run(memory.roleId,origin.session,0,dayKey(time,memory.timezone),time,origin.source,category,origin.provider,origin.model,...counterValues(usage));}
 /** Settled attempts are distinct; cumulative usage chunks within an attempt are not added. */
 export function recordUsage(memory:MemoryStore,origin:UsageOrigin,events:readonly SessionEvent[]){
- const category=events.some(e=>e.type==='tool/call'&&e.data.name.startsWith('shiguang_bili_'))?'bilibili':origin.source==='bilibili'?'bilibili-dm':origin.source,insert=memory.db.prepare(upsert);
+ const category=origin.category??(events.some(e=>e.type==='tool/call'&&e.data.name.startsWith('shiguang_bili_'))?'bilibili':origin.source==='bilibili'?'bilibili-dm':origin.source),insert=memory.db.prepare(upsert);
  memory.db.exec('SAVEPOINT usage_record');try{for(const e of events){if(e.type!=='assistant/message'&&e.type!=='assistant/attempt')continue;const usage=e.type==='assistant/message'?lastAssistantStreamChunk(e.data.stream,'usage')?.usage??e.data.usage:lastAssistantStreamChunk(e.data.stream,'usage')?.usage;insert.run(memory.roleId,origin.session,Number(e.seq),dayKey(e.time,memory.timezone),e.time,origin.source,category,origin.provider,origin.model,...counterValues(usage));}memory.db.exec('RELEASE usage_record');}catch(e){memory.db.exec('ROLLBACK TO usage_record; RELEASE usage_record');throw e;}
 }
 const exact="total_source IN ('provider','complete-components')";

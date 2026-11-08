@@ -17,8 +17,9 @@ export function mediaSegments(segments: unknown): QQMediaRef[] {
   if(!Array.isArray(segments))return [];
   return segments.flatMap(segment=>{
     if(!record(segment)||!record(segment.data)||!['video','image'].includes(String(segment.type)))return [];
-    const file=typeof segment.data.file==='string'&&segment.data.file.length<=1024?segment.data.file:undefined;
-    const url=typeof segment.data.url==='string'&&segment.data.url.length<=4096?segment.data.url:undefined;
+    const rawFile=segment.data.file_id||segment.data.file;
+    const file=typeof rawFile==='string'&&rawFile.length<=1024?rawFile:undefined;
+    const rawURL=segment.data.url||segment.data.file;const url=typeof rawURL==='string'&&/^https?:\/\//i.test(rawURL)&&rawURL.length<=4096?rawURL:undefined;
     return file||url?[{type:segment.type as QQMediaRef['type'],file,url,emoji:segment.data.sub_type===1||segment.data.sub_type==='1'||typeof segment.data.summary==='string'&&segment.data.summary.includes('表情')||!!file&&/\.gif$/i.test(file)}]:[];
   }).slice(0,4);
 }
@@ -135,7 +136,7 @@ export class OneBotClient {
     return mediaSegments(result.message);
   }
   async mediaInfo(media: QQMediaRef): Promise<JsonObject> {
-    if(!media.file || !/^[a-zA-Z0-9_.-]{1,1024}$/.test(media.file) || media.file.includes('..'))return {};
+    if(!media.file||/^(?:[a-z]:[\\/]|[\\/]|\.\.)/i.test(media.file)||media.file.includes('..')||media.file.length>1024||/[\r\n\0]/.test(media.file)||/^https?:\/\//i.test(media.file))return {};
     return this.action(media.type==='image'?'get_image':'get_file',{file:media.file});
   }
   async check(): Promise<{ online: boolean; nickname: string; userId: string }> {

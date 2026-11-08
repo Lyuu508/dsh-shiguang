@@ -77,7 +77,7 @@ test('关闭、未触发、纯文本模型和超限下载都不产生模型调�
   const vision=new Vision();ctx.llm.registerAdapter(['deepseek-official'],vision);f.settings.media.provider='deepseek-official';f.settings.media.maxFileMB=1;
   reader=new MediaReader(ctx,f.settings,memory,async()=>new Response(Buffer.alloc(1024*1024+1)));await assert.rejects(reader.reply(message,qq,[reference]),/超过/);assert.equal(vision.requests.length,0);assert.equal(dailyUsage(memory).total.calls,0);
   const fetched:string[]=[];reader=new MediaReader(ctx,f.settings,memory,async(url)=>{fetched.push(String(url));return new Response('',{status:302,headers:{location:'http://127.0.0.1/private'}});});
-  await assert.rejects(reader.reply(message,qq,[reference]),/QQ 媒体服务器/);assert.equal(fetched.length,1);
+  await assert.rejects(reader.reply(message,qq,[reference]),/下载地址暂时没识别/);assert.equal(fetched.length,1);
  }finally{reader?.stop();await ctx.fiber.dispose();memory.close();f.cleanup();}
 });
 test('真实 OneBot 媒体链路：收到视频→视觉回答→引用命中摘要→重复事件去重→关闭后不调用模型', {timeout:20000},async()=>{

@@ -24,7 +24,7 @@ export function mediaURL(value:string):URL {
   let u:URL;try{u=new URL(value);}catch{throw new MediaError('媒体没有可用的 QQ 下载地址');}
   const host=u.hostname.toLowerCase();
   if(!['https:','http:'].includes(u.protocol)||u.username||u.password||u.hash||u.port&&!["80","443"].includes(u.port)||
-    !['qq.com','qpic.cn','gtimg.cn','gtimg.com'].some(domain=>host===domain||host.endsWith('.'+domain))) throw new MediaError('只读取 QQ 媒体服务器的下载地址，不读取聊天中的任意网址');
+    !['qq.com','qq.com.cn','qlogo.cn','qpic.cn','gtimg.cn','gtimg.com'].some(domain=>host===domain||host.endsWith('.'+domain))) throw new MediaError('这个表情的下载地址暂时没识别出来，可以重新发一次让我再试试');
   return u;
 }
 async function run(program:string,args:string[],signal:AbortSignal,maxBuffer=1024*1024):Promise<Buffer> {
@@ -52,6 +52,7 @@ export function pickFrames(pixels:Buffer,max:number):number[] {
   const size=16*16*3,count=Math.floor(pixels.length/size);if(!count)return [];
   const selected=[max===1?Math.floor(count/2):0];
   const distance=(a:number,b:number)=>{let sum=0;for(let p=0;p<size;p++)sum+=Math.abs(pixels[a*size+p]!-pixels[b*size+p]!);return sum/size;};
+  if(max>1&&count>1&&distance(0,count-1)>=2)selected.push(count-1);
   while(selected.length<Math.min(max,count)){
     let best=-1,score=0;
     for(let i=0;i<count;i++){if(selected.includes(i))continue;const d=Math.min(...selected.map(j=>distance(i,j)));if(d>score){best=i;score=d;}}
@@ -72,16 +73,18 @@ export async function frameSheet(file:string,dir:string,c:MediaSettings,signal:A
   if(!Number.isFinite(width)||!Number.isFinite(height)||width<1||height<1||width>4096||height>4096)throw new MediaError('媒体尺寸无效或超过 4096 像素，请先压缩');
   if(!Number.isFinite(duration)||duration<0||duration>c.maxDurationSeconds)throw new MediaError(`媒体超过 ${c.maxDurationSeconds} 秒或无法确认时长，请先剪短`);
   if(!duration&&Number(video.nb_frames)>1)throw new MediaError('无法确认动图时长，请转换为 GIF 或短视频后重试');
-  const candidates=duration>0?c.frames*3:1;
+  const animated=duration>0&&/gif|apng|webp/i.test(String(probe.format?.format_name)+' '+String(video.codec_name)),frames=animated?c.animationFrames:c.frames;
+  const candidates=duration>0?frames*3:1;
   const filter=(duration>0?`fps=${candidates/duration}:start_time=0,`:'')+'scale=16:16,format=rgb24';
   const base=['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-format_whitelist',FORMATS];
   const raw=await run(c.ffmpegPath,[...base,'-i',file,'-an','-sn','-dn','-vf',filter,'-frames:v',String(candidates),'-pix_fmt','rgb24','-f','rawvideo','pipe:1'],signal,Math.max(16384,candidates*16*16*3));
-  const indices=pickFrames(raw,c.frames);if(!indices.length)throw new MediaError('媒体没有可读取的画面');
+  const indices=pickFrames(raw,frames);if(!indices.length)throw new MediaError('媒体没有可读取的画面');
   const times=indices.map(i=>duration>0?i*duration/candidates:0),cols=indices.length===1?1:indices.length>4?3:2,rows=Math.ceil(indices.length/cols),cell=Math.floor(c.sheetSize/Math.max(cols,rows));
-  for(let i=0;i<times.length;i++){
-    const scale=`scale=${cell}:${cell}:force_original_aspect_ratio=decrease,pad=${cell}:${cell}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
-    await run(c.ffmpegPath,[...base,'-ss',String(times[i]),'-i',file,'-an','-sn','-dn','-vf',scale,'-frames:v','1','-q:v','5','-y',join(dir,`frame-${i}.jpg`)],signal);
-  }
+  const scale=`scale=${cell}:${cell}:force_original_aspect_ratio=decrease,pad=${cell}:${cell}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+  // Select the same candidate indices used for visual deduplication. Seeking a
+  // rounded time near a GIF's last frame can otherwise land beyond its last PTS.
+  const selected=indices.map(i=>`eq(n,${i})`).join('+'),selection=(duration>0?`fps=${candidates/duration}:start_time=0,`:'')+`select='${selected}',`+scale;
+  await run(c.ffmpegPath,[...base,'-i',file,'-an','-sn','-dn','-vf',selection,'-fps_mode','vfr','-frames:v',String(indices.length),'-q:v','5','-start_number','0','-y',join(dir,'frame-%d.jpg')],signal);
   const output=join(dir,'sheet.jpg');
   await run(c.ffmpegPath,['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-framerate','1','-i',join(dir,'frame-%d.jpg'),'-vf',`tile=${cols}x${rows}:nb_frames=${indices.length}`,'-frames:v','1','-q:v','5','-y',output],signal);
   const bytes=await readFile(output);if(bytes.length>c.maxFileMB*1024*1024)throw new MediaError('拼图超过设置的媒体大小预算，请提高大小预算或降低拼图尺寸');
@@ -120,9 +123,9 @@ export class MediaReader {
     let info:Record<string,unknown>={};try{info=await qq.mediaInfo(media);}catch{/* Try the bounded CDN URL carried by the event. */}
     signal.throwIfAborted();const limit=this.settings.media.maxFileMB*1024*1024;
     if(Number(info.file_size)>limit)throw new MediaError(`媒体超过 ${this.settings.media.maxFileMB} MB，请先压缩`);
-    const urls=[info.url,media.url].filter((u):u is string=>typeof u==='string'&&/^https?:\/\//i.test(u));
+    const urls=[info.url,info.download_url,info.file,info.file_path,media.url,media.file].filter((u):u is string=>typeof u==='string'&&/^https?:\/\//i.test(u));
     let failure:unknown;
-    for(const url of [...new Set(urls)]){try{return await this.download(url,signal);}catch(error){failure=error;}}
+    for(const url of [...new Set(urls)]){signal.throwIfAborted();try{return await this.download(url,signal);}catch(error){failure=error;}}
     const root=this.settings.media.localMediaDir;
     if(root&&typeof info.file==='string'){
       const allowed=await realpath(root),path=await realpath(info.file.startsWith('file:')?fileURLToPath(info.file):info.file);
@@ -147,7 +150,7 @@ export class MediaReader {
     if(!model.inputModalities?.includes('image'))throw new MediaError('所选模型尚未声明支持图片输入，请在 QQ 识图中选择视觉模型；普通纯文本模型不能看视频');
     let processing=AbortSignal.any([signal,timeoutSignal(c.timeoutMs)]),source=media.find(m=>m.type==='video')??media[0];if(!source)throw new MediaError('引用消息中没有可读取的视频或动图');
     const bytes=await this.source(source,qq,processing),digest=createHash('sha256').update(bytes).digest('hex');
-    const cacheKey=createHash('sha256').update(JSON.stringify([digest,c.frames,c.sheetSize,c.maxDurationSeconds,c.cacheHours,route.provider,route.model,'vision-v1'])).digest('hex');
+    const cacheKey=createHash('sha256').update(JSON.stringify([digest,c.frames,c.animationFrames,c.sheetSize,c.maxDurationSeconds,c.cacheHours,route.provider,route.model,'vision-v1'])).digest('hex');
     const cache=this.memory.db.prepare('SELECT summary FROM media_cache WHERE role=? AND scope=? AND key=? AND expires>?').get(this.memory.roleId,message.scope,cacheKey,this.memory.clock());
     let sheet:FrameSheet|undefined;
     if(!cache){
