@@ -118,7 +118,8 @@
     "autoLike": false,
     "communityEnabled": false,
     "commentContextCount": 5,
-    "commentContextChars": 1000
+    "commentContextChars": 1000,
+    "fillBrowseLimit": false
   },
   "biliVision": {
     "enabled": false,
@@ -202,7 +203,14 @@
     "decisionsPerDay": 8,
     "allowGroups": false,
     "maxFileMB": 5,
-    "maxOutputTokens": 240
+    "maxOutputTokens": 240,
+    "sendEnabled": true,
+    "sendAllowGroups": false,
+    "autoSend": false,
+    "autoSendChance": 15,
+    "sendsPerDay": 20,
+    "sendMinGapSeconds": 15,
+    "syncCount": 48
   },
   "snowluma": {
     "directory": "",

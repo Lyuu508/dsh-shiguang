@@ -27,6 +27,10 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'memory-concept-save':return runtime.enqueue(async()=>{runtime.memory.setConcept(text(args.scope,'owner'),text(args.term),Number(args.weight),args.pinned===true);return {ok:true};});
     case 'memory-remember':return runtime.enqueue(async()=>{runtime.memory.remember(text(args.id),args.pinned===true);return {ok:true};});
     case 'memory-sweep':return runtime.enqueue(async()=>runtime.memory.sweep());
+    case 'settings-audit':return runtime.auditSettings();
+    case 'emoji-sync':return runtime.enqueue(()=>runtime.emojiSender.sync(runtime.qq));
+    case 'emoji-status':return runtime.emojiSender.status();
+    case 'emoji-test':return runtime.enqueue(async()=>{if(!runtime.settings.qq.ownerQQ)throw new Error('请先填写主人 QQ 号');const account=await runtime.qq.check();await runtime.emojiSender.send({id:'panel:'+Date.now(),selfId:account.userId,userId:runtime.settings.qq.ownerQQ,scope:'owner',thread:'qq:private:'+runtime.settings.qq.ownerQQ,owner:true,text:'发表情测试'},runtime.qq,'',true,signal);return runtime.emojiSender.status();});
     case 'load': return { ...runtime.view(), status: runtime.status() };
     case 'status': return runtime.status();
     case 'model-status':return runtime.modelStatus();

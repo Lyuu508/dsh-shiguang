@@ -24,7 +24,7 @@ export class EmojiCollector {
   if(bytes.length>c.maxFileMB*1048576)throw new Error('表情文件超过设置的收藏大小预算');
   const ext=bytes.subarray(0,3).toString()==='GIF'?'gif':bytes.subarray(1,4).toString()==='PNG'?'png':bytes[0]===255&&bytes[1]===216?'jpg':bytes.subarray(0,4).toString()==='RIFF'&&bytes.subarray(8,12).toString()==='WEBP'?'webp':'';if(!ext)throw new Error('收藏仅接受可验证的 GIF、PNG、JPEG 或 WebP 表情');
   const digest=createHash('sha256').update(bytes).digest('hex'),claimed=this.memory.db.prepare("INSERT OR IGNORE INTO emoji_collections(role,digest,day,time,status) VALUES(?,?,?,?,'pending')").run(this.memory.roleId,digest,this.memory.today(),this.memory.clock());if(!claimed.changes)return;
-  const parent=join(this.settings.dataDir,'emoji-collection');await mkdir(parent,{recursive:true,mode:0o700});const file=join(parent,digest+'.'+ext),temp=await mkdtemp(join(parent,'select-'));let keep=false;
+  const parent=join(this.settings.dataDir,'emoji-collection');await mkdir(parent,{recursive:true,mode:0o700});const file=join(parent,digest+'.'+ext),temp=await mkdtemp(join(parent,'select-'));let keep=false,emojiId='';
   try{
    const route=await flashRoute(this.ctx),llm=this.ctx.get('llm'),attachments=this.ctx.get('attachments');if(!route||!llm||!attachments)throw new Error('表情收藏需要已配置的 QQ 视觉模型与附件服务');
    let image;
@@ -34,9 +34,9 @@ export class EmojiCollector {
    if(!plan.collect){this.memory.db.prepare("UPDATE emoji_collections SET status='skipped',summary=? WHERE role=? AND digest=?").run(plan.reason.slice(0,500),this.memory.roleId,digest);return;}
    if(!this.canAct())throw new Error('已到睡眠时间，本次不再收藏表情');
    await writeFile(file,bytes,{mode:0o600});const key='qq-emoji:'+digest;this.memory.reserveAction('qq-emoji',key,c.dailyLimit,0);keep=true;
-   try{const receipt=await qq.action('add_custom_face',{file});if(typeof receipt.emoji_id!=='string'||!receipt.emoji_id.trim())throw new Error('QQ 收藏未返回成功结果，请在 QQ 收藏列表核实');this.memory.settleAction(key,'sent','SnowLuma 收藏成功');}
+   try{const receipt=await qq.action('add_custom_face',{file});if(typeof receipt.emoji_id!=='string'||!receipt.emoji_id.trim())throw new Error('QQ 收藏未返回成功结果，请在 QQ 收藏列表核实');emojiId=receipt.emoji_id;this.memory.settleAction(key,'sent','SnowLuma 收藏成功');}
    catch(error){this.memory.settleAction(key,'unknown','收藏结果待核实，不自动重试');throw error;}
-   this.memory.db.prepare("UPDATE emoji_collections SET status='saved',summary=?,file=? WHERE role=? AND digest=?").run(plan.reason.slice(0,500),file,this.memory.roleId,digest);
+   this.memory.db.prepare("UPDATE emoji_collections SET status='saved',summary=?,file=?,emoji_id=?,scope=? WHERE role=? AND digest=?").run(plan.reason.slice(0,500),file,emojiId,message.scope,this.memory.roleId,digest);
    this.memory.append(message.scope,'qq',message.thread,'experience',`收藏 QQ 表情（${ext}）：${plan.reason.slice(0,300)}；来源 ${message.groupId?'群聊 '+message.groupId:'私信 '+message.userId}`,undefined,this.memory.clock(),'emoji');
   }catch(error){this.memory.db.prepare("UPDATE emoji_collections SET status='failed',summary=?,file=? WHERE role=? AND digest=?").run(error instanceof Error?error.message:'收藏未完成',keep?file:'',this.memory.roleId,digest);throw error;}
   finally{await rm(temp,{recursive:true,force:true});if(!keep)await rm(file,{force:true});}

@@ -21,7 +21,7 @@ import type {SessionEvent} from '@deepseek-ai/dsh-session';
 const f=fixture(),ctx=new Context(),qq=new WebSocketServer({port:0,host:'127.0.0.1'});
 await once(qq,'listening');const address=qq.address();if(!address||typeof address==='string')throw new Error('mock QQ did not bind');
 f.settings.qq.wsUrl=`ws://127.0.0.1:${address.port}/`;f.settings.qq.ownerQQ='10001';
-qq.on('connection',socket=>socket.on('message',raw=>{const request=JSON.parse(raw.toString());socket.send(JSON.stringify({status:'ok',retcode:0,echo:request.echo,data:request.action==='get_status'?{online:true,good:true}:{user_id:10002,nickname:'模拟QQ伙伴'}}));}));
+qq.on('connection',socket=>socket.on('message',raw=>{const request=JSON.parse(raw.toString());const data=request.action==='get_status'?{online:true,good:true}:request.action==='fetch_custom_face_detail'?[{emoji_id:'browser-animated-face',resId:'browser-animated-face',desc:'开心摇摆'}]:request.action.startsWith('send_')?{message_id:91001}:{user_id:10002,nickname:'模拟QQ伙伴'};socket.send(JSON.stringify({status:'ok',retcode:0,echo:request.echo,data}));}));
 const audio=execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=0.2','-f','mp3','pipe:1']);
 const videoFile=join(f.dir,'browser-video.mp4');execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=red:s=320x180:r=5:d=2','-threads','1','-pix_fmt','yuv420p','-y',videoFile]);const videoBytes=readFileSync(videoFile);
 class BrowserVision extends LlmAdapter {

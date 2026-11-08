@@ -36,7 +36,7 @@ test('只接受 QQ CDN，拒绝任意地址、认证 URL 和伪装域名；按�
  assert.equal(mediaURL('https://multimedia.nt.qq.com/a?token=sample').hostname,'multimedia.nt.qq.com');
  for(const url of ['http://127.0.0.1/a','http://169.254.169.254/','file:///etc/passwd','https://gchat.qpic.cn.attacker.test/a','https://user:pass@gchat.qpic.cn/a','https://gchat.qpic.cn:8080/a'])assert.throws(()=>mediaURL(url));
  assert.equal(wantsMedia('你好','ask'),false);assert.equal(wantsMedia('看看这个','ask'),true);assert.equal(wantsMedia('你好','auto'),true);
- assert.throws(()=>parseVisionAnswer('我猜可能是……'),/不会自动重试/);
+ assert.throws(()=>parseVisionAnswer('{"summary":"未完整返回'),/没有读到/);
 });
 class Vision extends LlmAdapter {
  requests:GenerateOptions[]=[];

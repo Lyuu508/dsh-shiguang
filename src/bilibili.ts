@@ -157,7 +157,7 @@ export class BilibiliClient {
     const data=await this.playerRequest('/x/player/wbi/playurl',{bvid,cid,qn:'16',fnval:'16',fnver:'0',fourk:'0'},signal);
     if(data.is_preview===true||data.is_preview===1||data.need_vip===true||data.need_login===true||data.is_drm===true)throw new Error('当前账号仅有预览或没有完整播放权限，本次不读取内容');
     const dash=data.dash&&typeof data.dash==='object'?data.dash as ObjectValue:undefined;
-    const candidates=Array.isArray(dash?.video)?dash.video.filter(v=>v&&typeof v==='object'&&(!v.codecid||v.codecid===7)).sort((a,b)=>(Number(a.id)||999)-(Number(b.id)||999)||(Number(a.bandwidth)||0)-(Number(b.bandwidth)||0)):[];
+    const candidates=Array.isArray(dash?.video)?dash.video.filter(v=>v&&typeof v==='object').sort((a,b)=>Number(a.codecid!==7)-Number(b.codecid!==7)||(Number(a.id)||999)-(Number(b.id)||999)||(Number(a.bandwidth)||0)-(Number(b.bandwidth)||0)):[];
     const selected=candidates[0];let urls:string[]=[];
     if(selected)urls=[selected.baseUrl??selected.base_url,...(selected.backupUrl??selected.backup_url??[])].filter((u):u is string=>typeof u==='string');
     else if(Array.isArray(data.durl)&&data.durl.length===1){const item=data.durl[0];if(item&&typeof item.url==='string')urls=[item.url,...(Array.isArray(item.backup_url)?item.backup_url:[])];}

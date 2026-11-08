@@ -62,6 +62,7 @@ export class BiliVision {
     const urls=playback.urls.filter(url=>{try{biliContentURL(url);return true;}catch{return false;}}).sort((a,b)=>Number(new URL(a).hostname.endsWith('.bilivideo.cn'))-Number(new URL(b).hostname.endsWith('.bilivideo.cn')));
     let bytes:Buffer|undefined,lastError:unknown;
     for(const url of urls){try{bytes=await this.download(url,c.maxFileMB*1024*1024,processing);break;}catch(e){lastError=e;processing.throwIfAborted();}}
+    if(bytes&&/^(?:<!doctype|<html|<\?xml|\{\s*")/i.test(bytes.subarray(0,160).toString('utf8').trim()))throw new Error('B站返回的是网页或错误文本，没有取得可解码的视频文件，请检查伙伴账号登录状态');
     if(!bytes)throw lastError instanceof Error?lastError:new Error('没有可读取的官方 B 站视频流');
     let subtitle='',subtitleData:unknown,subtitleStatus='当前没有可用字幕，未听取音频';
     if(c.subtitleChars){try{const url=await this.bili.subtitle(source.video.bvid,source.cid,processing);if(url){subtitleData=JSON.parse((await this.download(url,1024*1024,processing,true)).toString('utf8'));subtitle=sampleSubtitles(subtitleData,c.subtitleChars);if(subtitle)subtitleStatus='附有节选的平台字幕，未转写原始音频';}}catch{processing.throwIfAborted();subtitleStatus='字幕无法读取，未听取音频';}}

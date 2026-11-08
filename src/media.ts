@@ -16,8 +16,8 @@ import type { OneBotClient, QQMessage, QQMediaRef } from './onebot.js';
 import {usageSession, recordMediaUsage } from './usage.js';
 
 const execute=promisify(execFile);
-export class MediaError extends Error {}
-const FORMATS='mov,matroska,webm,avi,mpegvideo,mpegts,gif,apng,jpeg_pipe,png_pipe,webp_pipe';
+export class MediaError extends Error {constructor(message:string,readonly diagnostic=''){super(message);}}
+const FORMATS='mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,flv,avi,asf,ogg,mpeg,mpegvideo,mpegts,gif,apng,jpeg_pipe,png_pipe,webp_pipe';
 const requestCue=/(?:\/看|\/识别|看看|看一下|看下|看.*(?:视频|动图|图片)|(?:视频|动图|图片).*(?:什么|怎么|内容)|这(?:是|个).*(?:什么|意思)|在(?:干|做)什么|描述|总结|发生了什么|画面|what.*(?:video|gif|image)|describe)/i;
 export function wantsMedia(text:string,mode:MediaSettings['mode']):boolean { return mode==='auto'||requestCue.test(text); }
 export function mediaURL(value:string):URL {
@@ -33,7 +33,10 @@ async function run(program:string,args:string[],signal:AbortSignal,maxBuffer=102
   catch(error) {
     if(signal.aborted)throw new MediaError('媒体处理已取消或超时，请缩短视频后重试');
     if((error as NodeJS.ErrnoException).code==='ENOENT')throw new MediaError('找不到 FFmpeg / FFprobe，请在视频识别工具中点自动定位或安装 / 修复');
-    throw new MediaError('媒体解码失败，请确认是常见视频、GIF、JPEG、PNG 或 WebP 格式');
+    const stage=args.includes('-show_streams')?'检测视频流':args.includes('rawvideo')?'筛选候选画面':args.some(a=>a.includes('tile='))?'生成拼图':'提取画面';
+    let detail=String((error as {stderr?:unknown}).stderr||'').replace(/\x1b\[[0-9;]*m/g,'');for(const arg of args)if(isAbsolute(arg)||/^[a-z]:[\\/]/i.test(arg))detail=detail.split(arg).join('[本地媒体]');
+    const reason=/decoder.*not found|unknown decoder|unsupported codec/i.test(detail)?'当前 FFmpeg 缺少这个视频的解码器':/invalid data|moov atom not found|invalid.*header/i.test(detail)?'下载文件不完整或不是有效视频':/unrecognized option|option.*not found/i.test(detail)?'当前 FFmpeg 不支持所需参数':/not.*whitelist/i.test(detail)?'当前 FFmpeg 未接受该封装格式':'FFmpeg 未能处理这个媒体文件';
+    throw new MediaError(`${stage}失败：${reason}`,detail.slice(-1200));
   }
 }
 export async function checkMediaTools(config:MediaSettings):Promise<{ready:boolean;message:string}> {
@@ -62,42 +65,46 @@ export function pickFrames(pixels:Buffer,max:number):number[] {
 }
 export interface FrameSheet { bytes:Buffer; duration:number; times:number[]; width:number; height:number }
 export async function frameSheetRange(file:string,dir:string,c:MediaSettings,signal:AbortSignal,start:number,duration:number):Promise<FrameSheet>{
-  const clip=join(dir,'segment.mp4');
-  await run(c.ffmpegPath,['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-format_whitelist',FORMATS,'-ss',String(start),'-i',file,'-t',String(duration),'-an','-sn','-dn','-vf','scale=640:-2','-c:v','mpeg4','-q:v','4','-threads','1','-y',clip],signal);
-  return frameSheet(clip,dir,c,signal);
+  return frameSheet(file,dir,c,signal,{start,duration});
 }
-export async function frameSheet(file:string,dir:string,c:MediaSettings,signal:AbortSignal):Promise<FrameSheet> {
+export async function frameSheet(file:string,dir:string,c:MediaSettings,signal:AbortSignal,range?:{start:number;duration:number}):Promise<FrameSheet> {
   const probe=JSON.parse((await run(c.ffprobePath,['-v','error','-protocol_whitelist','file,pipe','-format_whitelist',FORMATS,'-show_streams','-show_format','-of','json',file],signal,256*1024)).toString('utf8'));
   const video=probe.streams?.find((s:Record<string,unknown>)=>s.codec_type==='video');
-  const width=Number(video?.width),height=Number(video?.height),duration=Number(video?.duration??probe.format?.duration??0);
+  const width=Number(video?.width),height=Number(video?.height),fullDuration=Number(video?.duration??probe.format?.duration??0),duration=range?Math.min(range.duration,fullDuration-range.start):fullDuration;
   if(!Number.isFinite(width)||!Number.isFinite(height)||width<1||height<1||width>4096||height>4096)throw new MediaError('媒体尺寸无效或超过 4096 像素，请先压缩');
   if(!Number.isFinite(duration)||duration<0||duration>c.maxDurationSeconds)throw new MediaError(`媒体超过 ${c.maxDurationSeconds} 秒或无法确认时长，请先剪短`);
+  if(range&&(!Number.isFinite(range.start)||range.start<0||!Number.isFinite(range.duration)||range.duration<=0||range.start>=fullDuration))throw new MediaError('视频分段范围无效或超出实际时长');
   if(!duration&&Number(video.nb_frames)>1)throw new MediaError('无法确认动图时长，请转换为 GIF 或短视频后重试');
   const animated=duration>0&&/gif|apng|webp/i.test(String(probe.format?.format_name)+' '+String(video.codec_name)),frames=animated?c.animationFrames:c.frames;
   const candidates=duration>0?frames*3:1;
   const filter=(duration>0?`fps=${candidates/duration}:start_time=0,`:'')+'scale=16:16,format=rgb24';
   const base=['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-format_whitelist',FORMATS];
-  const raw=await run(c.ffmpegPath,[...base,'-i',file,'-an','-sn','-dn','-vf',filter,'-frames:v',String(candidates),'-pix_fmt','rgb24','-f','rawvideo','pipe:1'],signal,Math.max(16384,candidates*16*16*3));
+  const input=[...base,...(range?['-ss',String(range.start)]:[]),'-i',file,...(range?['-t',String(duration)]:[])];
+  const raw=await run(c.ffmpegPath,[...input,'-an','-sn','-dn','-vf',filter,'-frames:v',String(candidates),'-pix_fmt','rgb24','-f','rawvideo','pipe:1'],signal,Math.max(16384,candidates*16*16*3));
   const indices=pickFrames(raw,frames);if(!indices.length)throw new MediaError('媒体没有可读取的画面');
   const times=indices.map(i=>duration>0?i*duration/candidates:0),cols=indices.length===1?1:indices.length>4?3:2,rows=Math.ceil(indices.length/cols),cell=Math.floor(c.sheetSize/Math.max(cols,rows));
   const scale=`scale=${cell}:${cell}:force_original_aspect_ratio=decrease,pad=${cell}:${cell}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
   // Select the same candidate indices used for visual deduplication. Seeking a
   // rounded time near a GIF's last frame can otherwise land beyond its last PTS.
   const selected=indices.map(i=>`eq(n,${i})`).join('+'),selection=(duration>0?`fps=${candidates/duration}:start_time=0,`:'')+`select='${selected}',`+scale;
-  await run(c.ffmpegPath,[...base,'-i',file,'-an','-sn','-dn','-vf',selection,'-fps_mode','vfr','-frames:v',String(indices.length),'-q:v','5','-start_number','0','-y',join(dir,'frame-%d.jpg')],signal);
+  await run(c.ffmpegPath,[...input,'-an','-sn','-dn','-vf',selection,'-vsync','vfr','-frames:v',String(indices.length),'-q:v','5','-start_number','0','-y',join(dir,'frame-%d.jpg')],signal);
   const output=join(dir,'sheet.jpg');
   await run(c.ffmpegPath,['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-protocol_whitelist','file,pipe','-framerate','1','-i',join(dir,'frame-%d.jpg'),'-vf',`tile=${cols}x${rows}:nb_frames=${indices.length}`,'-frames:v','1','-q:v','5','-y',output],signal);
   const bytes=await readFile(output);if(bytes.length>c.maxFileMB*1024*1024)throw new MediaError('拼图超过设置的媒体大小预算，请提高大小预算或降低拼图尺寸');
   return {bytes,duration,times,width:cols*cell,height:rows*cell};
 }
 export function parseVisionAnswer(text:string):{summary:string;reply:string} {
-  const clean=text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
-  try { const v=JSON.parse(clean);if(typeof v.summary==='string'&&typeof v.reply==='string'&&v.summary.trim()&&v.reply.trim())return {summary:v.summary.trim().slice(0,180),reply:v.reply.trim().slice(0,600)}; }
-  catch { /* Some compatible models ignore the JSON instruction. Do not retry. */ }
-  throw new MediaError('视觉模型没有返回可用的简短结果，本次不会自动重试；可换用支持图片的非思考模型');
+  const clean=text.replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi,'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  const values=[clean];const first=clean.indexOf('{'),last=clean.lastIndexOf('}');if(first>=0&&last>first)values.push(clean.slice(first,last+1));
+  for(const value of values){try{const v=JSON.parse(value);const reply=[v.reply,v.answer,v.description,v.summary,v['回复'],v['回答'],v['摘要']].find(x=>typeof x==='string'&&x.trim())||'';const summary=typeof v.summary==='string'?v.summary:reply;if(reply.trim()&&summary.trim())return {summary:summary.trim().slice(0,180),reply:reply.trim().slice(0,600)};}catch{}}
+  // A completed natural-language answer is usable even if the model ignored
+  // the JSON format. Never retry a paid request merely to change formatting.
+  if(clean&&!/^[{[]/.test(clean)&&!/^```/.test(clean)&&clean.length<=6000){return {summary:clean.slice(0,180),reply:clean.slice(0,600)};}
+  throw new MediaError('本次没有读到可用的画面描述','模型未返回完整 JSON 或可用文字；没有自动重试');
 }
 export interface MediaObservation {id:string;bytes:Buffer;summary:string;source:QQMediaRef}
 export class MediaReader {
+  lastStatus={at:0,message:'尚未识别媒体',diagnostic:''};
   lastObservation?:MediaObservation;
   ensureTools(){return this.prepare?.()??Promise.resolve();}
   readSource(media:QQMediaRef,qq:OneBotClient,signal:AbortSignal){return this.source(media,qq,signal);}
@@ -139,7 +146,7 @@ export class MediaReader {
     throw new MediaError('SnowLuma 未提供可用媒体地址；本机部署可在 QQ 识图中填写 SnowLuma 媒体缓存目录');
   }
   async reply(message:QQMessage,qq:OneBotClient,media:QQMediaRef[],previous?:ReturnType<MemoryStore['fastContext']>):Promise<string>{
-    const c=this.settings.media;
+    const c=this.settings.media;this.lastStatus={at:this.memory.clock(),message:'正在读取媒体画面',diagnostic:''};
     if(!c.enabled)return '我这边还没打开看视频，暂时看不到这段的内容。';
     if(!wantsMedia(message.text,c.mode))return '嗯，收到了。';
     const used=this.memory.db.prepare("SELECT count(*) AS n FROM llm_usage WHERE role=? AND day=? AND category='qq-media'").get(this.memory.roleId,this.memory.today());
@@ -177,6 +184,7 @@ export class MediaReader {
     this.lastObservation={id:message.id,bytes,source,summary:cache?String(cache.summary):answer.summary};
     const note=`[媒体抽样摘要，未听取音频] ${cache?String(cache.summary):answer.summary}`;
     if(!this.memory.db.prepare("SELECT 1 FROM memories WHERE role=? AND scope=? AND day=? AND kind='experience' AND body=?").get(this.memory.roleId,message.scope,this.memory.today(),note))this.memory.append(message.scope,'qq',message.thread,'experience',note);
+    this.lastStatus={at:this.memory.clock(),message:'已取得画面描述',diagnostic:cache?'复用了已识别摘要':'本轮一次视觉调用'};
     return answer.reply.slice(0,this.settings.maxReplyChars);
   }
 }

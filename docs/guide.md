@@ -2,7 +2,7 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.2.3 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.2.3) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.2.4 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.2.4) 页面进入下载。
 
 ## 在哪里打开面板
 
@@ -16,7 +16,7 @@
 - **Token 用量**：按日期分别查看 QQ 聊天、B 站任务、DSH 对话的模型用量，区分未缓存输入、缓存与输出，支持导出 JSON。
 - **版本更新**：检查 GitHub Release、查看说明、下载并校验安装包，交给 DSH 安装。
 
-**点击“保存设置”即可生效，无需重启 DSH。** 保存会等待正在处理的消息完成，再应用新的配置；QQ 连接参数更新时会重新连接。其他窗口同时修改配置时会提示冲突，保留当前编辑内容。
+**点击“保存设置”即可生效，无需重启 DSH。** 保存会等待正在处理的消息完成，再应用新的配置；QQ 连接参数更新时会重新连接。后台工具定位 / 安装完成时合并路径，保留其他未保存编辑；同字段被两边修改时提示冲突，保留当前草稿。页底“核对设置是否生效”检查落盘配置与运行值，草稿需先保存。
 
 首次加载会自动生成默认配置，QQ 和 B 站互动默认关闭，可以直接在面板开始设置。
 

@@ -58,7 +58,7 @@ export class OneBotClient {
   private state: 'connecting' | 'connected' | 'disconnected' = 'disconnected';
   private statusMessage = '尚未连接';
   private heartbeat?:NodeJS.Timeout;private lastPacketAt=0;private lastMessageAt=0;private connectedAt=0;private disconnectedAt=0;private closeCode=0;private reconnectAttempts=0;private nextRetryAt=0;private connectionError='';
-  private pending = new Map<string, { resolve: (v: JsonObject) => void; reject: (e: Error) => void; timer: ScheduledTimer }>();
+  private pending = new Map<string, { resolve: (v: JsonObject|unknown[]) => void; reject: (e: Error) => void; timer: ScheduledTimer }>();
   constructor(public config: Settings['qq'], public onMessage: (message: QQMessage) => void, readonly log: (message: string) => void, readonly token = () => process.env[config.tokenEnv] || '') {}
   status() { return {state:this.state,message:this.statusMessage,lastPacketAt:this.lastPacketAt,lastMessageAt:this.lastMessageAt,connectedAt:this.connectedAt,disconnectedAt:this.disconnectedAt,closeCode:this.closeCode,reconnectAttempts:this.reconnectAttempts,nextRetryAt:this.nextRetryAt,error:this.connectionError}; }
   configure(config:Settings['qq'],onMessage=this.onMessage){this.config=config;this.onMessage=onMessage;}
@@ -85,7 +85,7 @@ export class OneBotClient {
       if(!record(value))return;
       if(typeof value.echo==='string'&&this.pending.has(value.echo)){
         const request=this.pending.get(value.echo)!;request.timer.clear();this.pending.delete(value.echo);
-        if(value.status==='ok'&&value.retcode===0&&record(value.data))request.resolve(value.data);
+        if(value.status==='ok'&&value.retcode===0&&(record(value.data)||Array.isArray(value.data)))request.resolve(value.data);
         else request.reject(new Error(`QQ 操作未成功，retcode=${String(value.retcode)}；请检查 SnowLuma 日志`));return;
       }
       const message=parseMessage(value,this.config,true);if(message){this.lastMessageAt=Date.now();this.onMessage(message);}
@@ -103,15 +103,15 @@ export class OneBotClient {
     try{while(!this.socket||this.socket.readyState!==WebSocket.OPEN){waiting.throwIfAborted();if(this.stopped)throw new Error('QQ 连接服务已停止');if(!this.nextRetryAt||Date.now()>=this.nextRetryAt)this.start();await cancellablePause(100,waiting);}}
     catch(error){signal.throwIfAborted();if(timeout.aborted)throw new Error('等待 QQ 重连超时，请确认 SnowLuma 仍在运行并已登录 QQ');throw error;}
   }
-  action(action: string, params: JsonObject): Promise<JsonObject> {
+  action<T extends JsonObject|unknown[]=JsonObject>(action: string, params: JsonObject): Promise<T> {
     const socket = this.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error('QQ 尚未连接，回复未发送'));
     const echo = randomUUID();
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       const timer = scheduleTimeout(() => {
         this.pending.delete(echo); reject(new Error('QQ 发送超时，结果未知；请到 QQ 核实，插件不会自动重发'));
       }, this.config.actionTimeoutMs);
-      this.pending.set(echo, { resolve, reject, timer });
+      this.pending.set(echo, { resolve:value=>resolve(value as T), reject, timer });
       socket.send(JSON.stringify({ action, params, echo }), error => {
         if (error) { timer.clear(); this.pending.delete(echo); reject(new Error('QQ 写入失败，结果待核实；请检查连接')); }
       });
