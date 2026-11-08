@@ -1,3 +1,4 @@
+import {BiliBlockedError} from './bili-errors.js';
 import {flashRoute} from './model-route.js';
 import {timeoutSignal} from './timeouts.js';
 import type {Context} from '@deepseek-ai/cordis';
@@ -34,6 +35,7 @@ export class BiliVision {
     for(let i=0;i<4;i++){
       const response=await this.fetcher(target,{headers:{Referer:'https://www.bilibili.com/','User-Agent':'Mozilla/5.0'},redirect:'manual',signal});
       if([301,302,303,307,308].includes(response.status)){const location=response.headers.get('location');await response.body?.cancel();if(!location)throw new Error('B 站媒体跳转地址缺失');target=biliContentURL(new URL(location,target).href,subtitle);continue;}
+      if([412,429,567].includes(response.status))throw this.bili.blockedResponse(response,subtitle?'字幕下载':'视频流下载');
       if(!response.ok||!response.body)throw new Error(`B 站媒体 HTTP ${response.status}`);
       const declared=Number(response.headers.get('content-length'));if(declared>limit){await response.body.cancel();throw new Error('B 站媒体超出下载大小上限');}
       const reader=response.body.getReader(),chunks:Uint8Array[]=[];let length=0;
@@ -61,7 +63,7 @@ export class BiliVision {
     if(playback.duration>c.maxDurationSeconds||Math.abs(playback.duration-source.duration)>Math.max(5,source.duration*.05))throw new Error('播放时长与完整视频不符，可能仅可试看，本次不识别');
     const urls=playback.urls.filter(url=>{try{biliContentURL(url);return true;}catch{return false;}}).sort((a,b)=>Number(new URL(a).hostname.endsWith('.bilivideo.cn'))-Number(new URL(b).hostname.endsWith('.bilivideo.cn')));
     let bytes:Buffer|undefined,lastError:unknown;
-    for(const url of urls){try{bytes=await this.download(url,c.maxFileMB*1024*1024,processing);break;}catch(e){lastError=e;processing.throwIfAborted();}}
+    for(const url of urls){try{bytes=await this.download(url,c.maxFileMB*1024*1024,processing);break;}catch(e){processing.throwIfAborted();if(e instanceof BiliBlockedError)throw e;lastError=e;}}
     if(bytes&&/^(?:<!doctype|<html|<\?xml|\{\s*")/i.test(bytes.subarray(0,160).toString('utf8').trim()))throw new Error('B站返回的是网页或错误文本，没有取得可解码的视频文件，请检查伙伴账号登录状态');
     if(!bytes)throw lastError instanceof Error?lastError:new Error('没有可读取的官方 B 站视频流');
     let subtitle='',subtitleData:unknown,subtitleStatus='当前没有可用字幕，未听取音频';

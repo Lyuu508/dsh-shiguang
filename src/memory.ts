@@ -5,8 +5,9 @@ import {RETENTION_DEFAULTS} from './config.js';
 import type { Settings } from './config.js';
 
 export interface ConversationMeta {speakerId?:string;speakerName?:string;turnId?:string;pairInferred?:boolean}
+export interface MemoryPerson {id:string;name:string;platform:string}
 export interface MemoryRow extends ConversationMeta { scope?:string;thread?:string;category?:string; id: string; day: string; time: number; platform: string; kind: string; body: string }
-export interface SearchHit extends ConversationMeta { time:number;at:string;scope?:string;thread?:string;category?:string; id: string; day: string; platform: string; kind: string; snippet: string }
+export interface SearchHit extends ConversationMeta { participants:MemoryPerson[];time:number;at:string;scope?:string;thread?:string;category?:string; id: string; day: string; platform: string; kind: string; snippet: string }
 const wordSegmenter=new Intl.Segmenter('zh',{granularity:'word'});
 const timeFormatters=new Map<string,Intl.DateTimeFormat>();
 export function timeLabel(time:number,timezone:string):string{let formatter=timeFormatters.get(timezone);if(!formatter){formatter=new Intl.DateTimeFormat('zh-CN',{timeZone:timezone,hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});timeFormatters.set(timezone,formatter);}return formatter.format(time);}
@@ -149,14 +150,21 @@ export class MemoryStore {
   recordReply(scope:string,platform:string,thread:string,body:string,turnId:string,speakerId='',speakerName='伙伴',externalKey?:string){return this.append(scope,platform,thread,'assistant',body,externalKey,this.clock(),'',{turnId,speakerId,speakerName});}
   private scopes(scope:string,allowed?:string[]){return [...new Set(allowed?.length?allowed:[scope])];}
   private speaker(row:Record<string,any>){return row.kind==='assistant'?(row.speaker_name||'伙伴'):(row.speaker_name||row.speaker_id||(/^qq:private:/.test(row.thread)?String(row.thread).slice(11):'对方（旧记录未保存姓名）'));}
+  private participants(row:Record<string,any>):MemoryPerson[]{
+    const people=new Map<string,MemoryPerson>();
+    const add=(r:Record<string,any>)=>{const id=String(r.speaker_id||''),name=String(r.speaker_name||'');if(!id&&!name)return;const platform=String(r.platform==='shared'?(String(r.thread).startsWith('qq:')?'qq':String(r.thread).startsWith('bilibili:')?'bilibili':'shared'):r.platform);people.set(platform+':'+(id||name),{id,name:name||id,platform});};
+    if(row.kind!=='assistant')add(row);
+    if(row.turn_id)this.db.prepare("SELECT speaker_id,speaker_name,platform,thread FROM memories INDEXED BY memories_turn WHERE role=? AND scope=? AND thread=? AND turn_id=? AND day=? AND kind='user' ORDER BY time DESC,rowid DESC LIMIT 32").all(this.roleId,row.scope,row.thread,row.turn_id,row.day).reverse().forEach(add);
+    return [...people.values()];
+  }
   fastContext(scope: string, thread: string,conversationScopes?:string[],excludeTurns:string[]=[]): { day: string; todayNotes: string; recent: string } {
     const day = this.today();
-    const notes = this.db.prepare("SELECT body,platform,time FROM memories WHERE role=? AND scope=? AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) AND day=? AND kind IN ('note','experience') ORDER BY time DESC,rowid DESC LIMIT 80")
-      .all(this.roleId,scope,day) as {body:string;platform:string;time:number}[];
+    const notes = this.db.prepare("SELECT body,platform,time,thread,kind,speaker_id,speaker_name FROM memories WHERE role=? AND scope=? AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) AND day=? AND kind IN ('note','experience') ORDER BY time DESC,rowid DESC LIMIT 80")
+      .all(this.roleId,scope,day);
     const shared=!!conversationScopes?.length;
     const recent=this.db.prepare(`SELECT kind,body,time,platform,thread,speaker_id,speaker_name FROM memories INDEXED BY ${shared?'memories_recent':'memories_thread'} WHERE role=? AND scope IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) AND day=? ${shared?'':'AND thread=?'} AND turn_id NOT IN (SELECT value FROM json_each(?)) AND kind IN ('user','assistant') ORDER BY time DESC,rowid DESC LIMIT ?`)
       .all(this.roleId,JSON.stringify(this.scopes(scope,conversationScopes)),day,...(shared?[]:[thread]),JSON.stringify(excludeTurns),this.limits.recentMessages);
-    return {day,todayNotes:budgetLines(notes.map(n=>`[${timeLabel(n.time,this.timezone)}] [${n.platform}] ${n.body}`),this.limits.todayMaxChars),recent:budgetLines(recent.map(r=>`[${timeLabel(Number(r.time),this.timezone)}] [${r.platform} ${r.thread}] ${this.speaker(r)}${r.speaker_id?'('+r.speaker_id+')':''}：${r.body}`),this.limits.recentMaxChars)};
+    return {day,todayNotes:budgetLines(notes.map(n=>`[${timeLabel(Number(n.time),this.timezone)}] [${n.platform} ${n.thread}] [${n.speaker_id||n.speaker_name?'来源：'+this.speaker(n)+(n.speaker_id?'('+n.speaker_id+')':''):n.kind==='experience'?'伙伴活动；未记录其他参与人':'来源身份未知'}] ${n.body}`),this.limits.todayMaxChars),recent:budgetLines(recent.map(r=>`[${timeLabel(Number(r.time),this.timezone)}] [${r.platform} ${r.thread}] ${this.speaker(r)}${r.speaker_id?'('+r.speaker_id+')':''}：${r.body}`),this.limits.recentMaxChars)};
   }
   search(scope: string, query: string, range: 'history' | 'today' | 'all' = 'history', day?: string,allowedScopes?:string[]): SearchHit[] {
     if (!query.trim() || query.length > 200) throw new Error('检索词应为 1–200 字');
@@ -182,16 +190,16 @@ export class MemoryStore {
       const positions = tokens.map(t => lower.indexOf(t)).filter(n => n >= 0);
       const start = Math.max(0, (positions.length ? Math.min(...positions) : 0) - 45);
       this.touch(String(r.id));
-      return {scope:String(r.scope),thread:String(r.thread),speakerId:String(r.speaker_id),speakerName:String(r.speaker_name),turnId:String(r.turn_id), id: String(r.id), day: String(r.day),time:Number(r.time),at:String(r.day)+' '+timeLabel(Number(r.time),this.timezone), platform: String(r.platform), kind: String(r.kind), snippet: `${start ? '…' : ''}${body.slice(start, start + this.limits.snippetChars)}${body.length > start + this.limits.snippetChars ? '…' : ''}` };
+      return {participants:this.participants(r),scope:String(r.scope),thread:String(r.thread),speakerId:String(r.speaker_id),speakerName:String(r.speaker_name),turnId:String(r.turn_id), id: String(r.id), day: String(r.day),time:Number(r.time),at:String(r.day)+' '+timeLabel(Number(r.time),this.timezone), platform: String(r.platform), kind: String(r.kind), snippet: `${start ? '…' : ''}${body.slice(start, start + this.limits.snippetChars)}${body.length > start + this.limits.snippetChars ? '…' : ''}` };
     });
   }
-  detail(scope: string, id: string, offset = 0, historyAllowed = true,allowedScopes?:string[],includeForgotten=false): { id: string; day: string;time:number;at:string; platform: string; text: string; nextOffset: number | null } {
+  detail(scope: string, id: string, offset = 0, historyAllowed = true,allowedScopes?:string[],includeForgotten=false) {
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('offset 必须为非负整数');
-    const row = this.db.prepare('SELECT id,day,time,platform,body FROM memories WHERE role=? AND scope IN (SELECT value FROM json_each(?)) AND id=? AND (? OR EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0)) AND (? OR day=?)').get(this.roleId,JSON.stringify(this.scopes(scope,allowedScopes)), id,includeForgotten?1:0, historyAllowed ? 1 : 0, this.today()) as { id: string; day: string;time:number; platform: string; body: string } | undefined;
+    const row = this.db.prepare('SELECT id,day,time,platform,body,scope,thread,kind,turn_id,speaker_id,speaker_name FROM memories WHERE role=? AND scope IN (SELECT value FROM json_each(?)) AND id=? AND (? OR EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0)) AND (? OR day=?)').get(this.roleId,JSON.stringify(this.scopes(scope,allowedScopes)), id,includeForgotten?1:0, historyAllowed ? 1 : 0, this.today());
     if (!row) throw new Error('记忆不存在或不属于当前会话');
     this.touch(id);
     const end = offset + this.limits.detailMaxChars;
-    return { id: row.id, day: row.day,time:row.time,at:row.day+' '+timeLabel(row.time,this.timezone), platform: row.platform, text: row.body.slice(offset, end), nextOffset: end < row.body.length ? end : null };
+    const body=String(row.body),time=Number(row.time);return { id:String(row.id),day:String(row.day),time,at:row.day+' '+timeLabel(time,this.timezone),platform:String(row.platform),scope:String(row.scope),thread:String(row.thread),kind:String(row.kind),turnId:String(row.turn_id),speakerId:String(row.speaker_id),speakerName:String(row.speaker_name),participants:this.participants(row),text:body.slice(offset,end),nextOffset:end<body.length?end:null };
   }
   reserveComment(key: string, perDay: number, intervalMs: number): void {
     this.reserveAction('bili-comment',key,perDay,intervalMs);

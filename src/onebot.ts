@@ -1,12 +1,13 @@
 import {scheduleTimeout,type ScheduledTimer} from './timeouts.js';
 import WebSocket from 'ws';
 import {cancellablePause} from './qq-conversation.js';
-import { randomUUID } from 'node:crypto';
+import { randomUUID,createHash } from 'node:crypto';
 import type { Settings } from './config.js';
 
 export interface QQMessage {
   id: string; selfId: string; userId: string; groupId?: string;
   thread: string; scope: string; owner: boolean; text: string;
+  poke?:{action:string;suffix:string};
   ownerMessage?:boolean;memoryId?:string;receivedAt?:number;speakerName?:string;keyword?:string;keywordAwakened?:boolean;media?: QQMediaRef[]; replyId?: string;mentioned?:boolean;replyAllowed?:boolean;
 }
 export interface QQMediaRef { type: 'video' | 'image'; file?: string; url?: string;emoji?:boolean }
@@ -51,6 +52,20 @@ export function parseMessage(value: unknown, config: Settings['qq'],includePassi
   return { id: `${selfId}:${thread}:${messageId}`, selfId, userId, groupId: groupId || undefined, thread, scope: owner ? 'owner' : thread, owner, ownerMessage:userId===config.ownerQQ, text, speakerName,keyword,media, replyId,mentioned,replyAllowed:!groupId||!config.groupMentionOnly||mentioned||!!keyword };
 }
 
+export function parsePoke(value:unknown,config:Settings['qq']):QQMessage|null {
+ if(!record(value)||value.post_type!=='notice'||value.notice_type!=='notify'||value.sub_type!=='poke')return null;
+ const selfId=id(value.self_id),target=id(value.target_id),userId=id(value.sender_id??value.user_id);
+ if(!selfId||target!==selfId||!userId||userId===selfId)return null;
+ const groupId=value.group_id===undefined||value.group_id===0||value.group_id==='0'?undefined:id(value.group_id);if(groupId===null)return null;
+ const owner=!groupId&&userId===config.ownerQQ;if(groupId?!config.allowedGroups.includes(groupId):!owner&&!config.allowedPrivate.includes(userId))return null;
+ const clean=(v:unknown,max:number)=>typeof v==='string'?v.replace(/[\x00-\x1f\x7f]/g,'').slice(0,max).trim():'';
+ const action=clean(value.action,40)||config.poke.actionText,suffix=clean(value.suffix,100),thread=groupId?`qq:group:${groupId}`:`qq:private:${userId}`;
+ const sender=record(value.sender)?value.sender:{},speakerName=clean(sender.card||sender.nickname,80)||userId;
+ const stamp=typeof value.time==='number'&&Number.isFinite(value.time)?value.time:randomUUID();
+ const digest=createHash('sha256').update(JSON.stringify([selfId,thread,userId,target,stamp,action,suffix])).digest('hex');
+ return {id:`poke:${digest}`,selfId,userId,groupId:groupId||undefined,thread,scope:owner?'owner':thread,owner,ownerMessage:userId===config.ownerQQ,speakerName,poke:{action,suffix},text:`[头像互动，非口头发言] ${speakerName}（${userId}）${action}你${suffix?'，'+suffix:''}`,replyAllowed:true};
+}
+
 export class OneBotClient {
   private socket?: WebSocket;
   private stopped = false;
@@ -88,7 +103,7 @@ export class OneBotClient {
         if(value.status==='ok'&&value.retcode===0&&(record(value.data)||Array.isArray(value.data)))request.resolve(value.data);
         else request.reject(new Error(`QQ 操作未成功，retcode=${String(value.retcode)}；请检查 SnowLuma 日志`));return;
       }
-      const message=parseMessage(value,this.config,true);if(message){this.lastMessageAt=Date.now();this.onMessage(message);}
+      const message=parseMessage(value,this.config,true)||parsePoke(value,this.config);if(message){this.lastMessageAt=Date.now();this.onMessage(message);}
     });
     socket.on('error',(error:Error & {code?:string})=>{if(this.socket!==socket||this.stopped)return;this.connectionError=error.code==='ECONNREFUSED'?'SnowLuma 消息接口未启动或已经退出':/401|403/.test(error.message)?'SnowLuma 拒绝鉴权，请同步消息密钥':error.code==='ENOTFOUND'?'无法定位 SnowLuma 消息地址':'SnowLuma 连接异常，请检查桥接进程与 QQ 登录状态';this.log(this.connectionError);});
     socket.on('close',(code)=>{handshake.clear();if(this.socket!==socket)return;if(this.heartbeat)clearInterval(this.heartbeat);this.socket=undefined;this.state='disconnected';this.disconnectedAt=Date.now();this.closeCode=code;

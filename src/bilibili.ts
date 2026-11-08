@@ -1,4 +1,5 @@
 import {setState,stateValue} from './initiative.js';
+import {BiliBlockedError,biliStage} from './bili-errors.js';
 import {timeoutSignal} from './timeouts.js';
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -66,6 +67,10 @@ export class BilibiliClient {
   hasLogin(): boolean {
     try { const cookies = this.cookies(); return Boolean(cookies.SESSDATA && cookies.bili_jct); } catch { return false; }
   }
+  riskStatus(){const r=stateValue(this.memory,'bili:risk:'+this.identity,{at:0,retryAt:0,code:0,stage:'',message:''});return {...r,active:r.retryAt>this.memory.clock()};}
+  assertAvailable(){const r=this.riskStatus();if(r.active)throw new BiliBlockedError(r.code,r.stage,r.retryAt);}
+  blockedResponse(response:Response,stage:string){const retry=response.headers.get('retry-after'),seconds=retry&&/^\d+$/.test(retry)?Number(retry):retry?Math.max(0,(Date.parse(retry)-this.memory.clock())/1000):0;return this.markBlocked(response.status,stage,Number.isFinite(seconds)?seconds:0);}
+  markBlocked(code:number,stage:string,retrySeconds=this.settings.bilibili.riskCooldownSeconds){const at=this.memory.clock(),retryAt=at+Math.max(this.settings.bilibili.riskCooldownSeconds,retrySeconds)*1000,error=new BiliBlockedError(code,stage,retryAt);setState(this.memory,'bili:risk:'+this.identity,{at,retryAt,code,stage,message:error.message});return error;}
   logout(): void {
     if (existsSync(this.cookiesPath)) renameSync(this.cookiesPath, `${this.cookiesPath}.logout-${Date.now()}`);
   }
@@ -84,11 +89,13 @@ export class BilibiliClient {
     return cookies;
   }
   private async request<T=ObjectValue>(url: string, init: RequestInit = {}, signal?: AbortSignal,array=false): Promise<{ data:T; response: Response }> {
+    const risk=this.riskStatus(),stage=biliStage(url),u=new URL(url);if(risk.active&&u.hostname!=='passport.bilibili.com'&&u.pathname!=='/x/web-interface/nav')throw new BiliBlockedError(risk.code,risk.stage,risk.retryAt);
     const combined = signal ? AbortSignal.any([signal, timeoutSignal(this.settings.bilibili.timeoutMs)]) : timeoutSignal(this.settings.bilibili.timeoutMs);
     const response = await this.fetcher(url, { ...init, headers: { 'User-Agent': AGENT, Referer: 'https://www.bilibili.com/', ...init.headers }, redirect: 'error', signal: combined });
-    if (!response.ok) throw new Error(`B 站返回 HTTP ${response.status}，请检查登录或稍后重试`);
+    if([412,429,567].includes(response.status))throw this.blockedResponse(response,stage);
+    if (!response.ok) throw new Error(`B 站${stage}返回 HTTP ${response.status}，请检查登录或稍后重试`);
     const value = object(losslessJSON(await response.text()));
-    if (value.code !== 0) throw new BiliApiError(Number(value.code));
+    if (value.code !== 0){if([-352,-412,12015].includes(Number(value.code)))throw this.markBlocked(Number(value.code),stage);throw new BiliApiError(Number(value.code));}
     if(array&&!Array.isArray(value.data))throw new Error('B 站标签数据格式无效');
     return { data:(array?value.data:object(value.data??{})) as T,response };
   }
@@ -135,6 +142,7 @@ export class BilibiliClient {
     return { ...(Number.isSafeInteger((data.stat as any)?.view)&&(data.stat as any).view>=0?{views:(data.stat as any).view}:{}),aid: String(data.aid), bvid: data.bvid, title: data.title, description: String(data.desc || '').slice(0, 2000), owner: String(owner.name || ''), url: `https://www.bilibili.com/video/${data.bvid}` };
   }
   private async playerRequest(path:string,params:Record<string,string>,signal?:AbortSignal):Promise<ObjectValue>{
+    this.assertAvailable();
     const cookies=this.cookies(),headers={Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')};
     if(!this.playbackKeys||this.playbackKeys.expires<this.memory.clock()){
       const {data}=await this.request('https://api.bilibili.com/x/web-interface/nav',{headers},signal);
@@ -196,7 +204,7 @@ export class BilibiliClient {
   async browse(rotation=0,signal?:AbortSignal):Promise<(BiliVideo&{tags:string[]})[]>{
     const b=this.settings.bilibili,a=this.settings.autonomy;
     if(!b.enabled||!b.allowedTags.length)throw new Error('浏览前需要启用 B 站并填写标签白名单');
-    let cookies=this.cookies();
+    this.assertAvailable();let cookies=this.cookies();
     if(!cookies.buvid3){
       const {data}=await this.request('https://api.bilibili.com/x/frontend/finger/spi',{},signal);
       if(typeof data.b_3!=='string'||/[;\r\n]/.test(data.b_3))throw new Error('无法建立 B 站浏览会话，请重新登录');
@@ -243,7 +251,7 @@ export class BilibiliClient {
     let result:{data:ObjectValue;response:Response};
     try{
       result=await this.request(`https://api.bilibili.com/x/dynamic/feed/create/dyn?csrf=${encodeURIComponent(cookies.bili_jct!)}`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')},body:JSON.stringify({dyn_req:{scene:1,content:{contents:[{raw_text:text,type:1,biz_id:''}]},meta:{app_meta:{from:'create.dynamic.web',mobi_app:'web'}}}})},signal);
-    }catch(error){this.memory.settleAction(key,error instanceof BiliApiError?'failed':'unknown',error instanceof BiliApiError?String(error.code):'发送结果未知，请核实');if(error instanceof BiliApiError)throw error;throw new Error('动态发送结果未知，请在 B 站核实；插件不会自动重发');}
+    }catch(error){this.memory.settleAction(key,error instanceof BiliApiError?'failed':'unknown',error instanceof BiliApiError?String(error.code):'发送结果未知，请核实');if(error instanceof BiliApiError||error instanceof BiliBlockedError)throw error;throw new Error('动态发送结果未知，请在 B 站核实；插件不会自动重发');}
     if(result.data.need_captcha===true||result.data.v_voucher){this.memory.settleAction(key,'unknown','需要官方验证');throw new Error('B 站要求验证，请先在官方客户端处理并核实动态状态');}
     const id=result.data.dyn_id_str??result.data.dyn_id;
     if(!(typeof id==='string'&&/^[1-9]\d*$/.test(id))&&!(typeof id==='number'&&Number.isSafeInteger(id)&&id>0)){this.memory.settleAction(key,'unknown','未收到动态 ID');throw new Error('B 站没有返回动态 ID，请先核实发送状态');}
@@ -269,7 +277,7 @@ export class BilibiliClient {
       }, signal);
     } catch (error) {
       this.memory.settleAction(key, error instanceof BiliApiError ? 'failed' : 'unknown', error instanceof BiliApiError ? String(error.code) : '网络或响应异常，需人工核实');
-      if (error instanceof BiliApiError) throw error;
+      if (error instanceof BiliApiError||error instanceof BiliBlockedError) throw error;
       throw new Error('评论发送结果未知，请先去 B 站查看；为避免重复，插件不会自动重发');
     }
     if (result.data.need_captcha === true) { this.memory.settleAction(key, 'unknown', '需要验证码'); throw new Error('B 站要求验证码，请在官方客户端处理并核实评论状态'); }
@@ -328,11 +336,13 @@ export class BilibiliClient {
     }throw new Error('未能从原评论楼层核实这条 @，可能已删除、撤回或超出本轮读取范围');
   }
   private async vc(path:string,init:RequestInit={},signal?:AbortSignal):Promise<ObjectValue>{
+    this.assertAvailable();
     const cookies=this.cookies(),response=await this.fetcher('https://api.vc.bilibili.com'+path,{...init,headers:{'User-Agent':AGENT,Referer:'https://message.bilibili.com/','Content-Type':'application/x-www-form-urlencoded',Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; '),...init.headers},redirect:'error',signal:AbortSignal.any([timeoutSignal(this.settings.bilibili.timeoutMs),...(signal?[signal]:[])])});
+    if([412,429,567].includes(response.status))throw this.blockedResponse(response,init.method==='POST'?'私信发送':'私信读取');
     if(!response.ok)throw new Error('B 站私信 HTTP '+response.status);
     if(!response.body)throw new Error('B 站私信响应为空');const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
     try{for(;;){const r=await reader.read();if(r.done)break;size+=r.value.length;if(size>1024*1024)throw new Error('B 站私信响应过大');chunks.push(r.value);}}finally{await reader.cancel().catch(()=>{});}
-    const value=object(losslessJSON(Buffer.concat(chunks).toString('utf8')));if(value.code!==0)throw new BiliApiError(Number(value.code));return object(value.data);
+    const value=object(losslessJSON(Buffer.concat(chunks).toString('utf8')));if([-352,-412,12015].includes(Number(value.code)))throw this.markBlocked(Number(value.code),'私信请求');if(value.code!==0)throw new BiliApiError(Number(value.code));return object(value.data);
   }
   private dmAllowed(uid:string){if(!this.settings.bilibili.enabled||!this.settings.biliSocial.dmEnabled||!this.settings.biliSocial.ownerUids.includes(uid))throw new Error('该 UID 未获主人私信白名单授权');}
   async directMessages(uid:string,after?:string,signal?:AbortSignal):Promise<{seq:string;messages:{seq:string;text:string}[]}>{
@@ -360,6 +370,6 @@ export class BilibiliClient {
       if(!this.playbackKeys||this.playbackKeys.expires<this.memory.clock()){const {data}=await this.request('https://api.bilibili.com/x/web-interface/nav',{headers:{Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')}},signal);const keys=object(data.wbi_img),extract=(v:unknown)=>typeof v==='string'?new URL(v).pathname.split('/').at(-1)!.split('.')[0]!:'';this.playbackKeys={image:extract(keys.img_url),sub:extract(keys.sub_url),expires:this.memory.clock()+300000};}
       const device=randomUUID(),query=wbiQuery({w_sender_uid:account.userId,w_receiver_id:uid,w_dev_id:device},this.playbackKeys.image,this.playbackKeys.sub,this.memory.clock()),form=new URLSearchParams({'msg[sender_uid]':account.userId,'msg[receiver_id]':uid,'msg[receiver_type]':'1','msg[msg_type]':'1','msg[msg_status]':'0','msg[dev_id]':device,'msg[timestamp]':String(Math.floor(Date.now()/1000)),'msg[new_face_version]':'1','msg[content]':JSON.stringify({content:text}),csrf:cookies.bili_jct!,csrf_token:cookies.bili_jct!,build:'0',mobi_app:'web'});
       const data=await this.vc('/web_im/v1/web_im/send_msg?'+query,{method:'POST',body:form},signal),receipt=String(data.msg_key??'');if(!/^[1-9]\d*$/.test(receipt))throw new Error('未收到私信消息 ID');this.memory.settleAction(key,'sent',receipt);return receipt;
-    }catch(error){this.memory.settleAction(key,error instanceof BiliApiError?'failed':'unknown','需核实平台状态');if(error instanceof BiliApiError)throw error;throw new Error('B 站私信发送结果未知，不会自动重发，请在官方客户端核实');}
+    }catch(error){this.memory.settleAction(key,error instanceof BiliApiError?'failed':'unknown','需核实平台状态');if(error instanceof BiliApiError||error instanceof BiliBlockedError)throw error;throw new Error('B 站私信发送结果未知，不会自动重发，请在官方客户端核实');}
   }
 }

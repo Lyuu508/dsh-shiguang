@@ -52,6 +52,14 @@
       "naturalStyle": true,
       "styleNotes": "",
       "ownerReplyChance": 95
+    },
+    "poke": {
+      "enabled": true,
+      "allowGroups": true,
+      "replyChance": 100,
+      "cooldownSeconds": 30,
+      "actionText": "拍了拍",
+      "replyStyle": "按对方的动作自然简短回应，可以俏皮一点，不解释系统通知。"
     }
   },
   "bilibili": {
@@ -71,7 +79,8 @@
     "dynamicsPerDay": 2,
     "minDynamicIntervalMs": 3600000,
     "browseOrder": "click",
-    "minViews": 0
+    "minViews": 0,
+    "riskCooldownSeconds": 300
   },
   "media": {
     "enabled": false,
@@ -195,7 +204,8 @@
     "wakeChance": 25,
     "awakeMinutes": 10,
     "minWakeGapMinutes": 30,
-    "wakeOnKeyword": true
+    "wakeOnKeyword": true,
+    "wakeOnPoke": false
   },
   "emoji": {
     "enabled": false,
