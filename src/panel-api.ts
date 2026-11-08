@@ -63,7 +63,7 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'update-cancel':return runtime.updates.cancel();
     case 'update-install': return runtime.updates.start(text(args.version));
     case 'save': return runtime.save(args.settings,text(args.revision),text(args.token));
-    case 'qq-check': return runtime.enqueue(() => runtime.qq.check());
+    case 'qq-check':await runtime.syncQQConnection();return runtime.enqueue(async()=>{await runtime.qq.ready();return runtime.qq.check();});
     case 'owner-bili-start':return runtime.enqueue(()=>runtime.startLogin(signal,'owner'));
     case 'owner-bili-poll':return runtime.enqueue(()=>runtime.pollOwnerLogin(text(args.ticket)));
     case 'owner-bili-check':return runtime.enqueue(()=>runtime.ownerBili.account(signal));
@@ -80,10 +80,10 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
       const provider = text(args.provider);
       return { providers: llm.listProviders().map(p => ({ id: p.id, name: p.name || p.id })), models: provider ? (await llm.listModels(provider)).map(m => ({ id: m.id, name: m.name || m.id, inputModalities: m.inputModalities })) : [] };
     }
-    case 'memory-timeline':return runtime.memory.timeline({state:text(args.state,'active'),scope:text(args.scope,'*'),platform:text(args.platform,'all'),channel:text(args.channel,'all'),category:text(args.category,'all'),day:text(args.day,runtime.memory.today()),query:text(args.query),before:typeof args.before==='number'?args.before:0,beforeTime:typeof args.beforeTime==='number'?args.beforeTime:0});
+    case 'memory-timeline':return (args.paired===false?runtime.memory.timeline.bind(runtime.memory):runtime.memory.conversationPage.bind(runtime.memory))({state:text(args.state,'active'),scope:text(args.scope,'*'),platform:text(args.platform,'all'),channel:text(args.channel,'all'),category:text(args.category,'all'),day:text(args.day,runtime.memory.today()),query:text(args.query),before:typeof args.before==='number'?args.before:0,beforeTime:typeof args.beforeTime==='number'?args.beforeTime:0});
     case 'memory-list': return runtime.memory.list(text(args.scope,'owner'),text(args.day,runtime.memory.today()),typeof args.before === 'number' ? args.before : 0);
     case 'memory-search': return { hits: runtime.memory.search(text(args.scope,'owner'),text(args.query),args.range === 'today' ? 'today' :args.range==='all'?'all': 'history',args.day ? text(args.day) : undefined) };
-    case 'memory-detail': return runtime.memory.detail(text(args.scope,'owner'),text(args.id),typeof args.offset === 'number' ? args.offset : 0);
+    case 'memory-detail': return runtime.memory.detail(text(args.scope,'owner'),text(args.id),typeof args.offset === 'number' ? args.offset : 0,true,undefined,true);
     case 'memory-remove': return runtime.enqueue(async () => { runtime.memory.remove(text(args.scope,'owner'),text(args.id)); return { success: true }; });
     case 'memory-restore': return runtime.enqueue(async () => { runtime.memory.restore(text(args.scope,'owner'),text(args.id)); return { success: true }; });
     default: throw new Error('未知的拾光面板操作');

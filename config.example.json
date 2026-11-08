@@ -15,7 +15,8 @@
     "recentMaxChars": 4000,
     "searchLimit": 5,
     "snippetChars": 240,
-    "detailMaxChars": 1600
+    "detailMaxChars": 1600,
+    "ownerOnlyCrossChat": true
   },
   "qq": {
     "enabled": false,
@@ -26,7 +27,15 @@
     "allowedGroups": [],
     "groupMentionOnly": true,
     "actionTimeoutMs": 15000,
-    "reconnectMs": 3000
+    "reconnectMs": 3000,
+    "keywordWakeEnabled": false,
+    "wakeWords": [
+      "大肥鱼",
+      "小肥鱼",
+      "鱼"
+    ],
+    "keywordWakeChance": 35,
+    "keywordCooldownSeconds": 60
   },
   "bilibili": {
     "enabled": false,
@@ -157,7 +166,8 @@
     "wakeOnMention": true,
     "wakeChance": 25,
     "awakeMinutes": 10,
-    "minWakeGapMinutes": 30
+    "minWakeGapMinutes": 30,
+    "wakeOnKeyword": true
   },
   "emoji": {
     "enabled": false,

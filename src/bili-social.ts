@@ -28,11 +28,11 @@ export class BiliSocial {
         const claim=this.memory.db.prepare("INSERT OR IGNORE INTO bili_dm_receipts(role,account,uid,seq,status) VALUES(?,?,?,?,'pending')").run(this.memory.roleId,account.userId,uid,message.seq);this.cursor(account.userId,uid,message.seq);if(!claim.changes)continue;
         const id=randomUUID(),thread=`bilibili:dm:${account.userId}:${uid}`;this.memory.db.prepare("INSERT INTO initiative_runs(id,role,day,time,kind,status) VALUES(?,?,?,?,?,'pending')").run(id,this.memory.roleId,this.memory.today(),this.memory.clock(),'bili-dm');
         try{
-          const reply=await this.driver.reply({scope:'owner',thread,owner:true,platform:'bilibili',text:message.text,externalKey:`bili-dm:${account.userId}:${uid}:${message.seq}`});signal.throwIfAborted();
+          const reply=await this.driver.reply({scope:'owner',thread,owner:true,platform:'bilibili',text:message.text,externalKey:`bili-dm:${account.userId}:${uid}:${message.seq}`,turnId:`bili-dm:${account.userId}:${uid}:${message.seq}`,speakerId:uid,speakerName:`主人 UID ${uid}`});signal.throwIfAborted();
           if(!this.canAct())throw new Error('已到睡眠时间，本次私信不发送');
           if(!reply)throw new Error('该私信已处理');
           const content=[...reply].slice(0,500).join(''),receipt=await this.bili.sendDirect(uid,content,`${account.userId}:${uid}:${message.seq}`,signal);
-          this.memory.append('owner','bilibili',thread,'assistant',content);
+          this.memory.recordReply('owner','bilibili',thread,content,`bili-dm:${account.userId}:${uid}:${message.seq}`,account.userId,this.settings.displayName);
           this.memory.db.prepare("UPDATE bili_dm_receipts SET status='sent' WHERE role=? AND account=? AND uid=? AND seq=?").run(this.memory.roleId,account.userId,uid,message.seq);
           this.memory.db.prepare("UPDATE initiative_runs SET status='done',summary=? WHERE id=?").run(`已回复主人 UID ${uid}；消息 ID ${receipt}`,id);
         }catch(error){this.lastError=error instanceof Error?error.message:'私信处理未完成';this.memory.db.prepare("UPDATE bili_dm_receipts SET status='failed' WHERE role=? AND account=? AND uid=? AND seq=?").run(this.memory.roleId,account.userId,uid,message.seq);this.memory.db.prepare("UPDATE initiative_runs SET status='failed',summary=? WHERE id=?").run(this.lastError.slice(0,500),id);this.log(this.lastError);signal.throwIfAborted();}

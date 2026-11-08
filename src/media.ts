@@ -31,13 +31,20 @@ async function run(program:string,args:string[],signal:AbortSignal,maxBuffer=102
   try { return (await execute(program,args,{signal,encoding:'buffer',windowsHide:true,maxBuffer})).stdout; }
   catch(error) {
     if(signal.aborted)throw new MediaError('媒体处理已取消或超时，请缩短视频后重试');
-    if((error as NodeJS.ErrnoException).code==='ENOENT')throw new MediaError('找不到 FFmpeg / FFprobe，请先安装并在 QQ 识图设置中填写程序路径');
+    if((error as NodeJS.ErrnoException).code==='ENOENT')throw new MediaError('找不到 FFmpeg / FFprobe，请在视频识别工具中点自动定位或安装 / 修复');
     throw new MediaError('媒体解码失败，请确认是常见视频、GIF、JPEG、PNG 或 WebP 格式');
   }
 }
 export async function checkMediaTools(config:MediaSettings):Promise<{ready:boolean;message:string}> {
-  try { const signal=timeoutSignal(5000);await run(config.ffmpegPath,['-version'],signal);await run(config.ffprobePath,['-version'],signal);return {ready:true,message:'FFmpeg 与 FFprobe 可用'}; }
-  catch(error){return {ready:false,message:error instanceof Error?error.message:'媒体工具不可用'};}
+  // Cold Windows starts may include antivirus scanning. Each binary gets its own
+  // deadline; an installation check is not a video decode operation.
+  const probe=async(program:string)=>{
+    try{await execute(program,['-version'],{signal:timeoutSignal(30000),windowsHide:true,maxBuffer:262144});}
+    catch(error){const code=(error as NodeJS.ErrnoException).code;if(code==='ENOENT')throw new Error('未找到视频工具，请先自动定位或安装 / 修复');if(code==='ABORT_ERR')throw new Error('工具已找到，但启动检测超时；稍后点击自动定位重新检测，无需重新下载');throw new Error('视频工具无法启动，请检查程序权限或点安装 / 修复');}
+  };
+  const results=await Promise.allSettled([probe(config.ffmpegPath),probe(config.ffprobePath)]);
+  const failure=results.find(r=>r.status==='rejected');
+  return failure?.status==='rejected'?{ready:false,message:failure.reason instanceof Error?failure.reason.message:'视频工具启动检测未完成'}:{ready:true,message:'FFmpeg 与 FFprobe 可用'};
 }
 /** Pick visually different low-resolution candidates; unchanged animations need one frame. */
 export function pickFrames(pixels:Buffer,max:number):number[] {

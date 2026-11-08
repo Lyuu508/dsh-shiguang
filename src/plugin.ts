@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import type { Context } from '@deepseek-ai/cordis';
 import Schema from '@deepseek-ai/schemastery';
 import { defineTool } from '@deepseek-ai/dsh-tools';
@@ -19,9 +20,10 @@ export function apply(ctx: Context, config: Config): void {
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute(args) {
       return runtime.enqueue(async () => {
-        const reply = await runtime.driver.reply({ scope: 'owner', thread: 'dsh:owner', owner: true, platform: 'dsh', text: args.text });
+        const turnId=randomUUID();
+        const reply = await runtime.driver.reply({ scope: 'owner', thread: 'dsh:owner', owner: true, platform: 'dsh', text: args.text,turnId,speakerName:'主人（DSH）' });
         if (!reply) throw new Error('消息重复');
-        runtime.memory.append('owner','dsh','dsh:owner','assistant',reply);
+        runtime.memory.recordReply('owner','dsh','dsh:owner',reply,turnId,'',runtime.settings.displayName);
         return reply;
       });
     },

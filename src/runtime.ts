@@ -23,7 +23,7 @@ import {MediaToolsManager,type ToolPaths,type MediaToolsHost} from './media-tool
 import {RoleManager} from './roles.js';
 import {locatePrograms,type LocatorHost} from './discovery.js';
 import {flashRoute} from './model-route.js';
-import {setState} from './initiative.js';
+import {setState,stateValue} from './initiative.js';
 
 export class ShiguangRuntime {
   readonly file: string;
@@ -75,21 +75,23 @@ export class ShiguangRuntime {
     this.qq = new OneBotClient(settings.qq, message => {
       void this.enqueue(async () => {
         const q=this.settings.qq,owner=!message.groupId && message.userId===q.ownerQQ;
-        if (!q.enabled || (message.groupId ? !q.allowedGroups.includes(message.groupId) : !owner && !q.allowedPrivate.includes(message.userId))) return;
+        if(message.groupId?!q.allowedGroups.includes(message.groupId):!owner&&!q.allowedPrivate.includes(message.userId))return;
         const scope=owner?'owner':message.thread;
         if(this.memory.seen(message.id))return;
         if(owner)setState(this.memory,'qq:last-owner',this.memory.clock());
-        if(message.replyAllowed===false||!this.bodyClock.receive(message)){
-          this.memory.append(scope,'qq',message.thread,'user',message.text||(message.media?.length?'收到 QQ 媒体':'收到消息'),message.id);
-          if(message.replyAllowed!==false)this.memory.append(scope,'qq',message.thread,'activity','睡眠期间收到消息，未被叫醒，本次没有回复',undefined,this.memory.clock(),'sleep');
-          if(message.replyAllowed===false&&this.bodyClock.canAct())await this.emoji.consider({...message,scope},this.qq).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));return;
+        if(message.keyword&&!message.mentioned){const last=stateValue<number>(this.memory,'keyword:'+message.thread,0),accepted=q.keywordWakeEnabled&&this.memory.clock()-last>=q.keywordCooldownSeconds*1000&&Math.random()*100<q.keywordWakeChance;message.keywordAwakened=accepted;if(q.groupMentionOnly)message.replyAllowed=accepted;}
+        if(!q.enabled||message.replyAllowed===false||!this.bodyClock.receive(message)){
+          this.memory.append(scope,'qq',message.thread,'user',message.text||(message.media?.length?'收到 QQ 媒体':'收到消息'),message.id,this.memory.clock(),'',{turnId:message.id,speakerId:message.userId,speakerName:message.speakerName});
+          if(q.enabled&&message.replyAllowed!==false)this.memory.append(scope,'qq',message.thread,'activity','睡眠期间收到消息，未被叫醒，本次没有回复',undefined,this.memory.clock(),'sleep');
+          if(q.enabled&&message.replyAllowed===false&&this.bodyClock.canAct())await this.emoji.consider({...message,scope},this.qq).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));return;
         }
+        if(message.keywordAwakened)setState(this.memory,'keyword:'+message.thread,this.memory.clock());
         this.media.lastObservation=undefined;
         let media=message.media||[];
         const mediaQuote=!!message.replyId&&wantsMedia(message.text,'ask');
         if(media.length||mediaQuote){
           const previous=this.memory.fastContext(scope,message.thread);
-          if(!this.memory.append(scope,'qq',message.thread,'user',`${message.text||'发送媒体'} [QQ 媒体请求]`,message.id))return;
+          if(!this.memory.append(scope,'qq',message.thread,'user',`${message.text||'发送媒体'} [QQ 媒体请求]`,message.id,this.memory.clock(),'',{turnId:message.id,speakerId:message.userId,speakerName:message.speakerName}))return;
           // A standalone face can be collected independently of the chat vision toggle.
           if(this.settings.emoji.enabled&&!this.settings.media.enabled&&!message.text&&media.length&&media.every(m=>m.type==='image'&&m.emoji)){
             await this.emoji.consider({...message,scope},this.qq).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));return;
@@ -101,15 +103,15 @@ export class ShiguangRuntime {
               else{media=await this.qq.quotedMedia(message);reply=media.length?await this.media.reply({...message,owner,scope},this.qq,media,previous):'引用消息中没有可读取的视频、GIF 或图片，请直接发送媒体或引用包含媒体的消息。';}
             }else reply=await this.media.reply({...message,owner,scope},this.qq,media,previous);
           }catch(error){this.log(error instanceof Error?error.message:'媒体读取失败');reply=error instanceof MediaError?error.message:'媒体识别未完成，请在拾光面板检查模型、FFmpeg 和下载状态。';}
-          await this.sendReply(message,reply);this.memory.append(scope,'qq',message.thread,'assistant',reply);await this.emoji.consider({...message,scope},this.qq,this.media.lastObservation).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));this.media.lastObservation=undefined;return;
+          await this.sendReply(message,reply);this.memory.recordReply(scope,'qq',message.thread,reply,message.id,message.selfId,this.settings.displayName);await this.emoji.consider({...message,scope},this.qq,this.media.lastObservation).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));this.media.lastObservation=undefined;return;
         }
-        const reply = await this.driver.reply({ scope, thread: message.thread, owner, platform: 'qq', text: message.text, externalKey: message.id });
+        const reply = await this.driver.reply({ scope, thread: message.thread, owner, platform: 'qq', text: message.text, externalKey: message.id,turnId:message.id,speakerId:message.userId,speakerName:message.speakerName });
         if (!reply) return;
         await this.sendReply(message,reply);
-        this.memory.append(scope,'qq',message.thread,'assistant',reply);
+        this.memory.recordReply(scope,'qq',message.thread,reply,message.id,message.selfId,this.settings.displayName);
       }).catch((_error) => { /* enqueue reports the failure once. */ });
     },this.log,() => this.token());
-    if (settings.qq.enabled) this.qq.start();
+    this.qq.start();
     this.autonomy=new Autonomy(this.ctx,settings,this.memory,this.bili,run=>this.enqueue(run),this.log,this.biliVision,()=>this.bodyClock.canAct());this.autonomy.start();
     this.biliSocial=new BiliSocial(settings,this.memory,this.bili,this.driver,run=>this.enqueue(run),this.log,()=>this.bodyClock.canAct());this.biliSocial.start();
     this.proactive=new Proactive(this.ctx,settings,this.memory,this.qq,run=>this.enqueue(run),this.log,Math.random,()=>this.bodyClock.canAct());this.proactive.start();
@@ -151,7 +153,7 @@ export class ShiguangRuntime {
     return {roles:this.roles.list(this.settings.roleId), settings: { ...this.settings, timezone: String(raw.timezone), dataDir: String(raw.dataDir) }, revision: this.revision(), tokenConfigured: !!this.token(), tokenFromEnvironment: !panelToken && !!(this.settings.qq.tokenEnv && process.env[this.settings.qq.tokenEnv]) };
   }
   status() {
-    return {revision:this.revision(),version:VERSION,roleId:this.settings.roleId, displayName: this.settings.displayName,clock:this.bodyClock.status(),mediaTools:this.mediaTools.view(), qq: this.settings.qq.enabled ? this.qq.status() : { state: 'disabled', message: 'QQ 回复已关闭' }, snowluma:this.snowluma.view(),biliSocial:this.biliSocial.status(),proactive:this.proactive.status(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin(),ownerCredentialSaved:this.ownerBili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
+    return {revision:this.revision(),version:VERSION,roleId:this.settings.roleId, displayName: this.settings.displayName,clock:this.bodyClock.status(),mediaTools:this.mediaTools.view(), qq:{...this.qq.status(),repliesEnabled:this.settings.qq.enabled}, snowluma:this.snowluma.view(),biliSocial:this.biliSocial.status(),proactive:this.proactive.status(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin(),ownerCredentialSaved:this.ownerBili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
   }
   async save(value: unknown, expected: string, newToken = '', allowRole=false) {
     return this.enqueue(async () => {

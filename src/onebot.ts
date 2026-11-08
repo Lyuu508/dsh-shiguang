@@ -6,7 +6,7 @@ import type { Settings } from './config.js';
 export interface QQMessage {
   id: string; selfId: string; userId: string; groupId?: string;
   thread: string; scope: string; owner: boolean; text: string;
-  media?: QQMediaRef[]; replyId?: string;mentioned?:boolean;replyAllowed?:boolean;
+  speakerName?:string;keyword?:string;keywordAwakened?:boolean;media?: QQMediaRef[]; replyId?: string;mentioned?:boolean;replyAllowed?:boolean;
 }
 export interface QQMediaRef { type: 'video' | 'image'; file?: string; url?: string;emoji?:boolean }
 type JsonObject = Record<string, unknown>;
@@ -39,12 +39,14 @@ export function parseMessage(value: unknown, config: Settings['qq'],includePassi
     if (segment.type === 'at' && String(segment.data.qq) === selfId) mentioned = true;
     if (segment.type === 'reply' && /^-?\d{1,24}$/.test(String(segment.data.id))) replyId=String(segment.data.id);
   }
-  if (groupId && config.groupMentionOnly && !mentioned&&!includePassive) return null;
   const text = parts.join('').trim();
+  const keyword=groupId&&config.keywordWakeEnabled?config.wakeWords.find(word=>text.normalize('NFKC').toLowerCase().includes(word.normalize('NFKC').toLowerCase())):undefined;
+  if(groupId&&config.groupMentionOnly&&!mentioned&&!keyword&&!includePassive)return null;
+  const sender=record(value.sender)?value.sender:{};const speakerName=String(sender.card||sender.nickname||userId).replace(/[\x00-\x1f\x7f]/g,'').slice(0,80);
   const media=mediaSegments(value.message);
   if ((!text && !media.length) || text.length > 10000) return null;
   const thread = groupId ? `qq:group:${groupId}` : `qq:private:${userId}`;
-  return { id: `${selfId}:${thread}:${messageId}`, selfId, userId, groupId: groupId || undefined, thread, scope: owner ? 'owner' : thread, owner, text, media, replyId,mentioned,replyAllowed:!groupId||!config.groupMentionOnly||mentioned };
+  return { id: `${selfId}:${thread}:${messageId}`, selfId, userId, groupId: groupId || undefined, thread, scope: owner ? 'owner' : thread, owner, text, speakerName,keyword,media, replyId,mentioned,replyAllowed:!groupId||!config.groupMentionOnly||mentioned||!!keyword };
 }
 
 export class OneBotClient {
@@ -57,7 +59,7 @@ export class OneBotClient {
   constructor(readonly config: Settings['qq'], readonly onMessage: (message: QQMessage) => void, readonly log: (message: string) => void, readonly token = () => process.env[config.tokenEnv] || '') {}
   status(): { state: string; message: string } { return { state: this.state, message: this.statusMessage }; }
   start(): void {
-    if (this.stopped) return;
+    if(this.stopped||this.socket&&(this.socket.readyState===WebSocket.OPEN||this.socket.readyState===WebSocket.CONNECTING))return;
     if (!this.token()) { this.statusMessage = '等待 SnowLuma 自动同步连接，请先一键启动并扫码'; return; }
     this.state = 'connecting'; this.statusMessage = '正在连接 SnowLuma';
     const socket = new WebSocket(this.config.wsUrl, {
@@ -86,6 +88,10 @@ export class OneBotClient {
       this.pending.clear();
       if (!this.stopped) this.retry = scheduleTimeout(() => this.start(), this.config.reconnectMs);
     });
+  }
+  async ready():Promise<void>{
+    if(this.state==='connected')return;if(this.stopped)throw new Error('QQ 连接服务已停止');if(!this.token())throw new Error('尚未取得 SnowLuma 消息密钥，请先一键启动 QQ 并扫码');this.start();const socket=this.socket;if(!socket)throw new Error('QQ 连接尚未建立，请先启动 SnowLuma');
+    await new Promise<void>((resolve,reject)=>{const finish=(error?:Error)=>{timer.clear();socket.off('open',opened);socket.off('error',failed);socket.off('close',closed);error?reject(error):resolve();},opened=()=>finish(),failed=()=>finish(new Error('QQ 检测连接失败，请检查 SnowLuma 是否在线和连接配置是否启用')),closed=()=>finish(new Error('QQ 检测连接已断开，请重新扫码或同步连接'));const timer=scheduleTimeout(()=>finish(new Error('等待 QQ 连接超时，请确认 SnowLuma 已启动并完成扫码')),this.config.actionTimeoutMs);socket.once('open',opened);socket.once('error',failed);socket.once('close',closed);});
   }
   action(action: string, params: JsonObject): Promise<JsonObject> {
     const socket = this.socket;

@@ -45,3 +45,9 @@
 退出插件只停止它自己启动的 SnowLuma，不关闭 QQ。实际 Windows hook、扫码和真实账号仍需在你的电脑联调。
 
 依据：[官方 Windows 部署](https://snowluma.github.io/zh/docs/guide/deploy/windows)、[v2.4.2 后台鉴权](https://github.com/SnowLuma/SnowLuma/blob/v2.4.2/packages/core/src/webui/auth.ts)、[OneBot 配置](https://github.com/SnowLuma/SnowLuma/blob/v2.4.2/packages/onebot/src/config.ts)。
+
+## 连接不再依赖回复开关
+
+0.2.0 起，即使“启用 QQ 回复”关闭，拾光也尝试保持经过鉴权的 OneBot 连接。“检测已保存的连接”先同步本机配置并等待 WS 就绪，再只读检查 QQ 在线与账号，不发送测试消息。关闭回复时只保存允许私聊与白名单群的原话，不调用模型；不在白名单中的消息不入库。
+
+群里可开启“QQ 群关键词唤醒”，默认称呼“大肥鱼、小肥鱼、鱼”、概率 35%、同群冷却 60 秒。称呼按文字包含匹配，单字词容易命中普通句子，推荐只留完整名字。该设置仅适用于允许群，不为其他私聊账号放行；群聊仅点名开启时，关键词成功或真正 @ 才进入回复。睡眠是否允许关键词打断，在角色页生物钟设置，仍受叫醒间隔约束。
