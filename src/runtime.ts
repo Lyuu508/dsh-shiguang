@@ -17,6 +17,7 @@ import { MediaReader, MediaError, wantsMedia } from './media.js';
 import {Autonomy} from './autonomy.js';
 import { SnowLumaManager,type SnowLumaHost } from './snowluma.js';
 import {VoiceService,wantsVoice} from './voice.js';
+import {BiliBrowser,biliBrowseIntent} from './bili-browser.js';
 import {BiliVision} from './bili-vision.js';
 import type {QQMessage} from './onebot.js';
 import {BiliSocial} from './bili-social.js';
@@ -42,6 +43,7 @@ export class ShiguangRuntime {
   autonomy!:Autonomy;
   voice!:VoiceService;
   biliVision!:BiliVision;
+  biliBrowser!:BiliBrowser;
   biliSocial!:BiliSocial;
   proactive!:Proactive;
   qqConversation!:QQConversation;
@@ -59,7 +61,7 @@ export class ShiguangRuntime {
     this.file = ensureSettings(file);const settings=loadSettings(this.file);this.roles=new RoleManager(settings.dataDir);this.roles.remember(settings);this.mediaTools=new MediaToolsManager(settings.dataDir,()=>this.settings,paths=>this.applyMediaPaths(paths),fetcher,this.services.mediaHost,()=>this.locateMediaOnly());this.open(settings);this.usageObserver=new UsageObserver(ctx,join(settings.dataDir,'memory.sqlite'),()=>this.settings);
     this.updates = new UpdateManager(ctx,this.settings.dataDir,fetcher,()=>this.settings.updates);
     this.snowluma=new SnowLumaManager(this.settings.dataDir,()=>this.settings,this.services.snowHost,this.services.localFetch);
-    this.snowluma.configure();this.connectionTimer=setInterval(()=>void this.syncQQConnection().catch(()=>{}),3000);this.connectionTimer.unref();
+    this.snowluma.configure();this.connectionTimer=setInterval(()=>void this.syncQQConnection().catch(e=>this.log(e instanceof Error?e.message:'QQ 自动同步未完成')),3000);this.connectionTimer.unref();
   }
   private log = (message: string) => { this.lastError = message; console.info(`[Shiguang] ${message}`); };
   private secretFile(): string { return join(this.settings.dataDir,'onebot.token'); }
@@ -68,7 +70,7 @@ export class ShiguangRuntime {
     try { stored = readFileSync(join(settings.dataDir,'onebot.token'),'utf8').trim(); } catch { /* No panel-managed token yet. */ }
     return stored || (settings.qq.tokenEnv ? process.env[settings.qq.tokenEnv] || '' : '');
   }
-  private open(settings: Settings): void {
+  private open(settings: Settings,reuseQQ?:OneBotClient): void {
     this.settings = settings;
     this.memory = new MemoryStore(join(settings.dataDir,'memory.sqlite'),settings.roleId,settings.timezone,settings.memory,Date.now,settings.retention);
     this.memory.sweep();if(this.retentionTimer)clearInterval(this.retentionTimer);this.retentionTimer=setInterval(()=>this.memory.sweep(),3600000);this.retentionTimer.unref();
@@ -76,11 +78,12 @@ export class ShiguangRuntime {
     this.bili = new BilibiliClient(settings,this.memory,this.fetcher);this.ownerBili=new BilibiliClient(settings,this.memory,this.fetcher,'owner');
     this.biliVision=new BiliVision(this.ctx,settings,this.memory,this.bili,this.fetcher,()=>this.mediaTools.ensure());
     this.voice=new VoiceService(settings,this.memory,()=>this.voiceSecret(),this.fetcher);
-    this.driver = new ChatDriver(this.ctx,settings,this.memory,this.bili,this.biliVision);
+    this.biliBrowser=new BiliBrowser(settings,this.memory,this.bili,this.biliVision);
+    this.driver = new ChatDriver(this.ctx,settings,this.memory,this.bili,this.biliVision,this.biliBrowser);
     this.media = new MediaReader(this.ctx,settings,this.memory,this.fetcher,()=>this.mediaTools.ensure());
     this.emoji=new EmojiCollector(this.ctx,settings,this.memory,this.media,()=>this.bodyClock.canAct());
     const conversation:QQConversation=this.qqConversation=new QQConversation(settings.qq.chat,(batch,signal)=>this.processQQBatch(batch,signal,conversation),this.log);
-    this.qq=new OneBotClient(settings.qq,message=>{
+    const receive=(message:QQMessage)=>{
       if(this.stopped||this.qqConversation!==conversation)return;
       const q=settings.qq,owner=!message.groupId&&message.userId===q.ownerQQ;
       if(message.groupId?!q.allowedGroups.includes(message.groupId):!owner&&!q.allowedPrivate.includes(message.userId))return;
@@ -94,7 +97,8 @@ export class ShiguangRuntime {
         if(message.keywordAwakened)setState(this.memory,'keyword:'+message.thread,now);return true;
       });
       if(!selected&&q.enabled&&this.bodyClock.canAct()&&message.media?.some(m=>m.emoji))void this.enqueue(async()=>{if(this.qqConversation===conversation)await this.emoji.consider(message,this.qq);}).catch(()=>{});
-    },this.log,()=>this.token());
+    };
+    this.qq=reuseQQ||new OneBotClient(settings.qq,receive,this.log,()=>this.token());this.qq.configure(settings.qq,receive);
     this.qq.start();
     this.autonomy=new Autonomy(this.ctx,settings,this.memory,this.bili,run=>this.enqueue(run),this.log,this.biliVision,()=>this.bodyClock.canAct());this.autonomy.start();
     this.biliSocial=new BiliSocial(settings,this.memory,this.bili,this.driver,run=>this.enqueue(run),this.log,()=>this.bodyClock.canAct());this.biliSocial.start();
@@ -130,7 +134,7 @@ export class ShiguangRuntime {
         try{if(mediaQuote&&!media.length){if(!this.settings.media.enabled)reply='我这边还没打开看视频，暂时看不到这段的内容。';else{media=await this.qq.quotedMedia(message);reply=media.length?await this.media.reply(message,this.qq,media,previous):'这条引用里没找到图片或视频，可以直接发给我看看。';}}else reply=await this.media.reply(message,this.qq,media,previous);}
         catch(error){this.log(error instanceof Error?error.message:'媒体读取失败');reply=error instanceof MediaError?error.message:'这次没能看清，等会儿再试一下吧。';}
         await this.emoji.consider(message,this.qq,this.media.lastObservation).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));this.media.lastObservation=undefined;
-      }else reply=await this.driver.reply({scope,thread:batch.thread,owner:message.owner,platform:'qq',text,archived:true,turnId:batch.id,speakerId:message.userId,speakerName:message.speakerName});
+      }else {let browsingResult:string|undefined;const intent=message.owner?biliBrowseIntent(batch.messages.map(m=>m.text).join('\n')):undefined;if(intent){try{browsingResult=await this.biliBrowser.run(signal,intent);}catch(error){signal.throwIfAborted();browsingResult='这次没有成功读取视频内容：'+(error instanceof Error?error.message:'读取失败');}}reply=await this.driver.reply({scope,thread:batch.thread,owner:message.owner,platform:'qq',text,archived:true,turnId:batch.id,speakerId:message.userId,speakerName:message.speakerName,browsingResult});}
       signal.throwIfAborted();if(!reply)return;const voiceRequested=this.settings.voice.enabled&&(!message.groupId||this.settings.voice.allowGroups)&&wantsVoice(message.text,this.settings.voice.mode);let audio:Awaited<ReturnType<VoiceService['synthesize']>>|undefined;if(voiceRequested){try{audio=await this.voice.synthesize(reply,message.scope);}catch(error){signal.throwIfAborted();this.log(error instanceof Error?error.message:'语音生成未完成');}}signal.throwIfAborted();return {message,reply,scope,voiceRequested,audio};
     });
     if(!plan)return;signal.throwIfAborted();if(this.qqConversation!==conversation)return;
@@ -141,10 +145,10 @@ export class ShiguangRuntime {
     const guard=()=>{signal.throwIfAborted();if(this.qqConversation!==conversation||!this.settings.qq.enabled||!this.bodyClock.canAct())throw new Error('设置已变化，本轮不再发送');};
     const sendText=async()=>{const parts=splitQQReply(reply,settings.qq.chat);for(let index=0;index<parts.length;index++){
       guard();if(index){const c=settings.qq.chat;await cancellablePause((c.partGapMinSeconds+(c.partGapMaxSeconds-c.partGapMinSeconds)*Math.random())*1000,signal);guard();}
-      await qq.send(message,parts[index]!);if(this.qqConversation===conversation)memory.recordReply(scope,'qq',message.thread,parts[index]!,turnId,message.selfId,settings.displayName);guard();
+      await qq.ready(signal);guard();await qq.send(message,parts[index]!);if(this.qqConversation===conversation)memory.recordReply(scope,'qq',message.thread,parts[index]!,turnId,message.selfId,settings.displayName);guard();
     }};
     guard();if(!voiceRequested||v.sendText||!audio)await sendText();
-    if(audio){guard();await qq.sendVoice(message,audio);if(this.qqConversation===conversation&&!v.sendText)memory.recordReply(scope,'qq',message.thread,reply,turnId,message.selfId,settings.displayName);guard();}
+    if(audio){guard();await qq.ready(signal);guard();await qq.sendVoice(message,audio);if(this.qqConversation===conversation&&!v.sendText)memory.recordReply(scope,'qq',message.thread,reply,turnId,message.selfId,settings.displayName);guard();}
 
   }
   enqueue<T>(run: () => Promise<T>): Promise<T> {
@@ -162,7 +166,7 @@ export class ShiguangRuntime {
     return {roles:this.roles.list(this.settings.roleId), settings: { ...this.settings, timezone: String(raw.timezone), dataDir: String(raw.dataDir) }, revision: this.revision(), tokenConfigured: !!this.token(), tokenFromEnvironment: !panelToken && !!(this.settings.qq.tokenEnv && process.env[this.settings.qq.tokenEnv]) };
   }
   status() {
-    return {revision:this.revision(),version:VERSION,roleId:this.settings.roleId, displayName: this.settings.displayName,clock:this.bodyClock.status(),mediaTools:this.mediaTools.view(), qqConversation:this.qqConversation.status(),qq:{...this.qq.status(),repliesEnabled:this.settings.qq.enabled}, snowluma:this.snowluma.view(),biliSocial:this.biliSocial.status(),proactive:this.proactive.status(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin(),ownerCredentialSaved:this.ownerBili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, usageError:this.usageObserver.lastError,lastMessage: this.lastError };
+    return {revision:this.revision(),version:VERSION,roleId:this.settings.roleId, displayName: this.settings.displayName,clock:this.bodyClock.status(),mediaTools:this.mediaTools.view(), biliBrowsing:{...this.biliBrowser.status(),selection:this.bili.browseStatus()},qqConversation:this.qqConversation.status(),qq:{...this.qq.status(),repliesEnabled:this.settings.qq.enabled}, snowluma:this.snowluma.view(),biliSocial:this.biliSocial.status(),proactive:this.proactive.status(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin(),ownerCredentialSaved:this.ownerBili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, usageError:this.usageObserver.lastError,lastMessage: this.lastError };
   }
   async save(value: unknown, expected: string, newToken = '', allowRole=false) {
     return this.enqueue(async () => {
@@ -172,6 +176,7 @@ export class ShiguangRuntime {
       if (resolve(next.dataDir) !== resolve(this.settings.dataDir) || !allowRole&&next.roleId !== this.settings.roleId) throw new Error('面板不支持迁移数据目录或角色标识，请保留原值');
       if (newToken.length > 4096 || /[\r\n]/.test(newToken)) throw new Error('OneBot Token 格式无效');
       const effective = newToken.trim() || this.token(next);
+      const reuseQQ=next.qq.wsUrl===this.settings.qq.wsUrl&&effective===this.token()?this.qq:undefined;
       // A local SnowLuma token is synchronized automatically after login.
       if(next.qq.enabled&&!next.qq.ownerQQ)throw new Error('请先填写主人 QQ 号');
       const raw = value as Record<string,unknown>;
@@ -185,9 +190,9 @@ export class ShiguangRuntime {
         if (newToken.trim()) this.atomicWrite(secretPath,previousToken || '');
         throw error;
       }
-      this.recoveryAbort?.abort();this.qqConversation.stop();this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.proactive.stop();this.autonomy.stop();this.media.stop();this.biliVision.stop();this.voice.stop(); await this.driver.stop();await Promise.allSettled([...this.qqSends]); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
+      this.syncBusy=true;try{this.recoveryAbort?.abort();this.qqConversation.stop();this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.proactive.stop();this.autonomy.stop();this.media.stop();this.biliBrowser.stop();this.biliVision.stop();this.voice.stop(); await this.driver.stop();await Promise.allSettled([...this.qqSends]); if(!reuseQQ)this.qq.stop(); this.memory.close(); this.open(next,reuseQQ); this.lastError = '';
       this.roles.remember(this.settings);this.snowluma.configure();
-      return this.view();
+      return this.view();}finally{this.syncBusy=false;}
     });
   }
   async createRole(name:string,persona:string,copy:boolean,revision:string){if(revision!==this.revision())throw new Error('配置已变化，请重新载入再新建角色');this.roles.remember(this.settings);const id=this.roles.create(this.settings,name,persona,copy);return this.switchRole(id,revision);}
@@ -195,8 +200,26 @@ export class ShiguangRuntime {
   async modelStatus(){try{return {ready:true,...await flashRoute(this.ctx),name:'DeepSeek Flash（跟随官方最新）',message:'使用 DSH 中的 DeepSeek 连接，不需要在拾光填写模型或密钥'};}catch(e){return {ready:false,model:'deepseek-flash',name:'DeepSeek Flash（跟随官方最新）',message:e instanceof Error?e.message:'请先在 DSH 登录 DeepSeek'};}}
   async locateLocal(){const found=await locatePrograms(this.settings,this.services.locator);if(this.stopped)throw new Error('拾光正在停止');const raw=JSON.parse(readFileSync(this.file,'utf8'));raw.snowluma={...this.settings.snowluma,...Object.fromEntries(['directory','qqPath'].filter(k=>found[k as keyof typeof found]).map(k=>[k,found[k as keyof typeof found]]))};if(found.ffmpegPath&&found.ffprobePath)raw.media={...raw.media,ffmpegPath:found.ffmpegPath,ffprobePath:found.ffprobePath};parseSettings(raw,this.file);this.atomicWrite(this.file,JSON.stringify(raw,null,2)+'\n');Object.assign(this.settings.snowluma,raw.snowluma);if(found.ffmpegPath&&found.ffprobePath)Object.assign(this.settings.media,{ffmpegPath:found.ffmpegPath,ffprobePath:found.ffprobePath});return {...this.view(),found,message:`已检查 ${found.scanned} 个常用目录；${found.directory?'找到 SnowLuma':'未找到 SnowLuma'}，${found.qqPath?'找到桌面 QQ':'未找到桌面 QQ'}，${found.ffmpegPath&&found.ffprobePath?'找到视频工具':'未找到完整视频工具'}`};}
   private async locateMediaOnly(){const found=await locatePrograms(this.settings,this.services.locator);if(this.stopped)throw new Error('拾光正在停止');if(found.ffmpegPath&&found.ffprobePath)this.applyMediaPaths({ffmpegPath:found.ffmpegPath,ffprobePath:found.ffprobePath});}
-  async syncQQConnection(){if(this.stopped||this.syncBusy||!this.settings.snowluma.directory)return;const connection=this.snowluma.connection();if(!connection||connection.url===this.settings.qq.wsUrl&&connection.token===this.token())return;this.syncBusy=true;try{const current=this.view();await this.save({...current.settings,qq:{...current.settings.qq,wsUrl:connection.url}},current.revision,connection.token);}finally{this.syncBusy=false;}}
-  startQQSetup(){if(this.setupJob)return {...this.qqSetup};this.qqSetup={phase:'locating',message:'正在快速查找 SnowLuma、QQ 与视频工具',busy:true};this.setupJob=(async()=>{await this.locateLocal();if(this.stopped)throw new Error('拾光正在停止');if(!this.snowluma.view().installed)throw new Error('未找到 SnowLuma。请点“下载官方 SnowLuma”，解压后再点自动定位');await this.snowluma.prepareConnection();this.qqSetup={phase:'starting',message:'正在启动 SnowLuma 与桌面 QQ',busy:true};if(await this.snowluma.reachable()){this.snowluma.openQQ();}else this.snowluma.start();await this.syncQQConnection();if(this.snowluma.view().supported){for(let attempt=0;attempt<12&&!this.stopped;attempt++){if(await this.snowluma.reachable()){try{this.snowluma.openBackend();}catch{}break;}await new Promise(r=>setTimeout(r,250));}}if(this.stopped)throw new Error('拾光正在停止');this.qqSetup={phase:'done',message:'已请求启动。请在桌面 QQ 扫码；登录后自动同步连接，无需填写地址与 Token。后台凭据可在下方显示或复制。',busy:false};})().catch(e=>{this.qqSetup={phase:'error',message:e instanceof Error?e.message:'QQ 准备未完成',busy:false};}).finally(()=>this.setupJob=undefined);return {...this.qqSetup};}
+  async syncQQConnection(){
+    if(this.stopped||this.syncBusy||!this.settings.snowluma.directory)return;
+    const connection=this.snowluma.connection();if(!connection||connection.url===this.settings.qq.wsUrl&&connection.token===this.token())return;
+    this.syncBusy=true;try{
+      const raw=JSON.parse(readFileSync(this.file,'utf8'));raw.qq={...raw.qq,wsUrl:connection.url};parseSettings(raw,this.file);
+      this.atomicWrite(this.secretFile(),connection.token);this.atomicWrite(this.file,JSON.stringify(raw,null,2)+'\n');
+      this.settings.qq.wsUrl=connection.url;this.qq.configure(this.settings.qq);this.qq.reconnect();
+    }finally{this.syncBusy=false;}
+  }
+  startQQSetup(mode:'full'|'bridge'='full'){
+    if(this.setupJob)return {...this.qqSetup};this.qqSetup={phase:'locating',message:'正在快速查找 SnowLuma、QQ 与视频工具',busy:true};
+    this.setupJob=(async()=>{
+      await this.locateLocal();if(this.stopped)throw new Error('拾光正在停止');if(!this.snowluma.view().installed)throw new Error('未找到 SnowLuma。请点“下载官方 SnowLuma”，解压后再点自动定位');await this.snowluma.prepareConnection();
+      this.qqSetup={phase:'starting',message:mode==='bridge'?'正在启动并连接 QQ 桥接':'正在检查并复用 QQ 与 SnowLuma',busy:true};
+      const running=await this.snowluma.reachable();if(this.stopped)throw new Error('拾光正在停止');if(!running)this.snowluma.start(false);
+      if(mode==='full')this.snowluma.openQQ();await this.syncQQConnection();
+      if(mode==='full'&&!running&&this.snowluma.view().supported){for(let attempt=0;attempt<12&&!this.stopped;attempt++){if(await this.snowluma.reachable()){try{this.snowluma.openBackend();}catch{}break;}await new Promise(r=>setTimeout(r,250));}}
+      if(this.stopped)throw new Error('拾光正在停止');this.qqSetup={phase:'done',message:mode==='bridge'?'QQ 桥接已检查并启动，已有实例会复用；不会打开桌面 QQ 或后台网页。登录状态和连接参数会自动同步。':'已请求启动。已有 QQ 与桥接会复用；尚未登录时在桌面 QQ 扫码。后台凭据可在下方显示或复制。',busy:false};
+    })().catch(e=>{this.qqSetup={phase:'error',message:e instanceof Error?e.message:'QQ 准备未完成',busy:false};}).finally(()=>this.setupJob=undefined);return {...this.qqSetup};
+  }
   private applyMediaPaths(paths:ToolPaths){const raw=JSON.parse(readFileSync(this.file,'utf8'));raw.media={...raw.media,...paths};parseSettings(raw,this.file);this.atomicWrite(this.file,JSON.stringify(raw,null,2)+'\n');Object.assign(this.settings.media,paths);}
   private atomicWrite(file: string, text: string): void {
     const temporary = `${file}.${randomUUID()}.tmp`;
@@ -229,7 +252,7 @@ export class ShiguangRuntime {
   async stop(): Promise<void> {
     this.recoveryAbort?.abort();this.interestAbort?.abort();this.mediaTools.stop();this.stopped = true;if(this.connectionTimer)clearInterval(this.connectionTimer);await this.setupJob;if(this.retentionTimer)clearInterval(this.retentionTimer);
     this.qqConversation.stop();this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.proactive.stop();this.watchAbort?.abort();
-    this.voice.stop();this.biliVision.stop();
+    this.voice.stop();this.biliBrowser.stop();this.biliVision.stop();
     await this.snowluma.stop();
     this.autonomy.stop();
     this.media.stop();

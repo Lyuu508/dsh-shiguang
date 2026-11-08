@@ -50,7 +50,8 @@
       "partGapMinSeconds": 1,
       "partGapMaxSeconds": 3,
       "naturalStyle": true,
-      "styleNotes": ""
+      "styleNotes": "",
+      "ownerReplyChance": 95
     }
   },
   "bilibili": {
@@ -204,5 +205,10 @@
     "enabled": true,
     "forgetAfterDays": 30,
     "promoteAfter": 5
+  },
+  "slang": {
+    "enabled": true,
+    "maxContextChars": 600,
+    "maxHits": 4
   }
 }

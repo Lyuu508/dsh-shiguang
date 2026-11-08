@@ -3,7 +3,7 @@ import { readFileSync, mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
-export const QQ_CHAT_DEFAULTS={enabled:true,replyChance:85,delayMinSeconds:2,delayMaxSeconds:6,mergeWindowSeconds:2,maxWaitSeconds:20,maxMessages:20,splitEnabled:true,maxParts:3,partChars:120,partGapMinSeconds:1,partGapMaxSeconds:3,naturalStyle:true,styleNotes:''};
+export const QQ_CHAT_DEFAULTS={enabled:true,replyChance:85,ownerReplyChance:95,delayMinSeconds:2,delayMaxSeconds:6,mergeWindowSeconds:2,maxWaitSeconds:20,maxMessages:20,splitEnabled:true,maxParts:3,partChars:120,partGapMinSeconds:1,partGapMaxSeconds:3,naturalStyle:true,styleNotes:''};
 export const MEDIA_DEFAULTS = {
   enabled: false, mode: 'ask' as 'ask' | 'auto', provider: '', model: '',
   ffmpegPath: 'ffmpeg', ffprobePath: 'ffprobe', localMediaDir: '',
@@ -23,6 +23,7 @@ export const UPDATE_DEFAULTS={timeoutMs:15000,downloadTimeoutMs:300000,retries:2
 export const PROACTIVE_DEFAULTS={enabled:false,activity:'normal' as 'silent'|'low'|'normal'|'active',minGapMinutes:60,maxGapMinutes:240,maxPerDay:4,decisionsPerDay:8,quietStart:'23:00',quietEnd:'08:00',waitForReply:true,contextChars:1200,maxTokens:480,company:30,care:25,share:20,play:15,chat:10};
 export const BILI_SOCIAL_DEFAULTS={ownerUids:[] as string[],dmEnabled:false,pollSeconds:60,repliesPerDay:20,minReplySeconds:10};
 export const SNOWLUMA_DEFAULTS={directory:'',qqPath:'',webuiUrl:'http://127.0.0.1:5099',autoStart:false,accountQQ:''};
+export const SLANG_DEFAULTS={enabled:true,maxContextChars:600,maxHits:4};
 export const RETENTION_DEFAULTS={enabled:true,forgetAfterDays:30,promoteAfter:5};
 export const CLOCK_DEFAULTS={enabled:false,wakeAt:'08:00',sleepAt:'23:00',wakeOnMention:true,wakeOnKeyword:true,wakeChance:25,awakeMinutes:10,minWakeGapMinutes:30};
 export const EMOJI_DEFAULTS={enabled:false,dailyLimit:3,decisionsPerDay:8,allowGroups:false,maxFileMB:5,maxOutputTokens:240};
@@ -48,6 +49,7 @@ export interface Settings {
   snowluma:typeof SNOWLUMA_DEFAULTS;retention:typeof RETENTION_DEFAULTS;
   clock:typeof CLOCK_DEFAULTS;
   emoji:typeof EMOJI_DEFAULTS;
+  slang:typeof SLANG_DEFAULTS;
   qq: { chat:typeof QQ_CHAT_DEFAULTS;keywordWakeEnabled:boolean;wakeWords:string[];keywordWakeChance:number;keywordCooldownSeconds:number;enabled: boolean; wsUrl: string; tokenEnv: string; ownerQQ: string; allowedPrivate: string[]; allowedGroups: string[]; groupMentionOnly: boolean; actionTimeoutMs: number; reconnectMs: number };
   bilibili: { enabled: boolean; tagWeights:Record<string,number>;allowComments: boolean;manualWhitelist:boolean;allowLikes:boolean;likesPerDay:number;minLikeIntervalMs:number; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number; allowedTags:string[];blockedTags:string[];allowDynamics:boolean;dynamicsPerDay:number;minDynamicIntervalMs:number };
 }
@@ -88,6 +90,7 @@ export function parseSettings(value: unknown, file: string): Settings {
   const up={...UPDATE_DEFAULTS,...(c.updates===undefined?{}:object(c.updates,'updates'))},pr={...PROACTIVE_DEFAULTS,...(c.proactive===undefined?{}:object(c.proactive,'proactive'))},bs={...BILI_SOCIAL_DEFAULTS,...(c.biliSocial===undefined?{}:object(c.biliSocial,'biliSocial'))};
   const clock={...CLOCK_DEFAULTS,...(c.clock===undefined?{}:object(c.clock,'clock'))},emoji={...EMOJI_DEFAULTS,...(c.emoji===undefined?{}:object(c.emoji,'emoji'))};
   const snow={...SNOWLUMA_DEFAULTS,...(c.snowluma===undefined?{}:object(c.snowluma,'snowluma'))},retention={...RETENTION_DEFAULTS,...(c.retention===undefined?{}:object(c.retention,'retention'))};
+  const slang={...SLANG_DEFAULTS,...(c.slang===undefined?{}:object(c.slang,'slang'))};
   const zone = string(c.timezone, 'timezone');
   const timezone = zone === 'system' ? Intl.DateTimeFormat().resolvedOptions().timeZone : zone;
   new Intl.DateTimeFormat('en', { timeZone: timezone }).format();
@@ -118,8 +121,9 @@ export function parseSettings(value: unknown, file: string): Settings {
     },
     biliVision:{enabled:boolean(bv.enabled,'biliVision.enabled'),autoBrowse:boolean(bv.autoBrowse,'biliVision.autoBrowse'),provider:'',model:FLASH_MODEL,frames:integer(bv.frames,'biliVision.frames',1),sheetSize:integer(bv.sheetSize,'biliVision.sheetSize',256),maxFileMB:integer(bv.maxFileMB,'biliVision.maxFileMB',1),maxDurationSeconds:integer(bv.maxDurationSeconds,'biliVision.maxDurationSeconds',1),timeoutMs:integer(bv.timeoutMs,'biliVision.timeoutMs',1000),maxOutputTokens:integer(bv.maxOutputTokens,'biliVision.maxOutputTokens',128),dailyLimit:integer(bv.dailyLimit,'biliVision.dailyLimit',0),subtitleChars:integer(bv.subtitleChars,'biliVision.subtitleChars',0),cacheHours:integer(bv.cacheHours,'biliVision.cacheHours',1),deepSegmentSeconds:integer(bv.deepSegmentSeconds,'biliVision.deepSegmentSeconds',15),deepMaxSegments:integer(bv.deepMaxSegments,'biliVision.deepMaxSegments',1)},
     voice:{enabled:boolean(vo.enabled,'voice.enabled'),authMode:string(vo.authMode,'voice.authMode') as 'app'|'apiKey',appId:string(vo.appId,'voice.appId'),speakerId:string(vo.speakerId,'voice.speakerId'),resourceId:string(vo.resourceId,'voice.resourceId'),mode:string(vo.mode,'voice.mode') as 'ask'|'auto',sendText:boolean(vo.sendText,'voice.sendText'),allowGroups:boolean(vo.allowGroups,'voice.allowGroups'),maxChars:integer(vo.maxChars,'voice.maxChars',20),dailyLimit:integer(vo.dailyLimit,'voice.dailyLimit',0),timeoutMs:integer(vo.timeoutMs,'voice.timeoutMs',1000),speechRate:integer(vo.speechRate,'voice.speechRate',-50)},
+    slang:{enabled:boolean(slang.enabled,'slang.enabled'),maxContextChars:integer(slang.maxContextChars,'slang.maxContextChars',0),maxHits:integer(slang.maxHits,'slang.maxHits',0)},
     qq: {
-      chat:{enabled:boolean(chat.enabled,'qq.chat.enabled'),replyChance:integer(chat.replyChance,'qq.chat.replyChance',0),delayMinSeconds:integer(chat.delayMinSeconds,'qq.chat.delayMinSeconds',0),delayMaxSeconds:integer(chat.delayMaxSeconds,'qq.chat.delayMaxSeconds',0),mergeWindowSeconds:integer(chat.mergeWindowSeconds,'qq.chat.mergeWindowSeconds',0),maxWaitSeconds:integer(chat.maxWaitSeconds,'qq.chat.maxWaitSeconds',0),maxMessages:integer(chat.maxMessages,'qq.chat.maxMessages',1),splitEnabled:boolean(chat.splitEnabled,'qq.chat.splitEnabled'),maxParts:integer(chat.maxParts,'qq.chat.maxParts',1),partChars:integer(chat.partChars,'qq.chat.partChars',1),partGapMinSeconds:integer(chat.partGapMinSeconds,'qq.chat.partGapMinSeconds',0),partGapMaxSeconds:integer(chat.partGapMaxSeconds,'qq.chat.partGapMaxSeconds',0),naturalStyle:boolean(chat.naturalStyle,'qq.chat.naturalStyle'),styleNotes:string(chat.styleNotes,'qq.chat.styleNotes')},
+      chat:{enabled:boolean(chat.enabled,'qq.chat.enabled'),replyChance:integer(chat.replyChance,'qq.chat.replyChance',0),ownerReplyChance:integer(chat.ownerReplyChance,'qq.chat.ownerReplyChance',0),delayMinSeconds:integer(chat.delayMinSeconds,'qq.chat.delayMinSeconds',0),delayMaxSeconds:integer(chat.delayMaxSeconds,'qq.chat.delayMaxSeconds',0),mergeWindowSeconds:integer(chat.mergeWindowSeconds,'qq.chat.mergeWindowSeconds',0),maxWaitSeconds:integer(chat.maxWaitSeconds,'qq.chat.maxWaitSeconds',0),maxMessages:integer(chat.maxMessages,'qq.chat.maxMessages',1),splitEnabled:boolean(chat.splitEnabled,'qq.chat.splitEnabled'),maxParts:integer(chat.maxParts,'qq.chat.maxParts',1),partChars:integer(chat.partChars,'qq.chat.partChars',1),partGapMinSeconds:integer(chat.partGapMinSeconds,'qq.chat.partGapMinSeconds',0),partGapMaxSeconds:integer(chat.partGapMaxSeconds,'qq.chat.partGapMaxSeconds',0),naturalStyle:boolean(chat.naturalStyle,'qq.chat.naturalStyle'),styleNotes:string(chat.styleNotes,'qq.chat.styleNotes')},
       keywordWakeEnabled:boolean(q.keywordWakeEnabled??false,'qq.keywordWakeEnabled'),wakeWords:strings(q.wakeWords??['大肥鱼','小肥鱼','鱼'],'qq.wakeWords'),keywordWakeChance:integer(q.keywordWakeChance??35,'qq.keywordWakeChance',0),keywordCooldownSeconds:integer(q.keywordCooldownSeconds??60,'qq.keywordCooldownSeconds',0),
       enabled: boolean(q.enabled, 'qq.enabled'), wsUrl: string(q.wsUrl, 'qq.wsUrl'), tokenEnv: string(q.tokenEnv, 'qq.tokenEnv'),
       ownerQQ: string(q.ownerQQ, 'qq.ownerQQ'), allowedPrivate: ids(q.allowedPrivate, 'qq.allowedPrivate'), allowedGroups: ids(q.allowedGroups, 'qq.allowedGroups'),

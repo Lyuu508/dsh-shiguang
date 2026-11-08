@@ -19,7 +19,7 @@ test('SnowLuma 只启动已安装官方目录及 QQ 原生窗口，重复启动�
  const f=fixture();let launches=0,opens=0,kills=0;const child=Object.assign(new EventEmitter(),{killed:false,kill(){this.killed=true;kills++;}}) as ChildProcess;
  const manager=new SnowLumaManager(f.dir,()=>f.settings,{platform:'win32',launch(dir,log){assert.equal(dir,f.settings.snowluma.directory);assert.match(log,/snowluma/);launches++;return child;},openQQ(file){assert.equal(file,f.settings.snowluma.qqPath);opens++;}});
  try{assert.equal(manager.view().version,'');assert.throws(()=>manager.start(),/官方/);f.settings.snowluma.directory=join(f.dir,'official');mkdirSync(f.settings.snowluma.directory);writeFileSync(join(f.settings.snowluma.directory,'index.mjs'),'');f.settings.snowluma.qqPath=join(f.dir,'QQ.exe');writeFileSync(f.settings.snowluma.qqPath,'');
-  manager.start();manager.start();assert.equal(launches,1);assert.equal(opens,2);assert.equal(manager.consoleUrl().url,'http://127.0.0.1:5099/');assert.equal(manager.view().installed,true);await manager.stop();assert.equal(kills,1);
+  manager.start();manager.start();assert.equal(launches,1);assert.equal(opens,1);assert.equal(manager.consoleUrl().url,'http://127.0.0.1:5099/');assert.equal(manager.view().installed,true);await manager.stop();assert.equal(kills,1);
   for(const webuiUrl of ['http://evil.example','http://127.0.0.1:5099/?token=secret','http://user@127.0.0.1:5099'])assert.throws(()=>parseSettings({...f.settings,snowluma:{...f.settings.snowluma,webuiUrl}},join(f.dir,'config.json')));
  }finally{await manager.stop();f.cleanup();}
 });

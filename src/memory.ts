@@ -46,8 +46,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 11) throw new Error('记忆数据库来自更新版本，请升级插件');
-    if ([1,2,3,4,5,6,7,8,9,10].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
+    if (Number(version) > 12) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if ([1,2,3,4,5,6,7,8,9,10,11].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -121,7 +121,9 @@ export class MemoryStore {
       CREATE INDEX IF NOT EXISTS llm_wire_day ON llm_wire_usage(day,time,id);
       CREATE INDEX IF NOT EXISTS llm_usage_session ON llm_usage(session);
       CREATE TABLE IF NOT EXISTS provider_bills(day TEXT PRIMARY KEY,label TEXT NOT NULL,total_tokens INTEGER NOT NULL,calls INTEGER,amount TEXT NOT NULL,recorded_at INTEGER NOT NULL);
-      PRAGMA user_version=11;`);
+      CREATE TABLE IF NOT EXISTS slang_entries(role TEXT NOT NULL,scope TEXT NOT NULL,term TEXT NOT NULL,meaning TEXT NOT NULL,response TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(role,scope,term));
+      CREATE TABLE IF NOT EXISTS slang_tokens(role TEXT NOT NULL,scope TEXT NOT NULL,token TEXT NOT NULL,term TEXT NOT NULL,PRIMARY KEY(role,scope,token,term));
+      PRAGMA user_version=12;`);
     this.db.exec("CREATE INDEX IF NOT EXISTS memories_recent ON memories(role,scope,day,time DESC,rowid DESC) WHERE kind IN ('user','assistant')");
     this.db.exec('CREATE INDEX IF NOT EXISTS memories_turn ON memories(role,scope,thread,turn_id,time,rowid); CREATE INDEX IF NOT EXISTS memories_pair ON memories(role,scope,thread,kind,rowid DESC);');
 

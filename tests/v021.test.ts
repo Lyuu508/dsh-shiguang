@@ -36,7 +36,7 @@ test('本机概率与合并：安静窗口延后、最长等待封顶、不同�
 });
 
 test('每条消息概率为 0 时只归档，不占用生成队列也不调用模型',async()=>{
- const s=await setup(new Model(),f=>Object.assign(f.settings.qq.chat,{enabled:true,replyChance:0,delayMinSeconds:0,delayMaxSeconds:0,maxWaitSeconds:0}));
+ const s=await setup(new Model(),f=>Object.assign(f.settings.qq.chat,{enabled:true,replyChance:0,ownerReplyChance:0,delayMinSeconds:0,delayMaxSeconds:0,maxWaitSeconds:0}));
  try{s.send(1,'今天吃了苹果');s.send(2,'中午想吃香蕉');await wait(()=>s.runtime.memory.overview().total===2);await tick();assert.equal(s.model.requests.length,0);assert.equal(s.sent.length,0);assert.equal(s.runtime.qqConversation.status().pending,0);assert.match(s.runtime.qqConversation.status().last.reason,/概率/);}finally{await s.close();}
 });
 

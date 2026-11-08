@@ -2,7 +2,7 @@ import {readFileSync,writeFileSync,mkdirSync,renameSync} from 'node:fs';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {Settings} from './config.js';
-const keys=['displayName','persona','provider','model','maxReplyChars','replyTimeoutMs','memory','retention','clock','voice'] as const;
+const keys=['displayName','persona','provider','model','maxReplyChars','replyTimeoutMs','memory','retention','slang','clock','voice'] as const;
 type Profile=Pick<Settings,(typeof keys)[number]> & {roleId:string};
 export class RoleManager {
  private profiles:Record<string,Profile>={};private file:string;

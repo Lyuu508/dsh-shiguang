@@ -10,7 +10,7 @@ export class QQConversation {
  constructor(readonly config:Settings['qq']['chat'],readonly run:(batch:QQBatch,signal:AbortSignal)=>Promise<void>,readonly log:(message:string)=>void,readonly clock=Date.now,readonly random=Math.random){}
  offer(message:QQMessage,eligible:boolean,admit:()=>boolean=()=>true){
   if(this.stopped)return false;
-  const now=this.clock(),c=this.config,selected=eligible&&(!c.enabled||this.random()*100<c.replyChance)&&admit();
+  const now=this.clock(),c=this.config,selected=eligible&&(!c.enabled||this.random()*100<(message.ownerMessage||message.owner?c.ownerReplyChance:c.replyChance))&&admit();
   let batch=this.pending.get(message.thread);
   if(!batch&&!selected){this.last={at:now,reason:eligible?'本条按回应概率保持安静；原话已归档':'本条未触发回复；原话已归档'};return false;}
   if(!batch){batch={id:message.id,thread:message.thread,messages:[],target:message,firstAt:now,lastAt:now,dueAt:now,delay:c.enabled?(c.delayMinSeconds+(c.delayMaxSeconds-c.delayMinSeconds)*this.random())*1000:0};this.pending.set(message.thread,batch);}

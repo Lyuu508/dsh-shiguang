@@ -1,3 +1,4 @@
+import {setState,stateValue} from './initiative.js';
 import {timeoutSignal} from './timeouts.js';
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -182,6 +183,7 @@ export class BilibiliClient {
     for(let i=0;i<ids.length;i+=3){const rows=await Promise.allSettled(ids.slice(i,i+3).map(id=>this.tags(id,signal)));for(const row of rows){if(row.status==='rejected'){signal?.throwIfAborted();failed++;continue;}for(const tag of row.value){if(this.settings.bilibili.blockedTags.some(x=>normalizedTag(x)===normalizedTag(tag)))continue;const key=normalizedTag(tag),entry=counts.get(key);counts.set(key,{tag:entry?.tag||tag,count:(entry?.count||0)+1});}}}
     return {videos:ids.length,failed,tags:[...counts.values()].sort((a,b)=>b.count-a.count||a.tag.localeCompare(b.tag)),ownerName:account.name};
   }
+  browseStatus(){return stateValue(this.memory,'bili:selection',{at:0,tag:'',examined:0,selected:0,message:'尚未开始搜索'});}
   async browse(rotation=0,signal?:AbortSignal):Promise<(BiliVideo&{tags:string[]})[]>{
     const b=this.settings.bilibili,a=this.settings.autonomy;
     if(!b.enabled||!b.allowedTags.length)throw new Error('浏览前需要启用 B 站并填写标签白名单');
@@ -195,6 +197,7 @@ export class BilibiliClient {
     const {data:nav}=await this.request('https://api.bilibili.com/x/web-interface/nav',{headers},signal),keys=object(nav.wbi_img);
     const extract=(v:unknown)=>typeof v==='string'?new URL(v).pathname.split('/').at(-1)!.split('.')[0]!:'';
     const keyword=weightedTag(b.allowedTags,b.tagWeights);
+    const progress=(examined:number,selected:number,message:string)=>setState(this.memory,'bili:selection',{at:this.memory.clock(),tag:keyword,examined,selected,message});progress(0,0,'已按标签权重选择主题，正在搜索');
     const query=wbiQuery({search_type:'video',keyword,page:String(1+Math.floor(Math.abs(rotation)/b.allowedTags.length)%3),page_size:'20',order:'pubdate'},extract(keys.img_url),extract(keys.sub_url),this.memory.clock());
     const {data}=await this.request(`https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`,{headers},signal);
     if(!Array.isArray(data.result))throw new Error('B 站搜索未返回可用视频');
@@ -206,12 +209,12 @@ export class BilibiliClient {
       signal?.throwIfAborted();if(!row||typeof row!=='object'||typeof row.bvid!=='string'||!/^BV[\dA-Za-z]{10}$/.test(row.bvid))continue;
       if(this.memory.seen('bili:browse:'+row.bvid)||videos.some(v=>v.bvid===row.bvid))continue;
       const tags=await this.tags(row.bvid,signal);if(!tagsAllowed(tags,b.allowedTags,b.blockedTags))continue;
-      const video=await this.video(row.bvid,signal);videos.push({...video,tags});if(videos.length>=a.videosPerWake)return videos;
+      const video=await this.video(row.bvid,signal);videos.push({...video,tags});if(videos.length>=a.videosPerWake){progress(examined,videos.length,'已找到通过真实标签筛选的视频');return videos;}
     }
     if(examined>=a.candidatesPerWake||!Array.isArray(batch.result)||batch.result.length<20)break;
     const next=wbiQuery({search_type:'video',keyword,page:String(++page),page_size:'20',order:'pubdate'},extract(keys.img_url),extract(keys.sub_url),this.memory.clock());batch=(await this.request('https://api.bilibili.com/x/web-interface/wbi/search/type?'+next,{headers},signal)).data;if(!Array.isArray(batch.result))throw new Error('B 站搜索分页格式无效');
     }
-    return videos;
+    progress(examined,videos.length,videos.length?'已完成筛选':'候选已看过、未通过标签或没有结果，可增加候选数量或调整标签');return videos;
   }
   async dynamic(text:string,signal?:AbortSignal):Promise<{id:string;url:string}>{
     if(this.identity==='owner')throw new Error('主人账号仅用于读取观看兴趣，不能发送互动');
