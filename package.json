@@ -1,6 +1,6 @@
 {
   "name": "dsh-shiguang",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "拾光：跨 QQ 与 B 站的 AI 伙伴，使用当天优先、历史按需检索的共享记忆。",
   "type": "module",
   "main": "./dist/plugin.js",

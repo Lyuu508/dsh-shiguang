@@ -88,6 +88,12 @@ export class BilibiliClient {
     for (const [key, value] of Object.entries(values)) if (/^[A-Za-z0-9_]+$/.test(key) && typeof value === 'string' && !/[;\r\n]/.test(value)) cookies[key] = value;
     return cookies;
   }
+  private metadataHeaders():Record<string,string>{
+    // Public metadata still works before login. Once this identity has a saved
+    // session, use it consistently instead of silently making a guest request.
+    if(!existsSync(this.cookiesPath))return {};
+    return {Cookie:Object.entries(this.cookies()).map(([k,v])=>`${k}=${v}`).join('; ')};
+  }
   private async request<T=ObjectValue>(url: string, init: RequestInit = {}, signal?: AbortSignal,array=false): Promise<{ data:T; response: Response }> {
     const risk=this.riskStatus(),stage=biliStage(url),u=new URL(url);if(risk.active&&u.hostname!=='passport.bilibili.com'&&u.pathname!=='/x/web-interface/nav')throw new BiliBlockedError(risk.code,risk.stage,risk.retryAt);
     const combined = signal ? AbortSignal.any([signal, timeoutSignal(this.settings.bilibili.timeoutMs)]) : timeoutSignal(this.settings.bilibili.timeoutMs);
@@ -129,9 +135,12 @@ export class BilibiliClient {
     return 'success';
   }
   async video(input: string, signal?: AbortSignal): Promise<BiliVideo> {
+    return (await this.readVideo(input,signal)).video;
+  }
+  private async readVideo(input:string,signal?:AbortSignal):Promise<{video:BiliVideo;data:ObjectValue}>{
     if (!this.settings.bilibili.enabled) throw new Error('请先启用 bilibili.enabled');
     const query = new URLSearchParams(videoId(input));
-    const { data } = await this.request(`https://api.bilibili.com/x/web-interface/view?${query}`, {}, signal);
+    const { data } = await this.request(`https://api.bilibili.com/x/web-interface/view?${query}`, {headers:this.metadataHeaders()}, signal);
     const owner = object(data.owner);
     if ((typeof data.aid !== 'number' && typeof data.aid !== 'string') || typeof data.bvid !== 'string' || typeof data.title !== 'string') throw new Error('B 站视频数据不完整');
     if(this.settings.bilibili.manualWhitelist&&this.settings.bilibili.allowedTags.length||this.settings.bilibili.blockedTags.length){
@@ -139,7 +148,7 @@ export class BilibiliClient {
       if(blocked.length)throw new Error(`这个视频命中黑名单标签：${blocked.join('、')}。视频实际标签：${tags.join('、')||'无'}。请在 B 站账号中调整黑名单后再读取。`);
       if(b.manualWhitelist&&!tagsAllowed(tags,b.allowedTags,[]))throw new Error(`这个视频没有命中白名单：${b.allowedTags.join('、')}。视频实际标签：${tags.join('、')||'无'}。手动指定的视频可关闭“手动读取也要求白名单”后再试；自动浏览仍按白名单筛选。`);
     }
-    return { ...(Number.isSafeInteger((data.stat as any)?.view)&&(data.stat as any).view>=0?{views:(data.stat as any).view}:{}),aid: String(data.aid), bvid: data.bvid, title: data.title, description: String(data.desc || '').slice(0, 2000), owner: String(owner.name || ''), url: `https://www.bilibili.com/video/${data.bvid}` };
+    return {data,video:{ ...(Number.isSafeInteger((data.stat as any)?.view)&&(data.stat as any).view>=0?{views:(data.stat as any).view}:{}),aid: String(data.aid), bvid: data.bvid, title: data.title, description: String(data.desc || '').slice(0, 2000), owner: String(owner.name || ''), url: `https://www.bilibili.com/video/${data.bvid}` }};
   }
   private async playerRequest(path:string,params:Record<string,string>,signal?:AbortSignal):Promise<ObjectValue>{
     this.assertAvailable();
@@ -154,9 +163,8 @@ export class BilibiliClient {
     return (await this.request('https://api.bilibili.com'+path+'?'+query,{headers},signal)).data;
   }
   async videoPart(input:string,part=1,signal?:AbortSignal):Promise<{video:BiliVideo;cid:string;duration:number;part:number}>{
-    const video=await this.video(input,signal);
-    const {data}=await this.request('https://api.bilibili.com/x/web-interface/view?bvid='+encodeURIComponent(video.bvid),{},signal);
     if(!Number.isSafeInteger(part)||part<1)throw new Error('视频分 P 应为正整数');
+    const {video,data}=await this.readVideo(input,signal);
     const page=Array.isArray(data.pages)?data.pages[part-1]:part===1?{cid:data.cid,duration:data.duration}:undefined;
     if(!page||!Number.isSafeInteger(page.cid)||page.cid<1||!Number.isFinite(page.duration)||page.duration<=0)throw new Error('未取得有效视频分 P 和时长');
     return {video,cid:String(page.cid),duration:page.duration,part};

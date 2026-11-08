@@ -57,7 +57,7 @@ test('评论获得回执才写入共享记忆，同一天重复操作不重发',
   writeFileSync(join(f.dir, 'bilibili.cookies.json'), JSON.stringify({ SESSDATA: 'fake-session', bili_jct: 'fake-csrf' }));
   let posts = 0;
   const fetcher: typeof fetch = async (url, init) => {
-    if (String(url).includes('/view')) { assert.ok(!new Headers(init?.headers).has('Cookie')); return json(video); }
+    if (String(url).includes('/view')) { assert.equal(new URL(String(url)).hostname,'api.bilibili.com');assert.match(new Headers(init?.headers).get('Cookie')||'',/SESSDATA=fake/);return json(video); }
     posts++; assert.equal(init?.method, 'POST');
     assert.match(String(new Headers(init?.headers).get('Cookie')), /SESSDATA=fake-session/);
     const form = new URLSearchParams(String(init?.body));
