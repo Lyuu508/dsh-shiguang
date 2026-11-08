@@ -1,3 +1,4 @@
+import {FLASH_MODEL} from './model-route.js';
 import { readFileSync, mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -20,7 +21,7 @@ export const BILI_VISION_DEFAULTS = {enabled:false,autoBrowse:false,provider:'',
 export const UPDATE_DEFAULTS={timeoutMs:15000,downloadTimeoutMs:300000,retries:2,mirrorUrl:''};
 export const PROACTIVE_DEFAULTS={enabled:false,activity:'normal' as 'silent'|'low'|'normal'|'active',minGapMinutes:60,maxGapMinutes:240,maxPerDay:4,decisionsPerDay:8,quietStart:'23:00',quietEnd:'08:00',waitForReply:true,contextChars:1200,maxTokens:480,company:30,care:25,share:20,play:15,chat:10};
 export const BILI_SOCIAL_DEFAULTS={ownerUids:[] as string[],dmEnabled:false,pollSeconds:60,repliesPerDay:20,minReplySeconds:10};
-export const SNOWLUMA_DEFAULTS={directory:'',qqPath:'',webuiUrl:'http://127.0.0.1:5099',autoStart:false};
+export const SNOWLUMA_DEFAULTS={directory:'',qqPath:'',webuiUrl:'http://127.0.0.1:5099',autoStart:false,accountQQ:''};
 export const RETENTION_DEFAULTS={enabled:true,forgetAfterDays:30,promoteAfter:5};
 export const CLOCK_DEFAULTS={enabled:false,wakeAt:'08:00',sleepAt:'23:00',wakeOnMention:true,wakeChance:25,awakeMinutes:10,minWakeGapMinutes:30};
 export const EMOJI_DEFAULTS={enabled:false,dailyLimit:3,decisionsPerDay:8,allowGroups:false,maxFileMB:5,maxOutputTokens:240};
@@ -92,7 +93,7 @@ export function parseSettings(value: unknown, file: string): Settings {
   const s: Settings = {
     roleId: string(c.roleId, 'roleId'), displayName: string(c.displayName ?? '拾光', 'displayName'), persona: string(c.persona, 'persona'), timezone,
     dataDir: isAbsolute(dataPath) ? dataPath : resolve(dirname(file), dataPath),
-    provider: string(c.provider, 'provider'), model: string(c.model, 'model'),
+    provider: '', model: FLASH_MODEL,
     replyTimeoutMs: integer(c.replyTimeoutMs, 'replyTimeoutMs',1000),
     maxReplyChars: integer(c.maxReplyChars, 'maxReplyChars',100), maxQueue: integer(c.maxQueue, 'maxQueue',1),
     memory: {
@@ -105,14 +106,14 @@ export function parseSettings(value: unknown, file: string): Settings {
     },
     media: {
       enabled: boolean(v.enabled,'media.enabled'), mode: string(v.mode,'media.mode') as MediaSettings['mode'],
-      provider: string(v.provider,'media.provider'), model: string(v.model,'media.model'),
+      provider: '', model: FLASH_MODEL,
       ffmpegPath: string(v.ffmpegPath,'media.ffmpegPath'), ffprobePath: string(v.ffprobePath,'media.ffprobePath'), localMediaDir: string(v.localMediaDir,'media.localMediaDir'),
       frames: integer(v.frames,'media.frames',1), sheetSize: integer(v.sheetSize,'media.sheetSize',256),
       maxFileMB: integer(v.maxFileMB,'media.maxFileMB',1), maxDurationSeconds: integer(v.maxDurationSeconds,'media.maxDurationSeconds',1),
       timeoutMs: integer(v.timeoutMs,'media.timeoutMs',1000), maxOutputTokens: integer(v.maxOutputTokens,'media.maxOutputTokens',128),
       dailyLimit: integer(v.dailyLimit,'media.dailyLimit',0), contextChars: integer(v.contextChars,'media.contextChars',0), cacheHours: integer(v.cacheHours,'media.cacheHours',1),
     },
-    biliVision:{enabled:boolean(bv.enabled,'biliVision.enabled'),autoBrowse:boolean(bv.autoBrowse,'biliVision.autoBrowse'),provider:string(bv.provider,'biliVision.provider'),model:string(bv.model,'biliVision.model'),frames:integer(bv.frames,'biliVision.frames',1),sheetSize:integer(bv.sheetSize,'biliVision.sheetSize',256),maxFileMB:integer(bv.maxFileMB,'biliVision.maxFileMB',1),maxDurationSeconds:integer(bv.maxDurationSeconds,'biliVision.maxDurationSeconds',1),timeoutMs:integer(bv.timeoutMs,'biliVision.timeoutMs',1000),maxOutputTokens:integer(bv.maxOutputTokens,'biliVision.maxOutputTokens',128),dailyLimit:integer(bv.dailyLimit,'biliVision.dailyLimit',0),subtitleChars:integer(bv.subtitleChars,'biliVision.subtitleChars',0),cacheHours:integer(bv.cacheHours,'biliVision.cacheHours',1),deepSegmentSeconds:integer(bv.deepSegmentSeconds,'biliVision.deepSegmentSeconds',15),deepMaxSegments:integer(bv.deepMaxSegments,'biliVision.deepMaxSegments',1)},
+    biliVision:{enabled:boolean(bv.enabled,'biliVision.enabled'),autoBrowse:boolean(bv.autoBrowse,'biliVision.autoBrowse'),provider:'',model:FLASH_MODEL,frames:integer(bv.frames,'biliVision.frames',1),sheetSize:integer(bv.sheetSize,'biliVision.sheetSize',256),maxFileMB:integer(bv.maxFileMB,'biliVision.maxFileMB',1),maxDurationSeconds:integer(bv.maxDurationSeconds,'biliVision.maxDurationSeconds',1),timeoutMs:integer(bv.timeoutMs,'biliVision.timeoutMs',1000),maxOutputTokens:integer(bv.maxOutputTokens,'biliVision.maxOutputTokens',128),dailyLimit:integer(bv.dailyLimit,'biliVision.dailyLimit',0),subtitleChars:integer(bv.subtitleChars,'biliVision.subtitleChars',0),cacheHours:integer(bv.cacheHours,'biliVision.cacheHours',1),deepSegmentSeconds:integer(bv.deepSegmentSeconds,'biliVision.deepSegmentSeconds',15),deepMaxSegments:integer(bv.deepMaxSegments,'biliVision.deepMaxSegments',1)},
     voice:{enabled:boolean(vo.enabled,'voice.enabled'),authMode:string(vo.authMode,'voice.authMode') as 'app'|'apiKey',appId:string(vo.appId,'voice.appId'),speakerId:string(vo.speakerId,'voice.speakerId'),resourceId:string(vo.resourceId,'voice.resourceId'),mode:string(vo.mode,'voice.mode') as 'ask'|'auto',sendText:boolean(vo.sendText,'voice.sendText'),allowGroups:boolean(vo.allowGroups,'voice.allowGroups'),maxChars:integer(vo.maxChars,'voice.maxChars',20),dailyLimit:integer(vo.dailyLimit,'voice.dailyLimit',0),timeoutMs:integer(vo.timeoutMs,'voice.timeoutMs',1000),speechRate:integer(vo.speechRate,'voice.speechRate',-50)},
     qq: {
       enabled: boolean(q.enabled, 'qq.enabled'), wsUrl: string(q.wsUrl, 'qq.wsUrl'), tokenEnv: string(q.tokenEnv, 'qq.tokenEnv'),
@@ -120,7 +121,7 @@ export function parseSettings(value: unknown, file: string): Settings {
       groupMentionOnly: boolean(q.groupMentionOnly, 'qq.groupMentionOnly'),
       actionTimeoutMs: integer(q.actionTimeoutMs, 'qq.actionTimeoutMs',1000), reconnectMs: integer(q.reconnectMs, 'qq.reconnectMs',500),
     },
-    snowluma:{directory:string(snow.directory,'snowluma.directory'),qqPath:string(snow.qqPath,'snowluma.qqPath'),webuiUrl:string(snow.webuiUrl,'snowluma.webuiUrl'),autoStart:boolean(snow.autoStart,'snowluma.autoStart')},
+    snowluma:{accountQQ:string(snow.accountQQ,'snowluma.accountQQ'),directory:string(snow.directory,'snowluma.directory'),qqPath:string(snow.qqPath,'snowluma.qqPath'),webuiUrl:string(snow.webuiUrl,'snowluma.webuiUrl'),autoStart:boolean(snow.autoStart,'snowluma.autoStart')},
     retention:{enabled:boolean(retention.enabled,'retention.enabled'),forgetAfterDays:integer(retention.forgetAfterDays,'retention.forgetAfterDays',1),promoteAfter:integer(retention.promoteAfter,'retention.promoteAfter',2)},
     clock:{enabled:boolean(clock.enabled,'clock.enabled'),wakeAt:string(clock.wakeAt,'clock.wakeAt'),sleepAt:string(clock.sleepAt,'clock.sleepAt'),wakeOnMention:boolean(clock.wakeOnMention,'clock.wakeOnMention'),wakeChance:integer(clock.wakeChance,'clock.wakeChance',0),awakeMinutes:integer(clock.awakeMinutes,'clock.awakeMinutes',1),minWakeGapMinutes:integer(clock.minWakeGapMinutes,'clock.minWakeGapMinutes',0)},
     emoji:{enabled:boolean(emoji.enabled,'emoji.enabled'),dailyLimit:integer(emoji.dailyLimit,'emoji.dailyLimit',0),decisionsPerDay:integer(emoji.decisionsPerDay,'emoji.decisionsPerDay',0),allowGroups:boolean(emoji.allowGroups,'emoji.allowGroups'),maxFileMB:integer(emoji.maxFileMB,'emoji.maxFileMB',1),maxOutputTokens:integer(emoji.maxOutputTokens,'emoji.maxOutputTokens',1)},
@@ -145,10 +146,9 @@ export function parseSettings(value: unknown, file: string): Settings {
   };
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(s.roleId)) throw new Error('roleId 只能使用字母、数字、下划线和连字符');
   if (!s.displayName.trim()) throw new Error('角色名称不能为空');
-  if (Boolean(s.provider) !== Boolean(s.model)) throw new Error('provider 和 model 必须同时填写或同时留空，留空使用 DSH 默认模型');
   if (!['ask','auto'].includes(s.media.mode)) throw new Error('视频识别模式或拼图尺寸无效');
-  if (Boolean(s.media.provider) !== Boolean(s.media.model)) throw new Error('视觉模型的 provider 和 model 必须同时填写或同时留空');
   if ([s.media.ffmpegPath,s.media.ffprobePath].some(p=>!p.trim() || /[\r\n\0]/.test(p))) throw new Error('请填写有效的 FFmpeg / FFprobe 程序路径');
+  if(s.snowluma.accountQQ&&!/^\d+$/.test(s.snowluma.accountQQ))throw new Error('SnowLuma 收发 QQ 号应为数字');
   const snowUrl=new URL(s.snowluma.webuiUrl);if(snowUrl.protocol!=='http:'||!['localhost','127.0.0.1','[::1]'].includes(snowUrl.hostname)||snowUrl.username||snowUrl.password||snowUrl.search||snowUrl.hash||snowUrl.pathname!=='/')throw new Error('SnowLuma 后台请使用本机 HTTP 地址，例如 http://127.0.0.1:5099');
   if([s.snowluma.directory,s.snowluma.qqPath].some(p=>/[\r\n\0]/.test(p)))throw new Error('SnowLuma 或 QQ 路径格式无效');
   const u = new URL(s.qq.wsUrl);
@@ -157,7 +157,6 @@ export function parseSettings(value: unknown, file: string): Settings {
   if(!['fixed','free'].includes(s.autonomy.scheduleMode)||s.autonomy.minWakeMinutes>s.autonomy.maxWakeMinutes)throw new Error('自主醒来模式或间隔范围无效');
   if(!['silent','low','normal','active'].includes(s.proactive.activity)||s.proactive.minGapMinutes>s.proactive.maxGapMinutes||s.proactive.enabled&&!(s.proactive.company+s.proactive.care+s.proactive.share+s.proactive.play+s.proactive.chat))throw new Error('主动私聊活跃度、间隔或动机权重无效');
   if(s.biliSocial.ownerUids.some(uid=>!/[1-9]/.test(uid)))throw new Error('B 站主人 UID 应为正整数');
-  if(Boolean(s.biliVision.provider)!==Boolean(s.biliVision.model))throw new Error('B 站视觉模型需同时填写提供方和模型，拼图尺寸请选择预设值');
   if(!['app','apiKey'].includes(s.voice.authMode)||!['ask','auto'].includes(s.voice.mode)||!['seed-icl-1.0','seed-icl-2.0'].includes(s.voice.resourceId))throw new Error('语音鉴权方式、触发方式或复刻资源 ID 无效');
   if(s.voice.appId&&!/^\d{1,32}$/.test(s.voice.appId)||s.voice.speakerId&&!/^[A-Za-z0-9_-]{1,128}$/.test(s.voice.speakerId))throw new Error('请填写有效的火山 APPID 和音色 ID');
   if(s.voice.enabled&&(!s.voice.speakerId||s.voice.authMode==='app'&&!s.voice.appId))throw new Error('开启语音前请填写音色 ID，以及 APPID（APP 鉴权模式）');

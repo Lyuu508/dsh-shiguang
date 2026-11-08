@@ -1,3 +1,4 @@
+import {flashRoute} from './model-route.js';
 import {timeoutSignal} from './timeouts.js';
 import type {Context} from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-attachment';
@@ -50,7 +51,7 @@ export class BiliVision {
     if(cached){this.memory.append('owner','bilibili','bilibili','experience',`复看缓存摘要：${String(cached.summary)}；${source.video.url}`,undefined,this.memory.clock(),'watch');return String(cached.summary)+'\n（复用已识别的画面与字幕摘要，本次未重新读取视频。）';}
     const used=Number(this.memory.db.prepare("SELECT count(*) AS n FROM llm_usage WHERE role=? AND day=? AND category='bilibili-video'").get(this.memory.roleId,this.memory.today())?.n);
     if(used+segments>c.dailyLimit)throw new Error('今天的 B 站视频识别额度已用完');
-    const route=c.provider?{provider:c.provider,model:c.model}:this.settings.media.provider?{provider:this.settings.media.provider,model:this.settings.media.model}:this.settings.provider?{provider:this.settings.provider,model:this.settings.model}:this.ctx.agents.list().filter(a=>!String(a.id).startsWith('shiguang-')).map(a=>a.model.current()).find(Boolean);
+    const route=await flashRoute(this.ctx);
     const llm=this.ctx.get('llm'),attachments=this.ctx.get('attachments');if(!route||!llm||!attachments)throw new Error('请配置视觉模型，并启用 DSH 模型与附件服务');
     const model=await llm.resolveModelInfo(route.provider,route.model,signal);if(!model.inputModalities?.includes('image'))throw new Error('B 站视频识别需要支持图片输入的模型');
     await this.prepare?.();

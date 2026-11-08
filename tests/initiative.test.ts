@@ -14,7 +14,7 @@ class Planner extends LlmAdapter{
  requests:GenerateOptions[]=[];constructor(readonly script:(i:number)=>unknown){super();}
  async *stream(o:GenerateOptions):AsyncIterable<StreamChunk>{this.requests.push(o);const text=typeof this.script(this.requests.length-1)==='string'?String(this.script(this.requests.length-1)):JSON.stringify(this.script(this.requests.length-1));yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'usage',usage:{inputTokens:100,outputTokens:30}};yield {type:'finish',reason:{kind:'stop'}};}
 }
-async function harness(f:ReturnType<typeof fixture>,planner:Planner){const ctx=new Context();f.settings.provider='initiative-test';f.settings.model='script';f.settings.timezone='UTC';await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['initiative-test'],planner);return ctx;}
+async function harness(f:ReturnType<typeof fixture>,planner:Planner){const ctx=new Context();f.settings.provider='deepseek-official';f.settings.model='script';f.settings.timezone='UTC';await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['deepseek-official'],planner);return ctx;}
 function login(f:ReturnType<typeof fixture>){f.settings.bilibili.enabled=true;writeFileSync(join(f.dir,'bilibili.cookies.json'),JSON.stringify({SESSDATA:'fake-session',bili_jct:'fake-csrf'}));}
 const keys={img_url:'https://i0.hdslb.com/bfs/wbi/'+'a'.repeat(32)+'.png',sub_url:'https://i0.hdslb.com/bfs/wbi/'+'b'.repeat(32)+'.png'};
 const good='BV1xx411c7mD',other='BV1xx411c7mE';

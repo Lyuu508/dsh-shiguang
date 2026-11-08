@@ -57,8 +57,8 @@ test('真实 QQ WebSocket 与 DSH 回复：按需发送文字及复刻语音，�
  let runtime:ShiguangRuntime|undefined,spoken=0;const sent:any[]=[],modelRequests:GenerateOptions[]=[];
  class Model extends LlmAdapter {async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{modelRequests.push(options);const text='你好，今天一起练习吉他吧。';yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'finish',reason:{kind:'stop'}};}}
  try{
-  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['voice-reply-test'],new Model());
-  configure(f);Object.assign(f.settings,{provider:'voice-reply-test',model:'text'});Object.assign(f.settings.qq,{enabled:true,ownerQQ:'1',wsUrl:`ws://127.0.0.1:${address.port}`});
+  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['deepseek-official'],new Model());
+  configure(f);Object.assign(f.settings,{provider:'deepseek-official',model:'text'});Object.assign(f.settings.qq,{enabled:true,ownerQQ:'1',wsUrl:`ws://127.0.0.1:${address.port}`});
   writeFileSync(join(f.dir,'onebot.token'),'qq-local-secret');writeFileSync(join(f.dir,'voice.access-key'),'volc-local-secret');const config=join(f.dir,'config.json');writeFileSync(config,JSON.stringify(f.settings));
   server.on('connection',socket=>{socket.on('message',raw=>{const req=JSON.parse(raw.toString());if(req.action==='send_private_msg')sent.push(req.params.message[0]);socket.send(JSON.stringify({status:'ok',retcode:0,echo:req.echo,data:{message_id:100}}));});socket.send(JSON.stringify({post_type:'message',message_type:'private',self_id:2,user_id:1,message_id:1,message:[{type:'text',data:{text:'用语音回复我'}}]}));});
   runtime=new ShiguangRuntime(ctx,config,async()=>{spoken++;return response();});

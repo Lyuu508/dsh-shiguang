@@ -14,9 +14,9 @@ import type {BiliVision} from '../src/bili-vision.js';
 test('视频内容工具仅主人开启后可用，群聊不取得账号视频识别工具',async()=>{
  const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory);let watches=0,driver:ChatDriver|undefined;
  try{
-  f.settings.provider='bili-tool-test';f.settings.model='script';f.settings.bilibili.enabled=true;f.settings.biliVision.enabled=true;
+  f.settings.provider='deepseek-official';f.settings.model='script';f.settings.bilibili.enabled=true;f.settings.biliVision.enabled=true;
   await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);
-  const adapter=new ScriptedAdapter((_options,index)=>index===0?toolChunks('shiguang_bili_watch',{video:'BV1xx411c7mD',question:'讲了什么'}):textChunks('看到了持琴姿势的抽样画面。'));ctx.llm.registerAdapter(['bili-tool-test'],adapter);
+  const adapter=new ScriptedAdapter((_options,index)=>index===0?toolChunks('shiguang_bili_watch',{video:'BV1xx411c7mD',question:'讲了什么'}):textChunks('看到了持琴姿势的抽样画面。'));ctx.llm.registerAdapter(['deepseek-official'],adapter);
   const vision={watch:async()=>{watches++;return '抽样内容：讲解持琴姿势，没有原始音频。';}} as unknown as BiliVision;
   driver=new ChatDriver(ctx,f.settings,memory,new BilibiliClient(f.settings,memory),vision);
   await driver.reply({owner:true,scope:'owner',thread:'p',platform:'qq',text:'看看视频里的内容'});assert.equal(watches,1);
@@ -39,11 +39,11 @@ test('真实 DSH AgentLoop：当天上下文进入请求、旧档案不进入、
   const f = fixture(), ctx = new Context();
   const memory = new MemoryStore(':memory:', f.settings.roleId, f.settings.timezone, f.settings.memory);
   const adapter = new ScriptedAdapter(() => textChunks('今天一起练吉他吧。'));
-  f.settings.provider = 'shiguang-test'; f.settings.model = 'scripted';
+  f.settings.provider = 'deepseek-official'; f.settings.model = 'scripted';
   let driver: ChatDriver | undefined;
   try {
     await mountAgentLoopTestDependencies(ctx); await mountAgentLoopTestHarness(ctx);
-    ctx.llm.registerAdapter(['shiguang-test'], adapter);
+    ctx.llm.registerAdapter(['deepseek-official'], adapter);
     ctx.systemPrompt.section({ name: 'private-project-instructions', order: 50, text: '主会话的私人项目指令不应传到QQ' });
     ctx.systemPrompt.context({ name: 'private-project-context', order: 60, text: '主会话的私人项目资料不应传到QQ' });
     memory.append('owner', 'qq', 'p', 'note', '今天准备练吉他');
@@ -63,7 +63,7 @@ test('真实 DSH AgentLoop：当天上下文进入请求、旧档案不进入、
   } finally { await driver?.stop(); await ctx.fiber.dispose(); memory.close(); f.cleanup(); }
 });
 test('真实 AgentLoop 多步 B站任务把工具前后用量一起归入 B站，普通 QQ 缺失单独标记',async()=>{
- const f=fixture(),ctx=new Context();f.settings.provider='shiguang-test';f.settings.model='scripted';f.settings.bilibili.enabled=true;
+ const f=fixture(),ctx=new Context();f.settings.provider='deepseek-official';f.settings.model='scripted';f.settings.bilibili.enabled=true;
  const memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory);
  const adapter=new ScriptedAdapter((_o,index)=>{
   const chunks=index===0?toolChunks('shiguang_bili_video',{video:'av123'}):textChunks('收到。');
@@ -72,7 +72,7 @@ test('真实 AgentLoop 多步 B站任务把工具前后用量一起归入 B站�
  });
  let driver:ChatDriver|undefined;
  try{
-  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['shiguang-test'],adapter);
+  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['deepseek-official'],adapter);
   const bili=new BilibiliClient(f.settings,memory,async()=>Response.json({code:0,data:{aid:123,bvid:'BV1xx411c7mD',title:'测试视频',desc:'内容',owner:{name:'测试作者'}}}));
   driver=new ChatDriver(ctx,f.settings,memory,bili);
   await driver.reply({scope:'owner',thread:'p',owner:true,platform:'qq',text:'查看 av123'});
@@ -85,8 +85,8 @@ function toolChunks(name: string, args: object): StreamChunk[] {
   return [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'block-end', index: 0, block: { type: 'tool-call', id: brandString<ToolCallId>('shiguang-test-call'), name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 }
 test('主人在 QQ 追问 B 站旧事直接命中限量索引片段，普通聊天和群聊不注入主人历史',async()=>{
- const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory),adapter=new ScriptedAdapter(()=>textChunks('记得。'));f.settings.provider='recall-test';f.settings.model='scripted';let driver:ChatDriver|undefined;
- try{await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['recall-test'],adapter);memory.append('owner','bilibili','bilibili','experience','以前观看猎户星云纪录片，看到了恒星诞生',undefined,Date.now()-86400000);memory.append('owner','qq','p','user','昨天私人咖啡小事',undefined,Date.now()-86400000);driver=new ChatDriver(ctx,f.settings,memory,new BilibiliClient(f.settings,memory));
+ const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory),adapter=new ScriptedAdapter(()=>textChunks('记得。'));f.settings.provider='deepseek-official';f.settings.model='scripted';let driver:ChatDriver|undefined;
+ try{await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['deepseek-official'],adapter);memory.append('owner','bilibili','bilibili','experience','以前观看猎户星云纪录片，看到了恒星诞生',undefined,Date.now()-86400000);memory.append('owner','qq','p','user','昨天私人咖啡小事',undefined,Date.now()-86400000);driver=new ChatDriver(ctx,f.settings,memory,new BilibiliClient(f.settings,memory));
   await driver.reply({scope:'owner',thread:'qq:private:1',platform:'qq',owner:true,text:'之前看过的猎户星云纪录片讲了什么？'+'请简单回答。'.repeat(50)});const request=JSON.stringify(adapter.requests[0]?.messages);assert.match(request,/恒星诞生/);assert.doesNotMatch(request,/私人咖啡小事/);assert.equal(adapter.requests.length,1);
   await driver.reply({scope:'owner',thread:'qq:private:1',platform:'qq',owner:true,text:'你好'});assert.doesNotMatch(JSON.stringify(adapter.requests[1]?.messages),/恒星诞生/);
   await driver.reply({scope:'qq:group:7',thread:'qq:group:7',platform:'qq',owner:false,text:'之前看过的猎户星云纪录片？'});assert.doesNotMatch(JSON.stringify(adapter.requests[2]?.messages),/恒星诞生/);
@@ -94,14 +94,14 @@ test('主人在 QQ 追问 B 站旧事直接命中限量索引片段，普通聊�
 });
 for (const recall of [false, true]) test(`真实 DSH 工具执行：${recall ? '追问旧事才返回索引片段' : '日常聊天尝试查历史会被拒绝'}`, async () => {
   const f = fixture(), ctx = new Context();
-  f.settings.provider = 'shiguang-test'; f.settings.model = 'scripted';
+  f.settings.provider = 'deepseek-official'; f.settings.model = 'scripted';
   f.settings.bilibili.enabled = true; f.settings.bilibili.allowComments = true;
   const memory = new MemoryStore(':memory:', f.settings.roleId, f.settings.timezone, f.settings.memory);
   const adapter = new ScriptedAdapter((_options, index) => index === 0 ? toolChunks('shiguang_search_memory', { query: '吉他', range: 'history' }) : textChunks('收到。'));
   let driver: ChatDriver | undefined;
   try {
     await mountAgentLoopTestDependencies(ctx); await mountAgentLoopTestHarness(ctx);
-    ctx.llm.registerAdapter(['shiguang-test'], adapter);
+    ctx.llm.registerAdapter(['deepseek-official'], adapter);
     memory.append('owner', 'qq', 'p', 'note', '旧记忆：选了雅马哈吉他', undefined, Date.now() - 86400000);
     driver = new ChatDriver(ctx, f.settings, memory, new BilibiliClient(f.settings, memory));
     assert.equal(await driver.reply({ scope: 'owner', thread: 'p', owner: true, platform: 'qq', text: recall ? '上次选的吉他是什么' : '你好' }), '收到。');

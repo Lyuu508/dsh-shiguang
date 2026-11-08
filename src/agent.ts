@@ -1,3 +1,4 @@
+import {flashRoute} from './model-route.js';
 import {scheduleTimeout} from './timeouts.js';
 import type { Context } from '@deepseek-ai/cordis';
 import type {BiliVision} from './bili-vision.js';
@@ -113,10 +114,7 @@ export class ChatDriver {
   async reply(input: ChatInput): Promise<string | null> {
     if (this.stopped) throw new Error('Shiguang 正在停止');
     if (!input.text.trim() || input.text.length > 10000) throw new Error('消息应为 1–10000 字');
-    const selection = this.settings.provider
-      ? { provider: this.settings.provider, model: this.settings.model }
-      : this.ctx.agents.list().filter(agent => !String(agent.id).startsWith('shiguang-')).map(agent => agent.model.current()).find(route => route !== undefined);
-    if (!selection) throw new Error('尚无可用模型路由：请先在 DSH 打开一个已选择模型的会话，或在 Shiguang 本机配置中填写 provider 和 model');
+    const selection=await flashRoute(this.ctx);
     // Read before append so the current message is not duplicated in recent context.
     const fast = this.memory.fastContext(input.scope, input.thread);
     const history = historyRequested(input.text);

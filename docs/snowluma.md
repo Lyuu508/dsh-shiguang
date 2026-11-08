@@ -1,45 +1,47 @@
-# SnowLuma、QQ 原生扫码与后台
+# QQ 快速开始与后台凭据
 
-拾光通过 SnowLuma 的 OneBot v11 正向 WebSocket 收发 QQ 消息。Windows 使用腾讯官方桌面 QQ（NTQQ），扫码发生在桌面 QQ 原生窗口。
+## 一次安装，以后一键启动
 
-## 首次安装
+1. 安装官方桌面 QQ（NTQQ），与 SnowLuma 使用同一 Windows 用户和权限。
+2. 在拾光 QQ 页点击“下载 SnowLuma Windows 完整版 ZIP”，下载后右键全部解压。当前核对版本为官方 v2.4.2；[其他发行版](https://github.com/SnowLuma/SnowLuma/releases)。完整版包含 Node。
+3. 填主人 QQ 号，开启 QQ 回复并保存。主人是向伙伴发消息的另一个账号。
+4. 点击“一键启动 QQ”：快速定位常用目录 → 准备 / 读取本机连接配置 → 启动 SnowLuma 和桌面 QQ → 后台就绪后打开系统浏览器。
+5. 在 QQ 原生窗口手机扫码，完成 SnowLuma 官方首次协议与账号验证，等待插件显示已连接。
 
-1. 安装并打开官方桌面 QQ。SnowLuma 与 QQ 使用同一 Windows 用户和权限。
-2. 从 [官方 Release](https://github.com/SnowLuma/SnowLuma/releases) 下载 `win-x64` 完整版，解压到固定目录；精简版需自己准备 Node 22+，拾光自身要求 Node 24.9+。
-3. 首次建议双击官方 `launcher.bat`，打开 `http://127.0.0.1:5099/`，按控制台初始管理员密码进入后台。QQ 版本需在 SnowLuma 支持范围。
-4. 在桌面 QQ 使用手机扫码。SnowLuma 默认会发现 QQ 并加载官方 hook，登录后进入工作状态。
-5. 后台为该 QQ 账号开启 OneBot v11 正向 WebSocket，地址 `127.0.0.1:3001`，设置访问 Token，消息上报格式 Array。
-6. 拾光 QQ 页填写 SnowLuma 安装目录（含 `index.mjs`）、OneBot 地址 / Token、主人 QQ 号与白名单，启用 QQ 回复并保存，检测连接。
+压缩包必须先解压；特殊目录可在高级设置填写含 `index.mjs` 的文件夹。自动定位查找桌面、下载、常见安装目录、PATH / QQ 注册信息和插件数据目录，限制目录深度与时间，不扫描整块硬盘。未找到时不会随便执行其他程序。
 
-首次官方程序安装由你完成。[SnowLuma EULA §5.4](https://github.com/SnowLuma/SnowLuma/blob/main/EULA.md) 对将专有组件整合进第三方安装器或自动部署有授权要求，拾光不打包或自动下载这些组件，仅启动、连接本机已安装实例。
+按 [SnowLuma EULA §5.4](https://github.com/SnowLuma/SnowLuma/blob/main/EULA.md)，第三方捆绑专有组件或自动部署有授权要求；拾光仅提供官方浏览器下载链接，下载和解压由你完成，其余连接操作由插件处理。
 
-## 从拾光启动与扫码
+## 后台令牌 / 密码在哪里
 
-目录保存后，点“启动 SnowLuma 并打开 QQ 扫码”。插件按官方入口运行本机 `index.mjs`，使用安装包里的 Node（存在时），否则使用 DSH 所在 Node。QQ 路径留空时检测常见安装位置，找不到就手填 `QQ.exe` 或手动打开 QQ。
+“后台登录凭据”区域提供“显示”和“复制”。只有主人的 DSH 设置接口能取回；常规状态、模型上下文、共享记忆不包含明文。它是 SnowLuma 网页要求的登录凭据，与消息 Token 分开。
 
-启动请求成功不代表 QQ 已登录；请在 QQ 原生窗口扫码，再用“检测已保存的连接”确认。也可开启“随拾光启动已安装的 SnowLuma”。已有官方实例可直接连接，不必再点启动。
+- **全新数据目录**：用官方支持的 `SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD` 环境变量设置强随机凭据，私有保存到 `dataDir/snowluma/webui-secret.json`，不需要去黑窗口找。
+- **旧版拾光启动的实例**：从本机私有 `snowluma/runtime.log` 识别首次凭据，并与当前 `config/webui.json` 的哈希匹配后取回。新启动日志会隐藏初始凭据明文。
+- **你已经修改过密码**：插件不覆盖、不重置密码。只保存哈希的密码无法反推，请使用你设定的密码。
+- **跳过了首次改密且没有旧日志**：先关闭外部启动的 SnowLuma，再从拾光启动；官方会重新生成尚未完成改密的初始凭据，插件会捕获并私有保存。不会停止不属于拾光的进程。
 
-插件启动的进程日志位于 `dataDir/snowluma/runtime.log`，首次后台密码可能在其中，请勿公开。退出拾光只停止它自己启动的 SnowLuma，不关闭桌面 QQ。直接用官方启动器运行的实例由你管理。
+后台网页默认 `http://127.0.0.1:5099/`。直接链接、当前页和系统浏览器入口均保留，避免弹窗句柄导致误报。
 
-## 后台入口
+## 为什么不用填消息地址和 Token
 
-“打开 SnowLuma 后台”使用真实链接打开，默认端口 5099；不把旧版后台鉴权接口用于 SnowLuma。还有复制地址与当前页入口，Desktop 无法打开外部窗口时可把地址粘贴进系统浏览器。
+这些值仍然用于 OneBot v11 正向 WebSocket，只是由程序处理。插件读取本机 `config/onebot.json` 和 `onebot_<QQ号>.json`，按官方快照 / 覆盖规则合并，从启用的 Universal WS 服务同步地址与访问 Token。不会为省步骤关闭鉴权。
 
-WebUI 管理员密码与 OneBot Token 分开。插件不替你修改后台密码，也不回显 OneBot Token。QQ 与 DSH 不同机时可手动连接已有 OneBot 地址，但本机启动按钮仅用于 Windows，本地表情收藏需要同机文件路径。
+新目录没有 OneBot 配置时创建仅绑定本机的带随机 Token 服务；已有配置不覆盖。只接受可用于收发的本机服务与非空密钥。多个已登录账号时，在高级选项选择“SnowLuma 收发消息 QQ 号”，避免连错账号。
 
-## 迁移旧连接
-
-升级保留记忆及账号配置，不会删除之前的第三方运行目录。先停止占用 3001 端口的旧 QQ 桥接实例，再按上方安装 SnowLuma 并在两边设置相同的 OneBot Token。新版本界面及运行时不再启动旧桥接程序，不会迁移其专属后台密码或扫码票据。
+同步密钥写入本机 `onebot.token`，不放进普通配置或状态。扫码后连接配置变化会再次同步，界面无未保存编辑时自动刷新；你正在输入的设置会保留。
 
 ## 常见问题
 
 | 现象 | 处理 |
 |---|---|
-| 没有 QQ 扫码图 | 打开桌面 QQ 窗口扫码；SnowLuma 原生 Windows 不提供旧后台扫码接口 |
-| QQ 已打开仍未连接 | 核对 QQ 版本、同一用户与权限、hook 状态及 OneBot 服务端是否启用 |
-| 3001 / 5099 被占用 | 停止重复实例，或在官方配置改端口后同步拾光 |
-| 找不到 QQ.exe | 填官方桌面 QQ 的实际安装路径 |
-| 启动失败 | 核对目录内 `index.mjs`、Node 和官方日志，先手动运行官方启动器 |
-| 页面打不开后台 | 使用当前页链接或复制地址到系统浏览器，确认官方服务在运行 |
+| 找不到程序 | 确认 ZIP 已全部解压；点自动定位，仍找不到再填写高级目录 |
+| 打开后台却没有凭据 | 在插件点显示 / 复制；已改密时使用自己的密码 |
+| QQ 已扫码仍等待连接 | 核对官方 hook 状态、QQ 兼容版本及启用的 Universal 正向 WS；可再点一键启动同步 |
+| 多个 QQ 账号 | 在高级选项选择负责收发的账号，主人号仍填自己的另一个账号 |
+| 没有弹出网页 | 点系统浏览器入口，或使用直接 / 当前页链接 |
+| 目录没有写入权限 | 将 SnowLuma 完整包解压到自己可写的目录后重新定位 |
 
-依据：[官方 Windows 部署](https://snowluma.github.io/zh/docs/guide/deploy/windows)、[配置参考](https://snowluma.github.io/zh/docs/guide/configuration)、[收藏表情接口](https://snowluma.github.io/zh/docs/api/extended/add_custom_face)。真实 Windows 与 QQ 账号仍需本机联调。
+退出插件只停止它自己启动的 SnowLuma，不关闭 QQ。实际 Windows hook、扫码和真实账号仍需在你的电脑联调。
+
+依据：[官方 Windows 部署](https://snowluma.github.io/zh/docs/guide/deploy/windows)、[v2.4.2 后台鉴权](https://github.com/SnowLuma/SnowLuma/blob/v2.4.2/packages/core/src/webui/auth.ts)、[OneBot 配置](https://github.com/SnowLuma/SnowLuma/blob/v2.4.2/packages/onebot/src/config.ts)。

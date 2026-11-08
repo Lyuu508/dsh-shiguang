@@ -5,7 +5,7 @@
   "timezone": "system",
   "dataDir": "./state",
   "provider": "",
-  "model": "",
+  "model": "deepseek-flash",
   "replyTimeoutMs": 90000,
   "maxReplyChars": 1500,
   "maxQueue": 20,
@@ -49,7 +49,7 @@
     "enabled": false,
     "mode": "ask",
     "provider": "",
-    "model": "",
+    "model": "deepseek-flash",
     "ffmpegPath": "ffmpeg",
     "ffprobePath": "ffprobe",
     "localMediaDir": "",
@@ -92,7 +92,7 @@
     "enabled": false,
     "autoBrowse": false,
     "provider": "",
-    "model": "",
+    "model": "deepseek-flash",
     "frames": 4,
     "sheetSize": 768,
     "maxFileMB": 40,
@@ -171,7 +171,8 @@
     "directory": "",
     "qqPath": "",
     "webuiUrl": "http://127.0.0.1:5099",
-    "autoStart": false
+    "autoStart": false,
+    "accountQQ": ""
   },
   "retention": {
     "enabled": true,

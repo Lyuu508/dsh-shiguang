@@ -23,7 +23,7 @@ test('独立插件加载→OneBot 收消息→真实 DSH 循环→QQ 回执→�
   const f = fixture(), ctx = new Context();
   const server = new WebSocketServer({ port: 0, host: '127.0.0.1' });
   await once(server, 'listening'); const address = server.address(); assert.ok(address && typeof address === 'object');
-  f.settings.provider = 'shiguang-test'; f.settings.model = 'scripted';
+  f.settings.provider = 'deepseek-official'; f.settings.model = 'scripted';
   f.settings.qq.enabled = true; f.settings.qq.ownerQQ = '1'; f.settings.qq.tokenEnv = 'SHIGUANG_PLUGIN_TEST_TOKEN';
   f.settings.qq.wsUrl = `ws://127.0.0.1:${address.port}`;
   process.env.SHIGUANG_PLUGIN_TEST_TOKEN = 'test-token';
@@ -40,7 +40,7 @@ test('独立插件加载→OneBot 收消息→真实 DSH 循环→QQ 回执→�
   });
   try {
     await mountAgentLoopTestDependencies(ctx); await mountAgentLoopTestHarness(ctx);
-    ctx.llm.registerAdapter(['shiguang-test'], new Adapter());
+    ctx.llm.registerAdapter(['deepseek-official'], new Adapter());
     const mounted = await ctx.plugin(plugin, { configPath: file });
     assert.equal(await sent, '你好，今天也记得练吉他。');
     await mounted.dispose();

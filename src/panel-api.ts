@@ -25,6 +25,13 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'memory-sweep':return runtime.enqueue(async()=>runtime.memory.sweep());
     case 'load': return { ...runtime.view(), status: runtime.status() };
     case 'status': return runtime.status();
+    case 'model-status':return runtime.modelStatus();
+    case 'local-locate':return runtime.locateLocal();
+    case 'qq-setup':return runtime.startQQSetup();
+    case 'qq-setup-status':return {...runtime.qqSetup};
+    case 'qq-auto-connect':await runtime.syncQQConnection();return {ok:true};
+    case 'snowluma-credential':return runtime.snowluma.credential();
+    case 'snowluma-open-backend':return runtime.snowluma.openBackend();
     case 'snowluma-status':return runtime.snowluma.view();
     case 'snowluma-start':return runtime.snowluma.start();
     case 'snowluma-qq':return runtime.snowluma.openQQ();

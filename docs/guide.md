@@ -2,15 +2,15 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.9 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.9) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.1.10 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.10) 页面进入下载。
 
 ## 在哪里打开面板
 
 安装或升级插件后，**重启 DSH 并刷新页面 → 设置 → 拾光**。面板随插件启停，不需要另开浏览器端口。
 
-- **角色与回复**：名字、人设、时区、模型选择、回复等待时间、字数和生物钟。
+- **角色与回复**：名字、人设、时区、统一 Flash、回复等待时间、字数和生物钟。
 - **语音**：火山复刻音色配置、试听、QQ 语音回复与独立字符用量，见 [语音指南](voice.md)。
-- **QQ 连接**：启动本机 SnowLuma、桌面 QQ 原生扫码、后台入口、主人号、白名单、在线检测、QQ 识图及[主动陪伴](social.md)。
+- **QQ 连接**：自动定位 / 一键启动 SnowLuma、原生 QQ 扫码、后台凭据、主人号、白名单、在线检测、QQ 识图及[主动陪伴](social.md)。
 - **B 站账号**：二维码登录、评论权限、标签白黑名单、固定 / 自由自主生活、主人 UID 私信、@ 推荐、文字动态及浅看 / 分段深看视频识别，见 [视频内容指南](bili-video.md)。
 - **记忆**：读取预算、当天记录、历史搜索、分页原文、移入回收站与撤销。
 - **Token 用量**：按日期分别查看 QQ 聊天、B 站任务、DSH 对话的模型用量，区分未缓存输入、缓存与输出，支持导出 JSON。
@@ -22,10 +22,10 @@
 
 ### 从旧版升级
 
-0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.9 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.9.tgz)，在文件页面点 **Download raw file**，然后执行：
+0.1.1 及更早版本尚无更新按钮，请先下载 [0.1.10 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.1.10.tgz)，在文件页面点 **Download raw file**，然后执行：
 
 ```powershell
-dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.9.tgz"
+dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.1.10.tgz"
 ```
 
 重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。
@@ -42,7 +42,7 @@ Token 是模型分词后的计量单位，不是字数。汉字、标点、英�
 
 打开 **设置 → 拾光 → Token 用量**，选今天，点“刷新用量”。首次安装本版后开始记录，旧聊天不补算。
 
-1. 选择固定模型，记下开始时的合计；用 QQ 做一组普通聊天，刷新查看增量。
+1. 使用统一 Flash，记下开始时的合计；用 QQ 做一组普通聊天，刷新查看增量。
 2. 明确追问“上次聊的……”，再刷新，比较带历史检索时的增量。模型调用检索工具后还需继续生成，因此一次回复可能产生多次模型调用。
 3. 用主人私聊要求读取指定 B 站视频，或在允许评论时按要求评论，再查看“B 站任务”增量。扫码、检测账号、B 站 HTTP 请求本身不会消耗模型 Token。
 4. 正常运行一天后导出当天 JSON，与服务商相同时区的用量核对。建议用专用 API Key 或服务商项目，避免混入其他应用的调用。
@@ -67,7 +67,7 @@ Token 是模型分词后的计量单位，不是字数。汉字、标点、英�
 - 正常聊天仅注入**当天重要笔记＋当前聊天最近 12 条消息**。分别限制为 2600 和 4000 字符，不加载整个历史档案。
 - 明确追问旧事时，先查本地全文索引：最多 5 条、每条约 240 字符；不足时再按 ID 展开，每页最多 1600 字符。
 - 按本机配置时区划分“今天”。过零点后昨天的内容不再自动注入，但仍可检索。
-- 使用 DSH 自己的模型连接；插件不需要额外的模型 API Key。
+- 使用 DSH 自己的 DeepSeek 连接；无需在插件填写额外模型 API Key。
 
 尚未包含：无范围限制的推荐流浏览、原始音频转写、QQ 空间动态、QQ 语音输入识别、断线历史补拉、语义向量搜索。视频简介读取不等于观看或理解视频内容。
 
@@ -105,46 +105,11 @@ $env:DSH_SHIGUANG_CONFIG = "D:\ShiguangData\config.json"
 
 ## 连接个人 QQ
 
-先从官方安装并在拾光填写 SnowLuma 目录，见 [SnowLuma 安装与后台](snowluma.md)。
+按 [QQ 快速开始](snowluma.md) 下载解压官方 SnowLuma 与桌面 QQ。填主人号、开回复并保存，再点一键启动与扫码。无需手填 OneBot 地址或 Token，插件保留鉴权并自动同步；后台需要的凭据可在插件显示或复制。
 
-1. 启动 SnowLuma，在桌面 QQ 原生窗口扫码登录。
-2. 在网络设置添加 **WebSocket 服务端（正向 WS）**，例如 `127.0.0.1:3001`，配置访问 Token，消息上报格式选择 **Array**，启用后保存。Token 不是 SnowLuma WebUI 密码。
-3. 推荐在 **设置 → 拾光 → QQ 连接** 填写地址、Token、主人 QQ 号和白名单，开启 QQ 回复后保存。Token 存入本机 `dataDir/onebot.token`，不会回显到页面或发送给模型。
+### 模型
 
-如果你更习惯手动配置，也可以编辑配置中的 `qq`：
-
-```json
-{
-  "enabled": true,
-  "wsUrl": "ws://127.0.0.1:3001",
-  "tokenEnv": "SHIGUANG_ONEBOT_TOKEN",
-  "ownerQQ": "你的主人QQ号",
-  "allowedPrivate": [],
-  "allowedGroups": [],
-  "groupMentionOnly": true,
-  "actionTimeoutMs": 15000,
-  "reconnectMs": 3000
-}
-```
-
-所有 QQ 号、群号都用**字符串**填写。`ownerQQ` 是向机器人发消息的主人账号，不是 SnowLuma 登录的机器人账号。其他允许私聊的人放入 `allowedPrivate`，群号放入 `allowedGroups`。
-
-4. 如果已通过面板保存 Token，不必设置环境变量。沿用旧版环境变量方式时，在启动 DSH 的同一 PowerShell 窗口中设置：
-
-```powershell
-$env:SHIGUANG_ONEBOT_TOKEN = "你在SnowLuma设置的Token"
-dsh web
-```
-
-面板保存的本机 Token 优先，未保存时才读取备用环境变量。使用 DSH Desktop 时也可以直接通过面板配置；如沿用环境变量，则需要给其启动进程配置同名变量，再退出并重新打开 Desktop。不要在聊天窗口粘贴 Token、密码或 Cookie。
-
-### 模型路由
-
-`provider` 和 `model` 可以同时留空。此时插件复用**第一个非 Shiguang 活跃 DSH 会话当前选择的模型路由**：先在 DSH 打开一个已选择模型的聊天，再在 QQ 发消息。
-
-长期运行建议在配置中同时填写 DSH 实际的 `provider` 路由 ID 和 `model` ID，避免多个活跃会话选择不同模型时出现歧义。这两个值是模型路由标识，不是 API Key；不要照搬其他人的模型名。插件不会从账号设置猜测默认模型。
-
-没有可用路由时会输出明确错误，不发送虚构回复，也不会消耗该 QQ 消息的去重记录。
+统一使用 `deepseek-flash`，由官方别名跟随最新 Flash，支持文本和图片。请在 DSH 登录 DeepSeek，或配置官方 API 连接；模型凭据由 DSH 管理，插件不复制密钥。优先沿用当前 DSH 已选的官方 DeepSeek 连接，否则使用已登录账号或官方 API 连接。不会改用 Pro 或其他模型。旧配置中的手选模型不再生效。
 
 ## 连接 B 站
 
@@ -218,9 +183,9 @@ npm run benchmark
 | 现象 | 检查 |
 |---|---|
 | 插件拒绝安装 | DSH 版本是否满足 `engines.dsh`；本版依赖锁定 0.2.2-rc.1 |
-| QQ 连不上 | 正向 WS 地址、Token 环境变量、SnowLuma 登录状态和服务是否启用 |
+| QQ 连不上 | 先一键启动 / 扫码，再检查官方 Universal WS 服务是否启用 |
 | QQ 连上却没反应 | Array 上报格式、主人号、私聊或群白名单、群里是否 @；查看 `[Shiguang]` 日志 |
-| 没有模型路由 | 先打开一个已选择模型的 DSH 会话，或填写 provider/model |
+| 没有模型路由 | 在 DSH 登录 DeepSeek 或启用官方 API 连接 |
 | B站要求重新登录 | 执行 `npm run bili:login`；不要把登录 Cookie 发给 AI |
 | AI 回复超时 | 检查模型速度与 `replyTimeoutMs`；已发出的评论需要另外核实 |
 | QQ 发送结果不明 | 在 QQ 查看是否已发送；插件不会自动重复发送 |

@@ -1,3 +1,4 @@
+import {flashRoute} from './model-route.js';
 import {timeoutSignal} from './timeouts.js';
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-attachment';
@@ -92,12 +93,8 @@ export class MediaReader {
   private abort=new AbortController();
   constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly fetcher:typeof fetch=fetch,readonly prepare?:()=>Promise<void>){}
   stop():void{this.abort.abort();}
-  private route(){
-    if(this.settings.media.provider)return {provider:this.settings.media.provider,model:this.settings.media.model};
-    if(this.settings.provider)return {provider:this.settings.provider,model:this.settings.model};
-    const route=this.ctx.agents.list().filter(a=>!String(a.id).startsWith('shiguang-')).map(a=>a.model.current()).find(Boolean);
-    if(!route)throw new MediaError('请先在 QQ 识图页面选择支持图片输入的视觉模型');return route;
-  }
+  private route(){return flashRoute(this.ctx);}
+
   private async download(url:string,signal:AbortSignal):Promise<Buffer>{
     let target=mediaURL(url);const limit=this.settings.media.maxFileMB*1024*1024;
     for(let i=0;i<4;i++){
@@ -136,7 +133,7 @@ export class MediaReader {
     if(!wantsMedia(message.text,c.mode))return '收到媒体了。想让我看主要画面，请引用这条消息说“看看”；也可以在 QQ 识图中开启自动识别。';
     const used=this.memory.db.prepare("SELECT count(*) AS n FROM llm_usage WHERE role=? AND day=? AND category='qq-media'").get(this.memory.roleId,this.memory.today());
     if(Number(used?.n)>=c.dailyLimit)return '今天的媒体识别调用额度已用完，可明天再看或在 QQ 识图中调整上限。';
-    const route=this.route();let signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs)]);
+    const route=await this.route();let signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs)]);
     const llm=this.ctx.get('llm'),attachments=this.ctx.get('attachments');if(!llm||!attachments)throw new MediaError('当前 DSH 缺少模型或图片附件服务，请启用对应服务后重试');
     const model=await llm.resolveModelInfo(route.provider,route.model,signal);
     if(!model.inputModalities?.includes('image'))throw new MediaError('所选模型尚未声明支持图片输入，请在 QQ 识图中选择视觉模型；普通纯文本模型不能看视频');

@@ -2,6 +2,21 @@
 
 验证环境：2026-11-07，Linux，Node.js v24.22.1，DSH 核心包 0.2.2-rc.1。
 
+## v0.1.10 QQ 简化、凭据与工具下载修复
+
+2026-11-08，Linux / Node.js 24.22.1 / DSH 0.2.2-rc.1。TypeScript 检查、构建、113 项核心测试及 Chromium 综合交互通过。
+
+- 实际复现旧 `BtbN/FFmpeg-Builds` 元数据请求在 `redirect:error` 下返回 `fetch failed / unexpected redirect`，新 `FFmpeg-Builds/FFmpeg-Builds` 地址返回 HTTP 200。官方 LGPL Windows ZIP 的大小 / digest 已写入备用清单。
+- 模拟网络失败验证备用清单、系统下载分支及下载后再次核对 SHA256；损坏包不解压或执行。PowerShell 两个下载脚本经实际解析器检查，Windows 系统网络 / 代理传输未在 Linux 实机运行。
+- 限定常用目录 / 深度 / 耗时的定位测试，覆盖 SnowLuma、QQ.exe 和 FFmpeg / FFprobe；不会遍历整盘。
+- 按 SnowLuma v2.4.2 官方源码核对启动入口、引导变量、凭据哈希与全局 / 账号快照及覆盖格式。模拟子进程验证新强随机密码、显式取回、日志脱敏、0.1.9 凭据找回；已有改密哈希不被覆盖，未知密码不会反推或重置。
+- 真实本机 WebSocket 验证自动读取连接地址 / 密钥，发送 Bearer 鉴权并取得 QQ 在线回执；普通配置、状态不包含密钥。多账号选择、空密钥及非本机服务拒绝测试通过。
+- 所有场景统一官方 deepseek-flash，沿用 DSH 官方连接，验证当前 Pro 会话也选择 Flash、账号登录优先及其他模型不作为回退。既有 AgentLoop / 视觉 / 主动任务测试使用同一固定 Flash 路由的模拟适配器。
+- Chromium 验证无 OneBot 地址 / Token / 模型选择输入，自动定位 → 一键启动 → 显示脱敏凭据 → 开启 QQ 回复的完整链路；视频工具定位、各页面 Flash 展示、原有 B 站 / 语音 / 记忆 / 更新流程及窄屏均通过。
+- 预构建包安装进真实 DSH 设置窗口，七个入口、QQ 一键按钮与官方 ZIP 直链、凭据入口、全部模型选择框移除、两处视频工具入口及旧记忆保留均验证，无页面异常。
+
+没有登录真实 QQ / B 站账号，也没有调用收费 DeepSeek 或火山模型。真实 Windows hook、扫码、系统下载和用户电脑代理仍需本机联调；这些边界不影响已确认的仓库迁移问题与本机协议测试结论。
+
 ## v0.1.9 SnowLuma、多角色与记忆保留验证
 
 2026-11-08（北京时间），Linux / Node.js 24.22.1 / DSH 0.2.2-rc.1。TypeScript 检查、构建、105 项核心测试与 1 项 Chromium 综合交互测试通过；后续针对缓存和长问题检索的 15 项相关测试亦通过。

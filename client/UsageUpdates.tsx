@@ -21,7 +21,7 @@ export function UsagePanel({api,today}:{api:PanelApi;today?:string}) {
   <p className="sg-help">调用过 B 站工具的整轮对话（包括工具前后生成）记为 B 站任务，QQ 视频 / 动图与 B 站自主生活按各自的单次模型调用独立归类；其余按 QQ / DSH 归类。B 站 HTTP 请求、扫码、手动查记忆本身不产生模型 Token。重试、失败及中断已返回的用量也会记录；缺失用量不会按 0 宣称实际消耗。</p>
   {report.models.length>0&&<details><summary>按模型查看</summary>{report.models.map(m=><p key={m.provider+'/'+m.model}>{m.provider} / {m.model}：{number(m.total)} Token，{m.calls} 次调用，{m.missing} 次缺失</p>)}</details>}
   {report.total.missing>0&&<p className="sg-notice">部分调用没有可用的 Token 数据，已知合计可能低于实际消耗；请结合模型服务商的账单核对。</p>}</>}
-  <details><summary>怎样测试一天的消耗</summary><p>连接 QQ 与 B 站并选择固定模型。记下开始时的数字，先做普通 QQ 聊天，再明确追问旧事，最后通过主人私聊要求读取指定 B 站视频或发表评论。每组完成后刷新，比较各项增量；正常运行一天后导出当天记录，与服务商同一时区、同一 API Key 的用量核对。</p><p>每次模型请求都会计算实际发送的上下文。日常只带限量当天笔记、最近对话和当前输入；追问历史才加入检索片段。工具调用会增加模型轮次，当天内容也可能再次计入输入；缓存命中仍有独立用量。字符预算不等于 Token 数。</p></details></section>;
+  <details><summary>怎样测试一天的消耗</summary><p>连接 QQ 与 B 站，统一使用最新 DeepSeek Flash。记下开始时的数字，先做普通 QQ 聊天，再明确追问旧事，最后通过主人私聊要求读取指定 B 站视频或发表评论。每组完成后刷新，比较各项增量；正常运行一天后导出当天记录，与服务商同一时区、同一 API Key 的用量核对。</p><p>每次模型请求都会计算实际发送的上下文。日常只带限量当天笔记、最近对话和当前输入；追问历史才加入检索片段。工具调用会增加模型轮次，当天内容也可能再次计入输入；缓存命中仍有独立用量。字符预算不等于 Token 数。</p></details></section>;
 }
 
 export function UpdatesPanel({api,dirty,settings:s,onChange}:{api:PanelApi;dirty:boolean;settings:Settings;onChange:(s:Settings)=>void}) {

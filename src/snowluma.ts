@@ -1,24 +1,56 @@
-import {existsSync,readFileSync,mkdirSync,openSync,closeSync} from 'node:fs';
+import {existsSync,readFileSync,mkdirSync,appendFileSync,writeFileSync,renameSync,readdirSync,statSync} from 'node:fs';
 import {join,resolve,isAbsolute,dirname} from 'node:path';
 import {spawn,type ChildProcess} from 'node:child_process';
+import {randomBytes,scryptSync,timingSafeEqual} from 'node:crypto';
+import {createServer} from 'node:net';
 import type {Settings} from './config.js';
 export const SNOWLUMA_RELEASES='https://github.com/SnowLuma/SnowLuma/releases';
-export interface SnowLumaHost {platform:string;launch(directory:string,log:string):ChildProcess;openQQ(file:string):void}
-const host:SnowLumaHost={platform:process.platform,launch(directory,log){const fd=openSync(log,'a',0o600);try{return spawn([join(directory,'node.exe'),join(directory,'node','node.exe'),join(directory,'runtime','node.exe')].find(existsSync)||process.execPath,[join(directory,'index.mjs')],{cwd:directory,windowsHide:true,stdio:['ignore',fd,fd],env:{...process.env}});}finally{closeSync(fd);}},openQQ(file){const child=spawn(file,[],{cwd:dirname(file),detached:true,stdio:'ignore',windowsHide:false});child.on('error',()=>{});child.unref();}};
+export interface SnowLumaHost {platform:string;launch(directory:string,log:string,environment?:NodeJS.ProcessEnv):ChildProcess;openQQ(file:string):void;openBrowser?(url:string):void}
+const host:SnowLumaHost={platform:process.platform,launch(directory,_log,environment){return spawn([join(directory,'node.exe'),join(directory,'node','node.exe'),join(directory,'runtime','node.exe'),join(directory,'bin','node.exe'),join(directory,'.runtime','node.exe')].find(existsSync)||process.execPath,[join(directory,'index.mjs')],{cwd:directory,windowsHide:true,stdio:['ignore','pipe','pipe'],env:environment||{...process.env}});},openQQ(file){const child=spawn(file,[],{cwd:dirname(file),detached:true,stdio:'ignore',windowsHide:false});child.on('error',()=>{});child.unref();},openBrowser(url){const child=spawn('rundll32.exe',['url.dll,FileProtocolHandler',url],{detached:true,stdio:'ignore',windowsHide:true});child.on('error',()=>{});child.unref();}};
+function readJSON(file:string):any{try{if(statSync(file).size>1024*1024)throw Error('large config');return JSON.parse(readFileSync(file,'utf8'));}catch{return undefined;}}
+function privateWrite(file:string,value:unknown){mkdirSync(dirname(file),{recursive:true,mode:0o700});const tmp=file+'.tmp';writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',{mode:0o600});renameSync(tmp,file);}
+export function credentialFromLog(text:string){const clean=text.replace(/\x1b\[[0-9;]*m/g,'');return [...clean.matchAll(/initial credentials:\s*user=admin\s+password=([^\s]+)/gi)].at(-1)?.[1];}
+export function parseSnowConnection(value:any):{url:string;token:string}|undefined{
+ const servers=value?.networks?.wsServers;if(!Array.isArray(servers))return;
+ for(const s of servers){if(!s||s.enabled===false||s.role&&s.role!=='Universal'||!Number.isSafeInteger(s.port)||s.port<1||s.port>65535)continue;
+  const token=typeof s.accessToken==='string'?s.accessToken.trim():'';if(!token||/[\r\n]/.test(token))continue;
+  const host=String(s.host||'127.0.0.1').toLowerCase();if(!['127.0.0.1','localhost','0.0.0.0','::','::1','[::]','[::1]'].includes(host))continue;
+  const path=typeof s.path==='string'?s.path:'/';if(!path.startsWith('/')||path.startsWith('//')||/[?#\r\n\\]/.test(path))continue;
+  return {url:`ws://${host.includes(':')?'[::1]':'127.0.0.1'}:${s.port}${path}`,token};
+ }
+}
+function mergeNetworks(base:any,overlay:any){if(overlay?.mode==='snapshot')return overlay;const a=Array.isArray(base?.networks?.wsServers)?base.networks.wsServers:[],b=Array.isArray(overlay?.networks?.wsServers)?overlay.networks.wsServers:[];const byName=new Map(a.filter((s:any)=>s&&typeof s.name==='string').map((s:any)=>[s.name,s]));for(const s of b.filter((s:any)=>s&&typeof s.name==='string'))byName.set(s.name,{...(byName.get(s.name) as object||{}),...s});return {networks:{wsServers:[...byName.values()]}};}
 export class SnowLumaManager {
- private child?:ChildProcess;private phase:'idle'|'starting'|'running'|'error'='idle';private message='请先从官方下载安装 SnowLuma，再填写目录';private error='';
- constructor(readonly dataDir:string,readonly settings:()=>Settings,readonly system:SnowLumaHost=host){}
+ private child?:ChildProcess;private phase:'idle'|'starting'|'running'|'error'='idle';private message='点击自动定位，再一键启动 QQ';private error='';
+ constructor(readonly dataDir:string,readonly settings:()=>Settings,readonly system:SnowLumaHost=host,readonly localFetch:typeof fetch=fetch){}
  private directory(){return this.settings().snowluma.directory.trim();}
+ private credentialFile(){return join(this.dataDir,'snowluma','webui-secret.json');}
+ accounts(){try{return readdirSync(join(this.directory(),'config')).flatMap(name=>/^onebot_(\d+)\.json$/.exec(name)?.[1]||[]);}catch{return [];}}
  view(){const directory=this.directory();let version='';try{if(directory)version=String(JSON.parse(readFileSync(join(directory,'package.json'),'utf8')).version||'');}catch{}
- return {phase:this.phase,message:this.message,error:this.error,supported:this.system.platform==='win32',installed:!!directory&&isAbsolute(directory)&&existsSync(join(directory,'index.mjs')),running:!!this.child&&!this.child.killed,version,webuiUrl:this.consoleUrl().url,releaseUrl:SNOWLUMA_RELEASES};}
+ return {phase:this.phase,message:this.message,error:this.error,supported:this.system.platform==='win32',installed:!!directory&&isAbsolute(directory)&&existsSync(join(directory,'index.mjs')),running:!!this.child&&!this.child.killed,version,accounts:this.accounts(),webuiUrl:this.consoleUrl().url,releaseUrl:SNOWLUMA_RELEASES};}
  consoleUrl(){const u=new URL(this.settings().snowluma.webuiUrl);if(u.protocol!=='http:'||!['localhost','127.0.0.1','[::1]'].includes(u.hostname)||u.username||u.password||u.search||u.hash||u.pathname!=='/')throw new Error('SnowLuma 后台地址需为本机 HTTP 地址');return {url:u.href};}
- configure(){if(this.settings().snowluma.autoStart&&this.view().installed&&this.view().supported)this.start();}
+ configure(){if(this.settings().snowluma.autoStart&&!this.child&&this.view().installed&&this.view().supported)this.start();}
+ private validCredential(secret:string){const auth=readJSON(join(this.directory(),'config','webui.json'));if(!auth||!/^\w{128}$/.test(auth.passwordHash)||!/^\w{32}$/.test(auth.passwordSalt))return false;try{const actual=scryptSync(secret,Buffer.from(auth.passwordSalt,'hex'),64,{N:16384,r:8,p:1});return timingSafeEqual(actual,Buffer.from(auth.passwordHash,'hex'));}catch{return false;}}
+ credential(){
+  const saved=readJSON(this.credentialFile());if(saved?.directory===resolve(this.directory())&&typeof saved.secret==='string'&&this.validCredential(saved.secret))return {available:true,secret:saved.secret,message:'这是本机 SnowLuma 后台登录凭据，仅供你登录后台'};
+  // v0.1.9 redirected the first-run terminal to this private file.
+  try{const file=join(this.dataDir,'snowluma','runtime.log'),size=statSync(file).size;if(size<4*1024*1024){const secret=credentialFromLog(readFileSync(file,'utf8'));if(secret&&this.validCredential(secret)){privateWrite(this.credentialFile(),{directory:resolve(this.directory()),secret});return {available:true,secret,message:'已从本机首次启动记录中找回后台凭据'};}}}catch{}
+  const auth=readJSON(join(this.directory(),'config','webui.json'));return {available:false,secret:'',message:auth?.mustChangePassword?'首次密码记录未找到。先关闭外部 SnowLuma，再用拾光启动；官方会重新生成尚未改密的初始密码。':auth?'后台密码已由你修改，只保存哈希，无法还原。请使用你设置的密码；插件不会重置已有密码。':'启动后会显示后台登录凭据，请稍等数秒后再取。'};
+ }
+ private launchEnvironment(){const environment={...process.env};if(!existsSync(join(this.directory(),'config','webui.json'))){const secret='Sg!9'+randomBytes(24).toString('base64url');environment.SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD=secret;privateWrite(this.credentialFile(),{directory:resolve(this.directory()),secret});}return environment;}
  start(){if(this.system.platform!=='win32')throw new Error('本机启动按钮用于 Windows，请在 SnowLuma 运行的电脑上启动并扫码');if(this.child&&!this.child.killed){this.openQQ();return this.view();}
- const directory=this.directory();if(!directory||!isAbsolute(directory)||!existsSync(join(directory,'index.mjs')))throw new Error('请从 SnowLuma 官方下载并解压，再填写包含 index.mjs 的安装目录');
- mkdirSync(join(this.dataDir,'snowluma'),{recursive:true,mode:0o700});this.phase='starting';this.error='';
- const child=this.child=this.system.launch(resolve(directory),join(this.dataDir,'snowluma','runtime.log'));child.once('error',()=>{this.phase='error';this.error='SnowLuma 启动失败，请检查安装目录、Node 与本机日志';this.message=this.error;this.child=undefined;});child.once('exit',code=>{if(this.child===child){this.child=undefined;this.phase=code===0?'idle':'error';this.message=code===0?'SnowLuma 已退出':'SnowLuma 已退出，请打开官方后台或本机日志核实';}});
- this.phase='running';this.message='已请求启动 SnowLuma，请在 QQ 原生窗口扫码；首次设置 OneBot 后再检测连接';this.openQQ();return this.view();}
+ const directory=this.directory();if(!directory||!isAbsolute(directory)||!existsSync(join(directory,'index.mjs')))throw new Error('未找到 SnowLuma。请先下载官方完整版并解压，再点自动定位');
+ mkdirSync(join(this.dataDir,'snowluma'),{recursive:true,mode:0o700});this.phase='starting';this.error='';const log=join(this.dataDir,'snowluma','runtime.log'),environment=this.launchEnvironment();
+ const child=this.child=this.system.launch(resolve(directory),log,environment);let pending='';const consume=(chunk:Buffer)=>{pending+=chunk.toString('utf8');const lines=pending.split(/\r?\n/);pending=lines.pop()!.slice(-32768);for(const line of lines){const secret=credentialFromLog(line);if(secret)privateWrite(this.credentialFile(),{directory:resolve(directory),secret});appendFileSync(log,(secret?'[WebUI 初始凭据已保存到本机密钥文件]':line)+'\n',{mode:0o600});}};
+ child.stdout?.on('data',consume);child.stderr?.on('data',consume);child.once('error',()=>{this.phase='error';this.error='SnowLuma 启动失败，请自动定位目录，或使用官方 launcher.bat 检查运行环境';this.message=this.error;this.child=undefined;});child.once('exit',code=>{if(this.child===child){this.child=undefined;this.phase=code===0?'idle':'error';this.message=code===0?'SnowLuma 已退出':'SnowLuma 已退出，请核实是否已有另一个实例或 QQ 版本不兼容';}});
+ this.phase='running';this.message='已启动 SnowLuma 与 QQ，请在桌面 QQ 扫码；连接参数会自动同步';this.openQQ();return this.view();}
  openQQ(){const explicit=this.settings().snowluma.qqPath.trim(),candidates=[explicit,...['ProgramFiles','ProgramFiles(x86)','LOCALAPPDATA'].flatMap(k=>process.env[k]?[join(process.env[k]!,'Tencent','QQNT','QQ.exe'),join(process.env[k]!,'Tencent','QQ','QQ.exe')]:[])].filter(Boolean),file=candidates.find(p=>isAbsolute(p)&&existsSync(p));
- if(file){if(!/(?:^|[\\/])QQ\.exe$/i.test(file))throw new Error('QQ 路径应指向官方桌面客户端 QQ.exe');this.system.openQQ(file);}else this.message='SnowLuma 已请求启动；未检测到 QQ.exe，请手动打开桌面 QQ 扫码，或补填 QQ 程序路径';return this.view();}
+ if(file){if(!/(?:^|[\\/])QQ\.exe$/i.test(file))throw new Error('QQ 路径应指向官方桌面客户端 QQ.exe');this.system.openQQ(file);}else this.message='SnowLuma 已启动，未找到桌面 QQ；请点自动定位，或打开已安装的 QQ 扫码';return this.view();}
+ openBackend(){if(!this.system.openBrowser)throw new Error('请使用下方链接打开后台');this.system.openBrowser(this.consoleUrl().url);return {ok:true};}
+ async reachable(fetcher:typeof fetch=this.localFetch){try{const r=await fetcher(new URL('/api/status',this.consoleUrl().url),{redirect:'error',signal:AbortSignal.timeout(1200)});const value=await r.json() as any;return r.status===401&&value?.status==='failed'||r.ok&&value&&typeof value==='object'&&('accounts'in value||'data'in value||'status'in value);}catch{return false;}}
+ async prepareConnection(){const dir=this.directory();if(!this.view().installed)throw new Error('请先自动定位 SnowLuma 安装目录');const file=join(dir,'config','onebot.json');if(existsSync(file)||this.accounts().length)return;
+ const port=await new Promise<number>((resolve,reject)=>{const s=createServer();s.once('error',()=>{const free=createServer();free.once('error',reject);free.listen(0,'127.0.0.1',()=>{const a=free.address();free.close(()=>typeof a==='object'&&a?resolve(a.port):reject(Error('无法分配本机 QQ 端口')));});});s.listen(3001,'127.0.0.1',()=>s.close(()=>resolve(3001)));});
+ privateWrite(file,{networks:{httpServers:[],httpClients:[],wsClients:[],wsServers:[{name:'shiguang-local',host:'127.0.0.1',port,path:'/',role:'Universal',accessToken:randomBytes(32).toString('hex'),messageFormat:'array',reportSelfMessage:false,enabled:true}]}});}
+ connection(){const directory=this.directory();if(!directory)return;const globalFile=join(directory,'config','onebot.json'),global=readJSON(globalFile),accounts=this.accounts(),preferred=this.settings().snowluma.accountQQ;let uin=preferred||accounts.length===1&&accounts[0]||'';if(!uin&&accounts.length>1)throw new Error('检测到多个 QQ 登录账号，请在高级选项选择收发消息的 QQ 号');if(preferred&&!accounts.includes(preferred))return;const specificFile=uin?join(directory,'config',`onebot_${uin}.json`):'',specific=specificFile?readJSON(specificFile):undefined;if(specificFile&&existsSync(specificFile)&&!specific)throw new Error('当前 QQ 的 SnowLuma 连接配置无法读取，请到官方后台检查配置');if(existsSync(globalFile)&&!global&&specific?.mode!=='snapshot')throw new Error('SnowLuma 全局连接配置无法读取，请到官方后台检查配置');const connection=parseSnowConnection(mergeNetworks(global,specific));return connection?{...connection,account:uin}:undefined;}
  async stop(){const child=this.child;this.child=undefined;if(child&&!child.killed)child.kill();this.phase='idle';}
 }

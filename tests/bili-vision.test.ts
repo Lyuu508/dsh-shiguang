@@ -23,7 +23,7 @@ test('B 站内容使用真实 FFmpeg 与 DSH 视觉：一张关键帧图及字�
  const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory),model=new Vision();let reader:BiliVision|undefined,videoDownloads=0,preview=false,blocked=false,prepared=0;
  try{
   const file=join(f.dir,'source.mp4');execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=red:s=320x180:r=5:d=2','-threads','1','-pix_fmt','yuv420p','-y',file]);const bytes=readFileSync(file);
-  f.settings.bilibili.enabled=true;Object.assign(f.settings.biliVision,{enabled:true,provider:'bili-vision-test',model:'image',dailyLimit:2});
+  f.settings.bilibili.enabled=true;Object.assign(f.settings.biliVision,{enabled:true,provider:'deepseek-official',model:'image',dailyLimit:2});
   writeFileSync(join(f.dir,'bilibili.cookies.json'),JSON.stringify({SESSDATA:'test-session',bili_jct:'test-csrf'}));
   const fetcher:typeof fetch=async(url,init)=>{
    const u=new URL(String(url));
@@ -36,7 +36,7 @@ test('B 站内容使用真实 FFmpeg 与 DSH 视觉：一张关键帧图及字�
    if(u.pathname.endsWith('/v2'))return json({subtitle:{subtitles:[{lan:'zh-CN',subtitle_url:'//aisubtitle.hdslb.com/sample.json'}]}});
    throw Error('Unexpected request '+u.pathname);
   };
-  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['bili-vision-test'],model);
+  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['deepseek-official'],model);
   reader=new BiliVision(ctx,f.settings,memory,new BilibiliClient(f.settings,memory,fetcher),fetcher,async()=>{prepared++;});
   const result=await reader.watch(video.bvid,'视频里在做什么？');assert.match(result,/持琴/);assert.match(result,/节选的平台字幕/);assert.equal(model.requests.length,1);assert.equal(videoDownloads,1);
   const request=model.requests[0]!;assert.equal(request.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,1);assert.equal(request.maxTokens,480);assert.equal(request.tools,undefined);assert.match(JSON.stringify(request.messages),/注意放松手腕/);assert.doesNotMatch(JSON.stringify(request),/test-session|test-csrf/);
@@ -61,9 +61,9 @@ test('深看真实长片分段覆盖时间线，浅看缓存不混用；额度�
  class Segments extends Vision{async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{calls++;if(calls===failAt){yield {type:'finish',reason:{kind:'length'}};return;}yield* super.stream(options);}}
  const model=new Segments();let reader:BiliVision|undefined;
  try{const file=join(f.dir,'long.mp4');execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=s=160x90:r=2:d=31','-threads','1','-pix_fmt','yuv420p','-y',file]);const bytes=readFileSync(file);
- f.settings.bilibili.enabled=true;Object.assign(f.settings.biliVision,{enabled:true,provider:'bili-vision-test',model:'image',deepSegmentSeconds:15,deepMaxSegments:3,dailyLimit:12,frames:2});writeFileSync(join(f.dir,'bilibili.cookies.json'),JSON.stringify({SESSDATA:'fake',bili_jct:'fake'}));
+ f.settings.bilibili.enabled=true;Object.assign(f.settings.biliVision,{enabled:true,provider:'deepseek-official',model:'image',deepSegmentSeconds:15,deepMaxSegments:3,dailyLimit:12,frames:2});writeFileSync(join(f.dir,'bilibili.cookies.json'),JSON.stringify({SESSDATA:'fake',bili_jct:'fake'}));
  const fetcher:typeof fetch=async url=>{const u=new URL(String(url)),json=(data:unknown)=>Response.json({code:0,data});if(u.hostname.endsWith('bilivideo.com')){downloads++;return new Response(bytes);}if(u.pathname.endsWith('/view'))return json({...video,duration:31,pages:[{cid:999,duration:31}]});if(u.pathname.endsWith('/nav'))return json({isLogin:true,wbi_img:{img_url:'https://i0.hdslb.com/bfs/wbi/'+'a'.repeat(32)+'.png',sub_url:'https://i0.hdslb.com/bfs/wbi/'+'b'.repeat(32)+'.png'}});if(u.pathname.endsWith('/playurl'))return json({timelength:31000,dash:{duration:31,video:[{id:16,codecid:7,baseUrl:'https://upos-test.bilivideo.com/low.mp4'}]}});if(u.pathname.endsWith('/v2'))return json({subtitle:{subtitles:[]}});throw Error('unexpected '+u.pathname);};
- await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['bili-vision-test'],model);reader=new BiliVision(ctx,f.settings,m,new BilibiliClient(f.settings,m,fetcher),fetcher);
+ await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['deepseek-official'],model);reader=new BiliVision(ctx,f.settings,m,new BilibiliClient(f.settings,m,fetcher),fetcher);
  const deep=await reader.watch(video.bvid,'主要内容',1,undefined,'deep');assert.equal(calls,3);assert.match(deep,/覆盖 0–31 秒，共 3 段/);assert.match(JSON.stringify(model.requests[1]?.messages),/15.0–30.0/);assert.match(JSON.stringify(model.requests[2]?.messages),/30.0–31.0/);assert.match(await reader.watch(video.bvid,'再次提问',1,undefined,'deep'),/复用/);assert.equal(downloads,1);
  await reader.watch(video.bvid,'浅看',1,undefined,'shallow');assert.equal(calls,4);assert.equal(downloads,2);m.db.exec('DELETE FROM media_cache');f.settings.biliVision.dailyLimit=6;await assert.rejects(reader.watch(video.bvid,'深看',1,undefined,'deep'),/额度/);assert.equal(downloads,2);f.settings.biliVision.dailyLimit=12;failAt=6;await assert.rejects(reader.watch(video.bvid,'深看',1,undefined,'deep'),/第 2\/3 段未完整/);assert.equal(m.db.prepare('SELECT count(*) AS n FROM media_cache').get()?.n,0);assert.deepEqual(readdirSync(join(f.dir,'bili-video-tmp')),[]);
  }finally{reader?.stop();await ctx.fiber.dispose();m.close();f.cleanup();}

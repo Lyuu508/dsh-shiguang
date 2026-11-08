@@ -29,7 +29,7 @@ function platform(){
  return {calls,fetcher,setFail:()=>{failDynamic=true;}};
 }
 function configure(f:ReturnType<typeof fixture>){
- Object.assign(f.settings.bilibili,{enabled:true,allowedTags:['科技'],blockedTags:['广告'],allowComments:true,allowDynamics:true});Object.assign(f.settings.autonomy,{enabled:true,chooseBrowsing:false,autoComment:true,autoDynamic:true});f.settings.provider='auto-test';f.settings.model='scripted';writeFileSync(join(f.dir,'bilibili.cookies.json'),JSON.stringify({SESSDATA:'fake-session',bili_jct:'fake-csrf'}));
+ Object.assign(f.settings.bilibili,{enabled:true,allowedTags:['科技'],blockedTags:['广告'],allowComments:true,allowDynamics:true});Object.assign(f.settings.autonomy,{enabled:true,chooseBrowsing:false,autoComment:true,autoDynamic:true});f.settings.provider='deepseek-official';f.settings.model='scripted';writeFileSync(join(f.dir,'bilibili.cookies.json'),JSON.stringify({SESSDATA:'fake-session',bili_jct:'fake-csrf'}));
 }
 class Planner extends LlmAdapter{
  requests:GenerateOptions[]=[];
@@ -59,7 +59,7 @@ test('搜索候选不进模型，真实标签筛选后只读取允许的视频�
 test('自主醒来一次：真实 DSH 思考、允许视频评论和文字动态、共享记忆与用量；同一时段不重复',async()=>{
  const f=fixture();configure(f);const ctx=new Context(),m=new MemoryStore(':memory:',f.settings.roleId,'UTC',f.settings.memory),p=platform(),bili=new BilibiliClient(f.settings,m,p.fetcher),planner=new Planner({reason:'分享公开见闻',dynamic:'今天从视频介绍发现一个科技知识。',comment:{bvid:good,text:'这个主题很有意思，谢谢介绍。'}});let auto:Autonomy|undefined;
  try{
-  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['auto-test'],planner);m.append('owner','qq','p','note','私有灵感默认不提供');m.append('owner','bilibili','bilibili','experience','导入的未审核内容','import:fixture');
+  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['deepseek-official'],planner);m.append('owner','qq','p','note','私有灵感默认不提供');m.append('owner','bilibili','bilibili','experience','导入的未审核内容','import:fixture');
   auto=new Autonomy(ctx,f.settings,m,bili,async run=>run(),()=>{});await auto.run('09:00');await auto.run('09:00');assert.equal(planner.requests.length,1);assert.doesNotMatch(JSON.stringify(planner.requests[0]?.messages),/黑名单不能|私有灵感|未审核内容/);assert.equal(planner.requests[0]?.tools,undefined);
   assert.equal(p.calls.filter(c=>c.url.includes('/reply/add')).length,1);assert.equal(p.calls.filter(c=>c.url.includes('/create/dyn')).length,1);assert.match(m.fastContext('owner','p').todayNotes,/科技新发现/);assert.equal(auto.status().todayRuns,1);assert.equal(dailyUsage(m).categories.find(c=>c.category==='bilibili-auto')?.total,380);
   assert.ok(m.search('owner','分享公开见闻','today').some(hit=>hit.platform==='dsh'));
@@ -70,7 +70,7 @@ test('自主醒来一次：真实 DSH 思考、允许视频评论和文字动态
 test('公开草稿有私人信息时先阻止所有发布；模型越权目标同样不执行',async()=>{
  for(const plan of [{reason:'分享',dynamic:'手机号 13800138000',comment:{bvid:good,text:'谢谢'}},{reason:'分享',dynamic:null,comment:{bvid:bad,text:'越权'}}]){
   const f=fixture();configure(f);const ctx=new Context(),m=new MemoryStore(':memory:',f.settings.roleId,'UTC',f.settings.memory),p=platform(),bili=new BilibiliClient(f.settings,m,p.fetcher);let auto:Autonomy|undefined;
-  try{await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['auto-test'],new Planner(plan));auto=new Autonomy(ctx,f.settings,m,bili,async run=>run(),()=>{});await assert.rejects(auto.run(),/阻止发布|范围/);assert.equal(p.calls.filter(c=>c.init?.method==='POST').length,0);assert.equal(auto.status().runs[0]?.status,'failed');}
+  try{await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['deepseek-official'],new Planner(plan));auto=new Autonomy(ctx,f.settings,m,bili,async run=>run(),()=>{});await assert.rejects(auto.run(),/阻止发布|范围/);assert.equal(p.calls.filter(c=>c.init?.method==='POST').length,0);assert.equal(auto.status().runs[0]?.status,'failed');}
   finally{auto?.stop();await ctx.fiber.dispose();m.close();f.cleanup();}
  }
 });
@@ -84,6 +84,6 @@ test('夏令时重复时段和进程重启不重复醒来；手动执行计入�
 test('停止正在思考的自主任务，不排队等思考结束，不执行后续发布',async()=>{
  const f=fixture();configure(f);const ctx=new Context(),m=new MemoryStore(':memory:',f.settings.roleId,'UTC',f.settings.memory),p=platform();let auto:Autonomy|undefined,started:()=>void=()=>{};const ready=new Promise<void>(r=>{started=r;});
  class Waiting extends LlmAdapter{async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{started();await new Promise((_,reject)=>{if(options.signal?.aborted)return reject(new Error('cancelled'));options.signal?.addEventListener('abort',()=>reject(new Error('cancelled')),{once:true});});yield {type:'finish',reason:{kind:'stop'}};}}
- try{await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['auto-test'],new Waiting());auto=new Autonomy(ctx,f.settings,m,new BilibiliClient(f.settings,m,p.fetcher),async run=>run(),()=>{});const task=auto.run();await ready;auto.cancelCurrent();await assert.rejects(task,/未完整返回|abort|cancelled/);assert.equal(p.calls.filter(c=>c.init?.method==='POST').length,0);assert.equal(auto.status().runs[0]?.status,'failed');}
+ try{await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);ctx.llm.registerAdapter(['deepseek-official'],new Waiting());auto=new Autonomy(ctx,f.settings,m,new BilibiliClient(f.settings,m,p.fetcher),async run=>run(),()=>{});const task=auto.run();await ready;auto.cancelCurrent();await assert.rejects(task,/未完整返回|abort|cancelled/);assert.equal(p.calls.filter(c=>c.init?.method==='POST').length,0);assert.equal(auto.status().runs[0]?.status,'failed');}
  finally{auto?.stop();await ctx.fiber.dispose();m.close();f.cleanup();}
 });

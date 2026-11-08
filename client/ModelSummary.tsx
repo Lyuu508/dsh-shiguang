@@ -1,0 +1,3 @@
+import React,{useEffect,useState} from 'react';
+import type {PanelApi} from './types.js';
+export function ModelSummary({api}:{api:PanelApi}){const [state,setState]=useState<{ready:boolean;message:string}>();useEffect(()=>{const abort=new AbortController();void api.call<typeof state>('model-status',{},abort.signal).then(setState).catch(()=>{});return()=>abort.abort();},[api]);return <div className="sg-model-summary"><strong>DeepSeek Flash · 自动跟随官方最新</strong><p className="sg-help">聊天、识图、B 站视频与自主思考统一使用 deepseek-flash。使用 DSH 已有的 DeepSeek 登录或官方 API 连接，无需填写模型名称。</p>{state&&<p className={state.ready?'sg-help':'sg-notice error'}>{state.message}</p>}</div>;}

@@ -8,8 +8,8 @@ GitHub API 不可用或限额时，自动读取官方仓库的 `downloads/latest
 
 **0.1.6 或更早版本的更新页仍使用旧逻辑**。如果旧按钮一直超时，将下面这句话发给 DSH，先安装修复版本：
 
-> 帮我从 Lyuu508/dsh-shiguang 的 v0.1.9 Release 链接下载预构建 TGZ，核对 SHA256，安装到当前 profile，保留已有配置和记忆，完成后提醒我重启 DSH 并刷新页面。
+> 帮我从 Lyuu508/dsh-shiguang 的 v0.1.10 Release 链接下载预构建 TGZ，核对 SHA256，安装到当前 profile，保留已有配置和记忆，完成后提醒我重启 DSH 并刷新页面。
 
-也可以在 [版本页](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.9) 下载 `dsh-shiguang-0.1.9.tgz` 和对应 `SHA256SUMS-0.1.9.txt`，核对后交给 DSH 插件管理安装。账号、配置和记忆位于独立数据目录，不在安装包内。
+也可以在 [版本页](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.1.10) 下载 `dsh-shiguang-0.1.10.tgz` 和对应 `SHA256SUMS-0.1.10.txt`，核对后交给 DSH 插件管理安装。账号、配置和记忆位于独立数据目录，不在安装包内。
 
 安装成功后按提示重启 DSH 并刷新页面。若安装结果不明，先看 DSH 插件管理中的版本和诊断，避免反复安装。安装状态会保存在本机；进程中断后再次打开会提示核实。

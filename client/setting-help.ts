@@ -1,8 +1,10 @@
 // Visible beside each control; labels stay stable for keyboard and screen-reader navigation.
-const rows=`当前角色|切换不同人设与各自记忆|先保存修改再切换
+const rows=`SnowLuma 后台登录凭据|仅用于登录本机 SnowLuma 管理网页，不是模型密钥|复制后粘贴到后台，勿发送给聊天对象
+SnowLuma 收发消息 QQ 号|多个登录账号时选择由哪个账号收发消息|选择伙伴自己的账号，不是主人号
+当前角色|切换不同人设与各自记忆|先保存修改再切换
 新角色名字|新伙伴的名称|取一个容易区分的名字
 新角色人设|新伙伴的性格与说话习惯|写 200–800 字即可
-复制当前角色的设置|沿用当前模型、作息、声音等参数|新角色记忆始终独立，不复制历史
+复制当前角色的设置|沿用当前作息、声音等参数|新角色记忆始终独立，不复制历史
 SnowLuma 安装目录|包含官方 index.mjs 的解压目录|例如 D:\\SnowLuma
 桌面 QQ 程序路径|负责原生扫码登录的桌面客户端|选择官方 QQ.exe，可留空尝试检测
 SnowLuma 后台地址|本机管理网页|http://127.0.0.1:5099

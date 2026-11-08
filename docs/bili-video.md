@@ -1,6 +1,6 @@
 # 看 B 站视频内部内容
 
-在 **设置 → 拾光 → B 站账号** 开启“B 站视频内容识别”，配置视觉模型并保存。需要先扫码登录、启用 B 站工具，在本页“视频识别工具”检测 FFmpeg / FFprobe；Windows x64 可点“安装 / 修复视频识别工具”，也可由首次读取准备。校验下载后自动应用路径，QQ 与 B 站共用。
+在 **设置 → 拾光 → B 站账号** 开启“B 站视频内容识别”，使用统一 Flash 并保存。需要先扫码登录、启用 B 站工具，在本页“视频识别工具”检测 FFmpeg / FFprobe；Windows x64 可点“安装 / 修复视频识别工具”，也可由首次读取准备。校验下载后自动应用路径，QQ 与 B 站共用。
 
 主人 QQ 私聊可说：“看看这个视频里的内容，主要在讲什么：完整视频链接”。也可以在 B 站设置页输入 BV / av 编号、完整链接和分 P 编号，点击“识别这个 B 站视频”。群聊不能使用主人的 B 站账号读取视频。
 
@@ -14,7 +14,7 @@
 
 这些是抽样画面和节选字幕，无法保证覆盖所有动作、细小文字或情节；不转写原始音频，没有字幕时不知道台词。遇到预览、播放时长不符、受限内容、过长视频或下载超限会明确停止，不把标题和简介包装成观看结果。多 P 视频按指定的一 P 处理。
 
-模型提供方和名称同时留空时，先沿用 QQ 视觉模型，再沿用聊天模型。所选模型必须声明支持图片输入。缓存只有已有客观摘要，无法从缓存还原未读取的细节；需要细节时可调整识别设置重新读取。
+识别统一使用 DSH 的最新 DeepSeek Flash（deepseek-flash），支持图片输入，无需选择提供方或名称。缓存只保留已识别摘要，不凭摘要编造未读取的细节。
 
 ## 浅看与分段深看
 
@@ -34,4 +34,6 @@
 
 接口字段依据 [播放地址](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/video/videostream_url.md) 和 [播放器字幕](https://github.com/bilibili-plugins/bilibili-api-collect/blob/master/docs/video/player.md) 收集文档，并通过生成的视频、字幕夹具、真实 FFmpeg 和 DSH 模型服务测试。真实账号的播放权限、字幕可用性及视觉效果仍需本机验证。
 
-出现“找不到 FFmpeg / FFprobe”时，在本页工具区域检测或安装后重试，无需再到 QQ 页寻找设置。其他系统请手动安装并填写路径。便携工具取自 BtbN 官方 LGPL 构建，核验 Release SHA256；包较大，支持断点和更新页中的可选加速前缀。深看使用 LGPL 构建自带编码器。
+出现“找不到 FFmpeg / FFprobe”时，在本页工具区域检测或安装后重试，无需再到 QQ 页寻找设置。其他系统请手动安装并填写路径。便携工具取自 FFmpeg-Builds 官方 LGPL 构建，核验 Release SHA256；包较大，支持断点和更新页中的可选加速前缀。深看使用 LGPL 构建自带编码器。
+
+0.1.10 已核实上游仓库从 BtbN/FFmpeg-Builds 迁移至 [FFmpeg-Builds/FFmpeg-Builds](https://github.com/FFmpeg-Builds/FFmpeg-Builds)。旧元数据请求禁止重定向会直接产生 fetch failed；本版改用新地址并有受校验的备用清单、Windows 系统网络下载及官方手动 ZIP 入口。

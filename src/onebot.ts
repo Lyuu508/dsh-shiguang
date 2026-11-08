@@ -58,7 +58,7 @@ export class OneBotClient {
   status(): { state: string; message: string } { return { state: this.state, message: this.statusMessage }; }
   start(): void {
     if (this.stopped) return;
-    if (!this.token()) { this.statusMessage = '请先在设置面板填写 OneBot Token'; return; }
+    if (!this.token()) { this.statusMessage = '等待 SnowLuma 自动同步连接，请先一键启动并扫码'; return; }
     this.state = 'connecting'; this.statusMessage = '正在连接 SnowLuma';
     const socket = new WebSocket(this.config.wsUrl, {
       headers: { Authorization: `Bearer ${this.token()}` },

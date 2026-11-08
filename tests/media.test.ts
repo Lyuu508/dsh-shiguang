@@ -53,8 +53,8 @@ const qq={mediaInfo:async()=>({})} as unknown as OneBotClient;
 test('真实 DSH LLM 与附件服务：一次视觉调用、缓存只传文字、跨会话不复用、每日额度生效',async()=>{
  const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory),adapter=new Vision();let reader:MediaReader|undefined,fetches=0,prepared=0;
  try{
-  const bytes=clip(f.dir);f.settings.media.enabled=true;f.settings.media.provider='vision-test';f.settings.media.model='image-model';f.settings.media.dailyLimit=3;
-  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});ctx.llm.registerAdapter(['vision-test'],adapter);
+  const bytes=clip(f.dir);f.settings.media.enabled=true;f.settings.media.provider='deepseek-official';f.settings.media.model='image-model';f.settings.media.dailyLimit=3;
+  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});ctx.llm.registerAdapter(['deepseek-official'],adapter);
   reader=new MediaReader(ctx,f.settings,memory,async()=>{fetches++;return new Response(bytes);},async()=>{prepared++;});
   assert.match(await reader.reply(message,qq,[reference]),/抽样 3 帧/);assert.equal(adapter.requests.length,1);
   const first=adapter.requests[0]!;assert.equal(first.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,1);assert.equal(first.maxTokens,320);assert.equal(first.tools,undefined);
@@ -72,9 +72,9 @@ test('关闭、未触发、纯文本模型和超限下载都不产生模型调�
   reader=new MediaReader(ctx,f.settings,memory);assert.match(await reader.reply(message,qq,[reference]),/还没开启/);
   f.settings.media.enabled=true;assert.match(await reader.reply({...message,text:'你好'},qq,[reference]),/引用/);
   await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});
-  f.settings.media.provider='text-test';f.settings.media.model='text';class Text extends Vision{async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text'] as any};}}const text=new Text();ctx.llm.registerAdapter(['text-test'],text);
+  f.settings.media.provider='deepseek-account';f.settings.media.model='text';class Text extends Vision{async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text'] as any};}}const text=new Text();ctx.llm.registerAdapter(['deepseek-account'],text);
   await assert.rejects(reader.reply(message,qq,[reference]),/纯文本模型/);assert.equal(text.requests.length,0);
-  const vision=new Vision();ctx.llm.registerAdapter(['vision-test'],vision);f.settings.media.provider='vision-test';f.settings.media.maxFileMB=1;
+  const vision=new Vision();ctx.llm.registerAdapter(['deepseek-official'],vision);f.settings.media.provider='deepseek-official';f.settings.media.maxFileMB=1;
   reader=new MediaReader(ctx,f.settings,memory,async()=>new Response(Buffer.alloc(1024*1024+1)));await assert.rejects(reader.reply(message,qq,[reference]),/超过/);assert.equal(vision.requests.length,0);assert.equal(dailyUsage(memory).total.calls,0);
   const fetched:string[]=[];reader=new MediaReader(ctx,f.settings,memory,async(url)=>{fetched.push(String(url));return new Response('',{status:302,headers:{location:'http://127.0.0.1/private'}});});
   await assert.rejects(reader.reply(message,qq,[reference]),/QQ 媒体服务器/);assert.equal(fetched.length,1);
@@ -88,8 +88,8 @@ test('真实 OneBot 媒体链路：收到视频→视觉回答→引用命中摘
  const segments=[{type:'video',data:{file:reference.file,url:reference.url}},{type:'text',data:{text:'看看主要画面'}}];
  async function waitFor(n:number){const until=Date.now()+10000;while(received.length<n){if(Date.now()>until)throw new Error('No QQ receipt');await new Promise(r=>setTimeout(r,25));}}
  try{
-  const bytes=clip(f.dir);await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});ctx.llm.registerAdapter(['vision-test'],adapter);
-  Object.assign(f.settings.media,{enabled:true,provider:'vision-test',model:'image'});Object.assign(f.settings.qq,{enabled:true,ownerQQ:'1',wsUrl:`ws://127.0.0.1:${address.port}`});
+  const bytes=clip(f.dir);await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});ctx.llm.registerAdapter(['deepseek-official'],adapter);
+  Object.assign(f.settings.media,{enabled:true,provider:'deepseek-official',model:'image'});Object.assign(f.settings.qq,{enabled:true,ownerQQ:'1',wsUrl:`ws://127.0.0.1:${address.port}`});
   writeFileSync(join(f.dir,'onebot.token'),'local-fake-test-token');const file=join(f.dir,'config.json');writeFileSync(file,JSON.stringify(f.settings));
   server.on('connection',s=>{socket=s;s.on('message',data=>{const v=JSON.parse(data.toString());const result=v.action==='get_msg'?{message_type:'private',user_id:1,message:segments}:v.action==='get_file'?{url:reference.url}:{message_id:100};s.send(JSON.stringify({status:'ok',retcode:0,echo:v.echo,data:result}));if(v.action==='send_private_msg')received.push(v.params.message[0].data.text);});s.send(JSON.stringify(event(1,segments)));});
   runtime=new ShiguangRuntime(ctx,file,async()=>new Response(bytes));await waitFor(1);assert.match(received[0]!,/抽样/);assert.equal(adapter.requests.length,1);
@@ -103,8 +103,8 @@ test('本机文件不能越过缓存目录，视觉输出中断仍记 usage 且�
  const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory);let reader:MediaReader|undefined;
  class Limited extends Vision{async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{this.requests.push(options);yield {type:'usage',usage:{inputTokens:100,outputTokens:20}};yield {type:'finish',reason:{kind:'max-tokens'}};}}
  try{
-  const bytes=clip(f.dir);Object.assign(f.settings.media,{enabled:true,provider:'vision-test',model:'image',localMediaDir:join(f.dir,'allowed')});mkdirSync(f.settings.media.localMediaDir);
-  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});const adapter=new Limited();ctx.llm.registerAdapter(['vision-test'],adapter);
+  const bytes=clip(f.dir);Object.assign(f.settings.media,{enabled:true,provider:'deepseek-official',model:'image',localMediaDir:join(f.dir,'allowed')});mkdirSync(f.settings.media.localMediaDir);
+  await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});const adapter=new Limited();ctx.llm.registerAdapter(['deepseek-official'],adapter);
   const local={mediaInfo:async()=>({file:join(f.dir,'sample.mp4')})} as unknown as OneBotClient;
   reader=new MediaReader(ctx,f.settings,memory,async()=>new Response(bytes));await assert.rejects(reader.reply(message,local,[{type:'video',file:'id'}]),/允许的缓存目录/);assert.equal(adapter.requests.length,0);
   await assert.rejects(reader.reply(message,qq,[reference]),/未完整返回/);assert.equal(adapter.requests.length,1);assert.equal(dailyUsage(memory).total.total,120);assert.equal(dailyUsage(memory).total.calls,1);assert.equal(memory.db.prepare('SELECT count(*) AS n FROM media_cache').get()?.n,0);
