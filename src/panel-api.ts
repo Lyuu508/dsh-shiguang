@@ -33,6 +33,8 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'emoji-test':return runtime.enqueue(async()=>{if(!runtime.settings.qq.ownerQQ)throw new Error('请先填写主人 QQ 号');const account=await runtime.qq.check();await runtime.emojiSender.send({id:'panel:'+Date.now(),selfId:account.userId,userId:runtime.settings.qq.ownerQQ,scope:'owner',thread:'qq:private:'+runtime.settings.qq.ownerQQ,owner:true,text:'发表情测试'},runtime.qq,'',true,signal);return runtime.emojiSender.status();});
     case 'load': return { ...runtime.view(), status: runtime.status() };
     case 'status': return runtime.status();
+    case 'vision-check':return runtime.startVisionCheck();
+    case 'vision-check-status':return {...runtime.visionCheck.state};
     case 'model-status':return runtime.modelStatus();
     case 'local-locate':return runtime.locateLocal();
     case 'qq-setup':return runtime.startQQSetup(args.mode==='bridge'?'bridge':'full');

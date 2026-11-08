@@ -15,7 +15,7 @@ import {fixture} from './helpers.js';
 
 class Vision extends LlmAdapter {
  requests:GenerateOptions[]=[];
- async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as any};}
+ async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as any,reasoning:{efforts:[{id:'off' as any,name:'关闭'}]}};}
  async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{this.requests.push(options);const text=JSON.stringify({summary:'红色画面，字幕介绍吉他的持琴姿势。',reply:'画面是红色演示背景，字幕主要讲持琴姿势。'});yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'usage',usage:{inputTokens:300,outputTokens:80}};yield {type:'finish',reason:{kind:'stop'}};}
 }
 const video={aid:123,bvid:'BV1xx411c7mD',title:'吉他演示',desc:'基础姿势',owner:{name:'测试作者'},cid:999,duration:2,pages:[{cid:999,duration:2}]};

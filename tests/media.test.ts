@@ -40,7 +40,7 @@ test('只接受 QQ CDN，拒绝任意地址、认证 URL 和伪装域名；按�
 });
 class Vision extends LlmAdapter {
  requests:GenerateOptions[]=[];
- async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as const};}
+ async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as const,reasoning:{efforts:[{id:'off' as any,name:'关闭'}]}};}
  async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{
   this.requests.push(options);const text=JSON.stringify({summary:'红色、白色和蓝色画面依次切换。',reply:'主要是三种颜色在切换。'});
   yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};
@@ -73,7 +73,7 @@ test('关闭、未触发、纯文本模型和超限下载都不产生模型调�
   f.settings.media.enabled=true;assert.equal(await reader.reply({...message,text:'你好'},qq,[reference]),'嗯，收到了。');
   await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});
   f.settings.media.provider='deepseek-account';f.settings.media.model='text';class Text extends Vision{async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text'] as any};}}const text=new Text();ctx.llm.registerAdapter(['deepseek-account'],text);
-  await assert.rejects(reader.reply(message,qq,[reference]),/纯文本模型/);assert.equal(text.requests.length,0);
+  await assert.rejects(reader.reply(message,qq,[reference]),/Flash 连接未声明支持图片/);assert.equal(text.requests.length,0);
   const vision=new Vision();ctx.llm.registerAdapter(['deepseek-official'],vision);f.settings.media.provider='deepseek-official';f.settings.media.maxFileMB=1;
   reader=new MediaReader(ctx,f.settings,memory,async()=>new Response(Buffer.alloc(1024*1024+1)));await assert.rejects(reader.reply(message,qq,[reference]),/超过/);assert.equal(vision.requests.length,0);assert.equal(dailyUsage(memory).total.calls,0);
   const fetched:string[]=[];reader=new MediaReader(ctx,f.settings,memory,async(url)=>{fetched.push(String(url));return new Response('',{status:302,headers:{location:'http://127.0.0.1/private'}});});

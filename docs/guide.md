@@ -2,7 +2,7 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.2.6 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.2.6) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.2.7 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.2.7) 页面进入下载。
 
 ## 在哪里打开面板
 
@@ -10,7 +10,7 @@
 
 - **角色与回复**：名字、人设、时区、统一 Flash、回复等待时间、字数和生物钟。
 - **语音**：火山复刻音色配置、试听、QQ 语音回复与独立字符用量，见 [语音指南](voice.md)。
-- **QQ 连接**：自动定位 / 一键启动 SnowLuma、原生 QQ 扫码、后台凭据、主人号、白名单、在线检测、QQ 识图及[主动陪伴](social.md)。
+- **QQ 连接**：自动定位 / 一键启动 SnowLuma、原生 QQ 扫码、后台凭据、主人号、白名单、在线检测、图片自检、QQ 识图及[主动陪伴](social.md)。
 - **B 站账号**：二维码登录、评论权限、标签白黑名单、固定 / 自由自主生活、主人 UID 私信、@ 推荐、文字动态及浅看 / 分段深看视频识别，见 [视频内容指南](bili-video.md)。
 - **记忆**：读取预算、当天记录、历史搜索、分页原文、移入回收站与撤销。
 - **Token 用量**：按日期分别查看 QQ 聊天、B 站任务、DSH 对话的模型用量，区分未缓存输入、缓存与输出，支持导出 JSON。
@@ -31,6 +31,10 @@ dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.2.1.tgz"
 重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。
 
 配置、登录凭据和记忆存放在原来的本机目录，更新保留这些文件。数据库升级前会按原版本生成 `memory.sqlite.v1-backup`、`.v2-backup` 、`.v3-backup` 、`.v4-backup` 、`.v5-backup` 、`.v6-backup` 、`.v7-backup` 、`.v8-backup`、`.v9-backup`、`.v10-backup` 或 `.v11-backup`。校验失败会停止安装，网络或权限错误可重试；GitHub 仓库改为私有后，当前匿名检查方式需要改用手动安装。初次克隆源码后的本机配置和凭据不应上传仓库。
+
+## 普通图片和动图都看不到时
+
+升级后重启 DSH 并刷新，在 **QQ 连接 → 测试模型能否看图** 先运行一次。它使用内置图片直接请求当前 Flash，不经过 QQ 或 FFmpeg，不读私人聊天；这一次会产生模型用量。通过后先发普通 PNG / JPEG 测 QQ，再测 GIF。失败时复制这里的“环节 / 返回”及 QQ 下方“最近识图详情”。[完整排查](qq-media.md#先测模型再测qq)。
 
 ## Token 是多少个中文？
 

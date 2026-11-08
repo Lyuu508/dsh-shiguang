@@ -25,8 +25,8 @@ qq.on('connection',socket=>socket.on('message',raw=>{const request=JSON.parse(ra
 const audio=execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=0.2','-f','mp3','pipe:1']);
 const videoFile=join(f.dir,'browser-video.mp4');execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=red:s=320x180:r=5:d=2','-threads','1','-pix_fmt','yuv420p','-y',videoFile]);const videoBytes=readFileSync(videoFile);
 class BrowserVision extends LlmAdapter {
- async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as any};}
- async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{const text=JSON.stringify({summary:'红色画面配有吉他姿势字幕。',reply:'抽样画面是红色背景，字幕讲吉他持琴姿势。'});yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'usage',usage:{inputTokens:300,outputTokens:80,totalTokens:380}};yield {type:'finish',reason:{kind:'stop'}};}
+ async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as any,reasoning:{efforts:[{id:'off' as any,name:'关闭'}]}};}
+ async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{const text=_options.system?.includes('图片识别自检')?JSON.stringify({left:'红色',right:'蓝色'}):JSON.stringify({summary:'红色画面配有吉他姿势字幕。',reply:'抽样画面是红色背景，字幕讲吉他持琴姿势。'});yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'usage',usage:{inputTokens:300,outputTokens:80,totalTokens:380}};yield {type:'finish',reason:{kind:'stop'}};}
 }
 await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['deepseek-official'],new BrowserVision());
 let polls=0,qqPolls=0;

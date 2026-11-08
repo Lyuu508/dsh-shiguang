@@ -23,7 +23,7 @@ import {mergeSettings} from '../client/settings-merge.js';
 const tick=()=>new Promise<void>(r=>setImmediate(r)),wait=async(check:()=>boolean,ms=5000)=>{const end=Date.now()+ms;while(!check()){if(Date.now()>end)throw Error('fixture timeout');await new Promise(r=>setTimeout(r,5));}};
 class Model extends LlmAdapter{
  requests:GenerateOptions[]=[];constructor(readonly script:(i:number,o:GenerateOptions)=>unknown=()=> '我在呢。'){super();}
- async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as const};}
+ async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as const,reasoning:{efforts:[{id:'off' as any,name:'关闭'}]}};}
  async *stream(o:GenerateOptions):AsyncIterable<StreamChunk>{this.requests.push(o);const result=this.script(this.requests.length-1,o),text=typeof result==='string'?result:JSON.stringify(result);yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'usage',usage:{inputTokens:100,outputTokens:30,totalTokens:130}};yield {type:'finish',reason:{kind:'stop'}};}
 }
 async function harness(f:ReturnType<typeof fixture>,model:Model){const ctx=new Context();await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['deepseek-official'],model);return ctx;}

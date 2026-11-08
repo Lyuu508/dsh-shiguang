@@ -27,7 +27,7 @@ const textChunks=(text:string):StreamChunk[]=>[{type:'block-start',index:0,block
 const toolChunks=(name:string,args:object):StreamChunk[]=>[{type:'block-start',index:0,blockType:'tool-call'},{type:'block-end',index:0,block:{type:'tool-call',id:brandString<ToolCallId>('call-'+name),name,arguments:JSON.stringify(args)}},{type:'finish',reason:{kind:'tool-calls'}}];
 class Model extends LlmAdapter{
  requests:GenerateOptions[]=[];constructor(readonly script:(i:number,o:GenerateOptions)=>string|object|StreamChunk[]){super();}
- async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as const};}
+ async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as const,reasoning:{efforts:[{id:'off' as any,name:'关闭'}]}};}
  async *stream(o:GenerateOptions):AsyncIterable<StreamChunk>{this.requests.push(o);const result=this.script(this.requests.length-1,o);for(const c of Array.isArray(result)?result:textChunks(typeof result==='string'?result:JSON.stringify(result)))yield c;}
 }
 async function harness(model:Model,dir:string){const ctx=new Context();await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(dir,'attachments')});ctx.llm.registerAdapter(['deepseek-official'],model);return ctx;}
