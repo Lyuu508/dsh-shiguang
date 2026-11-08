@@ -24,6 +24,6 @@ test('文本导入历史不挤入今天，跨日再次导入会去重；无效�
  const f=fixture();let now=Date.now();const m=new MemoryStore(':memory:','a','UTC',f.settings.memory,()=>now);try{
   assert.equal(importMemory(m,'owner','all','喜欢旅行\n\n常弹吉他','text').added,2);assert.equal(m.fastContext('owner','p').todayNotes,'');now+=86400000;assert.equal(importMemory(m,'owner','all','喜欢旅行\n\n常弹吉他','text').skipped,2);
   const valid={time:now,platform:'qq',thread:'p',kind:'note',body:'本批有效内容'};assert.throws(()=>importMemory(m,'owner','all',JSON.stringify({format:'shiguang-memory',version:1,memories:[valid,{...valid,body:42}]}),'json'),/整批未导入/);assert.equal(m.overview().total,2);
-  assert.throws(()=>importMemory(m,'owner','today','{"Cookie":"secret"}','json'),/拾光导出/);
+  assert.throws(()=>importMemory(m,'owner','today','{"Cookie":"secret"}','json'),/拾光记忆/);
  }finally{m.close();f.cleanup();}
 });

@@ -7,5 +7,6 @@ export function fixture() {
   const value = JSON.parse(readFileSync(new URL('../config.example.json', import.meta.url), 'utf8'));
   value.dataDir = dir;
   const settings = parseSettings(value, join(dir, 'config.json'));
+  Object.assign(settings.qq.chat,{enabled:false,replyChance:100,splitEnabled:false});
   return { dir, settings, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }

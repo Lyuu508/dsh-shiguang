@@ -18,7 +18,7 @@ test('全轮累计、缓存不重复、推理不重复、缺失标记、跨日�
  const f=fixture(),path=join(f.dir,'usage.sqlite');let store=new MemoryStore(path,'a','Asia/Shanghai',f.settings.memory);
  try{
   recordUsage(store,origin,events());recordUsage(store,origin,events());
-  const r=dailyUsage(store,'2026-11-08');assert.deepEqual({...r.total},{calls:3,missing:1,input:300,cacheRead:400,cacheWrite:10,output:80,reasoning:20,total:790});
+  const r=dailyUsage(store,'2026-11-08');assert.deepEqual({...r.total},{calls:3,missing:1,input:300,cacheRead:400,cacheWrite:10,output:80,reasoning:20,total:790,exactCalls:1,exactTotal:560,partialCalls:2,unclassified:0,mismatches:0,pending:0});
   assert.equal(r.categories[0]?.category,'qq');assert.equal(dailyUsage(store,'2026-11-07').total.calls,0);
   store.close();store=new MemoryStore(path,'a','Asia/Shanghai',f.settings.memory);recordUsage(store,origin,events());assert.equal(dailyUsage(store,'2026-11-08').total.calls,3);
   assert.throws(()=>dailyUsage(store,'2026-02-30'),/日期/);

@@ -35,7 +35,23 @@
       "鱼"
     ],
     "keywordWakeChance": 35,
-    "keywordCooldownSeconds": 60
+    "keywordCooldownSeconds": 60,
+    "chat": {
+      "enabled": true,
+      "replyChance": 85,
+      "delayMinSeconds": 2,
+      "delayMaxSeconds": 6,
+      "mergeWindowSeconds": 2,
+      "maxWaitSeconds": 20,
+      "maxMessages": 20,
+      "splitEnabled": true,
+      "maxParts": 3,
+      "partChars": 120,
+      "partGapMinSeconds": 1,
+      "partGapMaxSeconds": 3,
+      "naturalStyle": true,
+      "styleNotes": ""
+    }
   },
   "bilibili": {
     "enabled": false,

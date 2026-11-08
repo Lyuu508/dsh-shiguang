@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-connection';
 import type { ShiguangRuntime } from './runtime.js';
-import { dailyUsage } from './usage.js';
+import { dailyUsage,saveProviderBill } from './usage.js';
 import {exportMemoryPage,importMemory} from './memory-transfer.js';
 
 function object(value: unknown): Record<string,unknown> {
@@ -51,9 +51,12 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'memory-export':return exportMemoryPage(runtime.memory,text(args.scope,'owner'),args.range==='today'?'today':'all',typeof args.after==='number'?args.after:0,typeof args.snapshot==='number'?args.snapshot:undefined,text(args.day,runtime.memory.today()));
     case 'memory-import': {
       if(typeof args.document!=='string')throw new Error('请选择记忆文件');
-      return runtime.enqueue(async()=>importMemory(runtime.memory,text(args.scope,'owner'),args.target==='today'?'today':'all',args.document as string,args.fileType==='text'?'text':'json'));
+      return runtime.enqueue(async()=>importMemory(runtime.memory,text(args.scope,'owner'),args.target==='today'?'today':'all',args.document as string,args.fileType==='text'?'text':args.fileType==='jsonl'?'jsonl':'json'));
     }
-    case 'usage': return dailyUsage(runtime.memory,text(args.day,runtime.memory.today()));
+    case 'usage-recover':return runtime.recoverUsage(text(args.day,runtime.memory.today()));
+    case 'usage-recover-status':return {...runtime.usageRecovery};
+    case 'usage': return dailyUsage(runtime.memory,text(args.day,runtime.memory.today()),args.scope==='dsh'?'dsh':'plugin');
+    case 'usage-bill-save':return saveProviderBill(runtime.memory,text(args.day),{label:text(args.label),totalTokens:Number(args.totalTokens),calls:args.calls===undefined?undefined:Number(args.calls),amount:text(args.amount)});
     case 'media-check': return runtime.mediaTools.check();
     case 'media-tools-status':return runtime.mediaTools.view();
     case 'media-tools-install':return runtime.mediaTools.start();

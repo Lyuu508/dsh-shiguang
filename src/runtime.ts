@@ -1,3 +1,7 @@
+import {recoverUsage} from './usage-recovery.js';
+import {UsageObserver} from './usage-observer.js';
+import {QQConversation,splitQQReply,cancellablePause,type QQBatch} from './qq-conversation.js';
+import {timeLabel} from './memory.js';
 import type { Context } from '@deepseek-ai/cordis';
 import { join, resolve } from 'node:path';
 import { readFileSync, writeFileSync, renameSync, existsSync, copyFileSync } from 'node:fs';
@@ -27,7 +31,8 @@ import {setState,stateValue} from './initiative.js';
 
 export class ShiguangRuntime {
   readonly file: string;
-  readonly updates: UpdateManager;
+  readonly updates: UpdateManager;readonly usageObserver:UsageObserver;
+  usageRecovery={busy:false,checked:0,restored:0,unavailable:0,message:''};private recoveryAbort?:AbortController;
   readonly roles:RoleManager;readonly mediaTools:MediaToolsManager;
   private retentionTimer?:NodeJS.Timeout;private connectionTimer?:NodeJS.Timeout;private syncBusy=false;private setupJob?:Promise<void>;
   qqSetup={phase:'idle',message:'先填主人 QQ 号，再自动定位并启动',busy:false};
@@ -39,9 +44,11 @@ export class ShiguangRuntime {
   biliVision!:BiliVision;
   biliSocial!:BiliSocial;
   proactive!:Proactive;
+  qqConversation!:QQConversation;
   bodyClock!:BodyClock;emoji!:EmojiCollector;
   watchJob:{id:string;status:'idle'|'running'|'done'|'error';text:string}={id:'',status:'idle',text:''};
   private watchAbort?:AbortController;
+  private qqSends=new Set<Promise<void>>();
   private stopped = false; private queued = 0; private tail = Promise.resolve();
   interestJob:{status:'idle'|'running'|'done'|'error';tags:{tag:string;count:number}[];message:string}={status:'idle',tags:[],message:''};
   private interestAbort?:AbortController;
@@ -49,7 +56,7 @@ export class ShiguangRuntime {
   private login?: { ticket: string; key: string; expires: number };
   private lastError = '';
   constructor(readonly ctx: Context, file = '', readonly fetcher: typeof fetch = fetch,readonly services:{snowHost?:SnowLumaHost;locator?:LocatorHost;mediaHost?:MediaToolsHost;localFetch?:typeof fetch}={}) {
-    this.file = ensureSettings(file);const settings=loadSettings(this.file);this.roles=new RoleManager(settings.dataDir);this.roles.remember(settings);this.mediaTools=new MediaToolsManager(settings.dataDir,()=>this.settings,paths=>this.applyMediaPaths(paths),fetcher,this.services.mediaHost,()=>this.locateMediaOnly());this.open(settings);
+    this.file = ensureSettings(file);const settings=loadSettings(this.file);this.roles=new RoleManager(settings.dataDir);this.roles.remember(settings);this.mediaTools=new MediaToolsManager(settings.dataDir,()=>this.settings,paths=>this.applyMediaPaths(paths),fetcher,this.services.mediaHost,()=>this.locateMediaOnly());this.open(settings);this.usageObserver=new UsageObserver(ctx,join(settings.dataDir,'memory.sqlite'),()=>this.settings);
     this.updates = new UpdateManager(ctx,this.settings.dataDir,fetcher,()=>this.settings.updates);
     this.snowluma=new SnowLumaManager(this.settings.dataDir,()=>this.settings,this.services.snowHost,this.services.localFetch);
     this.snowluma.configure();this.connectionTimer=setInterval(()=>void this.syncQQConnection().catch(()=>{}),3000);this.connectionTimer.unref();
@@ -72,49 +79,30 @@ export class ShiguangRuntime {
     this.driver = new ChatDriver(this.ctx,settings,this.memory,this.bili,this.biliVision);
     this.media = new MediaReader(this.ctx,settings,this.memory,this.fetcher,()=>this.mediaTools.ensure());
     this.emoji=new EmojiCollector(this.ctx,settings,this.memory,this.media,()=>this.bodyClock.canAct());
-    this.qq = new OneBotClient(settings.qq, message => {
-      void this.enqueue(async () => {
-        const q=this.settings.qq,owner=!message.groupId && message.userId===q.ownerQQ;
-        if(message.groupId?!q.allowedGroups.includes(message.groupId):!owner&&!q.allowedPrivate.includes(message.userId))return;
-        const scope=owner?'owner':message.thread;
-        if(this.memory.seen(message.id))return;
-        if(owner)setState(this.memory,'qq:last-owner',this.memory.clock());
-        if(message.keyword&&!message.mentioned){const last=stateValue<number>(this.memory,'keyword:'+message.thread,0),accepted=q.keywordWakeEnabled&&this.memory.clock()-last>=q.keywordCooldownSeconds*1000&&Math.random()*100<q.keywordWakeChance;message.keywordAwakened=accepted;if(q.groupMentionOnly)message.replyAllowed=accepted;}
-        if(!q.enabled||message.replyAllowed===false||!this.bodyClock.receive(message)){
-          this.memory.append(scope,'qq',message.thread,'user',message.text||(message.media?.length?'收到 QQ 媒体':'收到消息'),message.id,this.memory.clock(),'',{turnId:message.id,speakerId:message.userId,speakerName:message.speakerName});
-          if(q.enabled&&message.replyAllowed!==false)this.memory.append(scope,'qq',message.thread,'activity','睡眠期间收到消息，未被叫醒，本次没有回复',undefined,this.memory.clock(),'sleep');
-          if(q.enabled&&message.replyAllowed===false&&this.bodyClock.canAct())await this.emoji.consider({...message,scope},this.qq).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));return;
-        }
-        if(message.keywordAwakened)setState(this.memory,'keyword:'+message.thread,this.memory.clock());
-        this.media.lastObservation=undefined;
-        let media=message.media||[];
-        const mediaQuote=!!message.replyId&&wantsMedia(message.text,'ask');
-        if(media.length||mediaQuote){
-          const previous=this.memory.fastContext(scope,message.thread);
-          if(!this.memory.append(scope,'qq',message.thread,'user',`${message.text||'发送媒体'} [QQ 媒体请求]`,message.id,this.memory.clock(),'',{turnId:message.id,speakerId:message.userId,speakerName:message.speakerName}))return;
-          // A standalone face can be collected independently of the chat vision toggle.
-          if(this.settings.emoji.enabled&&!this.settings.media.enabled&&!message.text&&media.length&&media.every(m=>m.type==='image'&&m.emoji)){
-            await this.emoji.consider({...message,scope},this.qq).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));return;
-          }
-          let reply:string;
-          try{
-            if(mediaQuote&&!media.length){
-              if(!this.settings.media.enabled)reply='视频和动图识别还没开启，可先在 DSH 设置 → 拾光 → QQ 连接 → QQ 识图中打开。';
-              else{media=await this.qq.quotedMedia(message);reply=media.length?await this.media.reply({...message,owner,scope},this.qq,media,previous):'引用消息中没有可读取的视频、GIF 或图片，请直接发送媒体或引用包含媒体的消息。';}
-            }else reply=await this.media.reply({...message,owner,scope},this.qq,media,previous);
-          }catch(error){this.log(error instanceof Error?error.message:'媒体读取失败');reply=error instanceof MediaError?error.message:'媒体识别未完成，请在拾光面板检查模型、FFmpeg 和下载状态。';}
-          await this.sendReply(message,reply);this.memory.recordReply(scope,'qq',message.thread,reply,message.id,message.selfId,this.settings.displayName);await this.emoji.consider({...message,scope},this.qq,this.media.lastObservation).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));this.media.lastObservation=undefined;return;
-        }
-        const reply = await this.driver.reply({ scope, thread: message.thread, owner, platform: 'qq', text: message.text, externalKey: message.id,turnId:message.id,speakerId:message.userId,speakerName:message.speakerName });
-        if (!reply) return;
-        await this.sendReply(message,reply);
-        this.memory.recordReply(scope,'qq',message.thread,reply,message.id,message.selfId,this.settings.displayName);
-      }).catch((_error) => { /* enqueue reports the failure once. */ });
-    },this.log,() => this.token());
+    const conversation:QQConversation=this.qqConversation=new QQConversation(settings.qq.chat,(batch,signal)=>this.processQQBatch(batch,signal,conversation),this.log);
+    this.qq=new OneBotClient(settings.qq,message=>{
+      if(this.stopped||this.qqConversation!==conversation)return;
+      const q=settings.qq,owner=!message.groupId&&message.userId===q.ownerQQ;
+      if(message.groupId?!q.allowedGroups.includes(message.groupId):!owner&&!q.allowedPrivate.includes(message.userId))return;
+      const scope=owner?'owner':message.thread;message.scope=scope;message.owner=owner;
+      const now=this.memory.clock();message.receivedAt=now;
+      const id=this.memory.append(scope,'qq',message.thread,'user',message.text||(message.media?.length?'[发送了 QQ 图片或视频]':'[收到消息]'),message.id,now,'',{turnId:message.id,speakerId:message.userId,speakerName:message.speakerName});
+      if(!id)return;message.memoryId=id;if(owner)setState(this.memory,'qq:last-owner',now);
+      if(message.keyword&&!message.mentioned){const last=stateValue<number>(this.memory,'keyword:'+message.thread,0),accepted=q.keywordWakeEnabled&&(!last||now-last>=q.keywordCooldownSeconds*1000)&&Math.random()*100<q.keywordWakeChance;message.keywordAwakened=accepted;if(q.groupMentionOnly)message.replyAllowed=accepted;}
+      const selected=conversation.offer(message,q.enabled&&message.replyAllowed!==false,()=>{
+        if(!this.bodyClock.receive(message)){this.memory.append(scope,'qq',message.thread,'activity','睡眠期间收到消息，未被叫醒，本次没有回复',undefined,now,'sleep');return false;}
+        if(message.keywordAwakened)setState(this.memory,'keyword:'+message.thread,now);return true;
+      });
+      if(!selected&&q.enabled&&this.bodyClock.canAct()&&message.media?.some(m=>m.emoji))void this.enqueue(async()=>{if(this.qqConversation===conversation)await this.emoji.consider(message,this.qq);}).catch(()=>{});
+    },this.log,()=>this.token());
     this.qq.start();
     this.autonomy=new Autonomy(this.ctx,settings,this.memory,this.bili,run=>this.enqueue(run),this.log,this.biliVision,()=>this.bodyClock.canAct());this.autonomy.start();
     this.biliSocial=new BiliSocial(settings,this.memory,this.bili,this.driver,run=>this.enqueue(run),this.log,()=>this.bodyClock.canAct());this.biliSocial.start();
     this.proactive=new Proactive(this.ctx,settings,this.memory,this.qq,run=>this.enqueue(run),this.log,Math.random,()=>this.bodyClock.canAct());this.proactive.start();
+  }
+  recoverUsage(day:string){
+    if(this.usageRecovery.busy)return {...this.usageRecovery};const memory=this.memory,abort=this.recoveryAbort=new AbortController();this.usageRecovery={busy:true,checked:0,restored:0,unavailable:0,message:'只读核对已有拾光会话中的用量回执，不调用模型'};
+    void recoverUsage(this.ctx,memory,day,abort.signal,fn=>this.enqueue(async()=>{abort.signal.throwIfAborted();if(this.memory!==memory)throw new Error('角色已变化，停止补齐');fn();}),value=>{this.usageRecovery={...this.usageRecovery,...value};}).then(result=>{this.usageRecovery={busy:false,...result,message:`已核对 ${result.checked} 个旧会话，补齐 ${result.restored} 次完整用量，${result.unavailable} 个会话不可读取；没有原始回执的部分不会猜测。`};}).catch(error=>{this.usageRecovery={...this.usageRecovery,busy:false,message:abort.signal.aborted?'已停止补齐旧用量':error instanceof Error?error.message:'旧用量补齐未完成'};});return {...this.usageRecovery};
   }
   startWatch(video:string,question:string,part:number,depth:'shallow'|'deep'){
     if(this.watchJob.status==='running')return {...this.watchJob};const id=randomUUID(),abort=this.watchAbort=new AbortController();this.watchJob={id,status:'running',text:'正在后台读取视频，可以离开此页面'};
@@ -126,17 +114,38 @@ export class ShiguangRuntime {
     if(!secret.trim()||secret.length>4096||/[\s\0]/.test(secret))throw new Error('语音密钥格式无效，请填写语音服务的 Access Token / API Key');
     this.atomicWrite(join(this.settings.dataDir,'voice.access-key'),secret.trim());return this.voice.status();
   }
-  private async sendReply(message:QQMessage,reply:string):Promise<void>{
-    const v=this.settings.voice;
-    if(!v.enabled||message.groupId&&!v.allowGroups||!wantsVoice(message.text,v.mode)){await this.qq.send(message,reply);return;}
-    if(v.sendText)await this.qq.send(message,reply);
-    let audio;
-    try{audio=await this.voice.synthesize(reply,message.scope);}catch(error){
-      this.log(error instanceof Error?error.message:'语音合成未完成');
-      if(!v.sendText)await this.qq.send(message,reply+'\n（语音生成未完成，本次使用文字。）');return;
-    }
-    // Once a platform send starts, an unknown receipt must not cause a resend.
-    await this.qq.sendVoice(message,audio.bytes);
+  private async processQQBatch(batch:QQBatch,signal:AbortSignal,conversation:QQConversation){
+    const plan=await this.enqueue(async()=>{
+      signal.throwIfAborted();if(this.qqConversation!==conversation)return;
+      if(!this.settings.qq.enabled||!this.bodyClock.canAct())return;
+      const scope=batch.target.scope;
+      this.memory.linkConversation(scope,batch.thread,batch.messages.flatMap(m=>m.memoryId?[m.memoryId]:[]),batch.id);
+      const text=(batch.messages.length===1?batch.messages[0]!.text:batch.messages.map(m=>`[${timeLabel(m.receivedAt??this.memory.clock(),this.settings.timezone)}] ${m.speakerName||m.userId}：${m.text||(m.media?.length?'[发送了媒体]':'[消息]')}`).join('\n')).slice(-10000);
+      const message={...batch.target,id:batch.id,text,media:batch.messages.flatMap(m=>m.media||[]).slice(0,4),replyId:batch.messages.find(m=>m.replyId)?.replyId};
+      this.media.lastObservation=undefined;
+      const previous=this.memory.fastContext(scope,batch.thread,message.owner?['owner']:undefined,[batch.id]),mediaQuote=!!message.replyId&&wantsMedia(message.text,'ask');let media=message.media||[];
+      let reply:string|null;
+      if(media.length||mediaQuote){
+        if(this.settings.emoji.enabled&&!this.settings.media.enabled&&!text&&media.length&&media.every(m=>m.type==='image'&&m.emoji)){await this.emoji.consider(message,this.qq);return;}
+        try{if(mediaQuote&&!media.length){if(!this.settings.media.enabled)reply='我这边还没打开看视频，暂时看不到这段的内容。';else{media=await this.qq.quotedMedia(message);reply=media.length?await this.media.reply(message,this.qq,media,previous):'这条引用里没找到图片或视频，可以直接发给我看看。';}}else reply=await this.media.reply(message,this.qq,media,previous);}
+        catch(error){this.log(error instanceof Error?error.message:'媒体读取失败');reply=error instanceof MediaError?error.message:'这次没能看清，等会儿再试一下吧。';}
+        await this.emoji.consider(message,this.qq,this.media.lastObservation).catch(e=>this.log(e instanceof Error?e.message:'挑选表情未完成'));this.media.lastObservation=undefined;
+      }else reply=await this.driver.reply({scope,thread:batch.thread,owner:message.owner,platform:'qq',text,archived:true,turnId:batch.id,speakerId:message.userId,speakerName:message.speakerName});
+      signal.throwIfAborted();if(!reply)return;const voiceRequested=this.settings.voice.enabled&&(!message.groupId||this.settings.voice.allowGroups)&&wantsVoice(message.text,this.settings.voice.mode);let audio:Awaited<ReturnType<VoiceService['synthesize']>>|undefined;if(voiceRequested){try{audio=await this.voice.synthesize(reply,message.scope);}catch(error){signal.throwIfAborted();this.log(error instanceof Error?error.message:'语音生成未完成');}}signal.throwIfAborted();return {message,reply,scope,voiceRequested,audio};
+    });
+    if(!plan)return;signal.throwIfAborted();if(this.qqConversation!==conversation)return;
+    const send=this.sendQQReply(plan.message,plan.reply,plan.scope,batch.id,signal,conversation,plan.voiceRequested,plan.audio?.bytes);this.qqSends.add(send);try{await send;}finally{this.qqSends.delete(send);}
+  }
+  private async sendQQReply(message:QQMessage,reply:string,scope:string,turnId:string,signal:AbortSignal,conversation:QQConversation,voiceRequested:boolean,audio?:Buffer){
+    const settings=this.settings,qq=this.qq,memory=this.memory,v=settings.voice;
+    const guard=()=>{signal.throwIfAborted();if(this.qqConversation!==conversation||!this.settings.qq.enabled||!this.bodyClock.canAct())throw new Error('设置已变化，本轮不再发送');};
+    const sendText=async()=>{const parts=splitQQReply(reply,settings.qq.chat);for(let index=0;index<parts.length;index++){
+      guard();if(index){const c=settings.qq.chat;await cancellablePause((c.partGapMinSeconds+(c.partGapMaxSeconds-c.partGapMinSeconds)*Math.random())*1000,signal);guard();}
+      await qq.send(message,parts[index]!);if(this.qqConversation===conversation)memory.recordReply(scope,'qq',message.thread,parts[index]!,turnId,message.selfId,settings.displayName);guard();
+    }};
+    guard();if(!voiceRequested||v.sendText||!audio)await sendText();
+    if(audio){guard();await qq.sendVoice(message,audio);if(this.qqConversation===conversation&&!v.sendText)memory.recordReply(scope,'qq',message.thread,reply,turnId,message.selfId,settings.displayName);guard();}
+
   }
   enqueue<T>(run: () => Promise<T>): Promise<T> {
     if (this.stopped) return Promise.reject(new Error('拾光正在停止'));
@@ -153,7 +162,7 @@ export class ShiguangRuntime {
     return {roles:this.roles.list(this.settings.roleId), settings: { ...this.settings, timezone: String(raw.timezone), dataDir: String(raw.dataDir) }, revision: this.revision(), tokenConfigured: !!this.token(), tokenFromEnvironment: !panelToken && !!(this.settings.qq.tokenEnv && process.env[this.settings.qq.tokenEnv]) };
   }
   status() {
-    return {revision:this.revision(),version:VERSION,roleId:this.settings.roleId, displayName: this.settings.displayName,clock:this.bodyClock.status(),mediaTools:this.mediaTools.view(), qq:{...this.qq.status(),repliesEnabled:this.settings.qq.enabled}, snowluma:this.snowluma.view(),biliSocial:this.biliSocial.status(),proactive:this.proactive.status(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin(),ownerCredentialSaved:this.ownerBili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, lastMessage: this.lastError };
+    return {revision:this.revision(),version:VERSION,roleId:this.settings.roleId, displayName: this.settings.displayName,clock:this.bodyClock.status(),mediaTools:this.mediaTools.view(), qqConversation:this.qqConversation.status(),qq:{...this.qq.status(),repliesEnabled:this.settings.qq.enabled}, snowluma:this.snowluma.view(),biliSocial:this.biliSocial.status(),proactive:this.proactive.status(),voice:this.voice.status(), bilibili: { enabled: this.settings.bilibili.enabled, credentialSaved: this.bili.hasLogin(),ownerCredentialSaved:this.ownerBili.hasLogin() }, memory: this.memory.overview(), autonomy:this.autonomy.status(),day: this.memory.today(), timezone: this.settings.timezone, queued: this.queued, usageError:this.usageObserver.lastError,lastMessage: this.lastError };
   }
   async save(value: unknown, expected: string, newToken = '', allowRole=false) {
     return this.enqueue(async () => {
@@ -176,7 +185,7 @@ export class ShiguangRuntime {
         if (newToken.trim()) this.atomicWrite(secretPath,previousToken || '');
         throw error;
       }
-      this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.proactive.stop();this.autonomy.stop();this.media.stop();this.biliVision.stop();this.voice.stop(); await this.driver.stop(); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
+      this.recoveryAbort?.abort();this.qqConversation.stop();this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.proactive.stop();this.autonomy.stop();this.media.stop();this.biliVision.stop();this.voice.stop(); await this.driver.stop();await Promise.allSettled([...this.qqSends]); this.qq.stop(); this.memory.close(); this.open(next); this.lastError = '';
       this.roles.remember(this.settings);this.snowluma.configure();
       return this.view();
     });
@@ -218,12 +227,12 @@ export class ShiguangRuntime {
   }
   logoutBili(): void { this.login=undefined; this.bili.logout(); }
   async stop(): Promise<void> {
-    this.interestAbort?.abort();this.mediaTools.stop();this.stopped = true;if(this.connectionTimer)clearInterval(this.connectionTimer);await this.setupJob;if(this.retentionTimer)clearInterval(this.retentionTimer);
-    this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.proactive.stop();this.watchAbort?.abort();
+    this.recoveryAbort?.abort();this.interestAbort?.abort();this.mediaTools.stop();this.stopped = true;if(this.connectionTimer)clearInterval(this.connectionTimer);await this.setupJob;if(this.retentionTimer)clearInterval(this.retentionTimer);
+    this.qqConversation.stop();this.bodyClock.stop();this.emoji.stop();this.biliSocial.stop();this.proactive.stop();this.watchAbort?.abort();
     this.voice.stop();this.biliVision.stop();
     await this.snowluma.stop();
     this.autonomy.stop();
     this.media.stop();
-    try { await this.driver.stop(); await this.tail; } finally { this.qq.stop(); this.memory.close(); this.login=undefined; }
+    try { await this.driver.stop(); await this.tail;await Promise.allSettled([...this.qqSends]); } finally { this.qq.stop();this.usageObserver.stop(); this.memory.close(); this.login=undefined; }
   }
 }

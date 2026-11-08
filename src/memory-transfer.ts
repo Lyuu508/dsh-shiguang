@@ -1,3 +1,4 @@
+import {parseMemoryDocument} from './memory-format.js';
 import { createHash } from 'node:crypto';
 import { dayKey, type MemoryStore } from './memory.js';
 
@@ -10,16 +11,14 @@ export function exportMemoryPage(memory:MemoryStore,scope:string,range:'today'|'
   const page=rows.slice(0,50);
   return {format:MEMORY_FORMAT,version:1,role:memory.roleId,scope,range,day,timezone:memory.timezone,snapshot:ceiling,rows:page.map(r=>({...memory.portableMeta(String(r.id)),speakerId:String(r.speaker_id),speakerName:String(r.speaker_name),turnId:String(r.turn_id),pairInferred:!!r.pair_inferred,id:String(r.id),scope:String(r.scope),category:String(r.category),day:String(r.day),time:Number(r.time),platform:String(r.platform),thread:String(r.thread),kind:String(r.kind),body:String(r.body)})),nextCursor:rows.length>50?Number(page.at(-1)!.rowid):null};
 }
-export function importMemory(memory:MemoryStore,scope:string,target:'today'|'all',document:string,fileType:'json'|'text'){
+export function importMemory(memory:MemoryStore,scope:string,target:'today'|'all',document:string,fileType:'json'|'jsonl'|'text'){
   if(Buffer.byteLength(document,'utf8')>2*1024*1024)throw new Error('记忆文件最多 2 MB，请分批导入');
   const now=memory.clock();let records:PortableMemory[];
   if(fileType==='text'){
     const parts=document.trim().split(/\n\s*\n/).flatMap(s=>{const out:string[]=[];for(let i=0;i<s.length;i+=4000)out.push(s.slice(i,i+4000));return out;});
     records=parts.map(body=>({time:target==='today'?now:now-36*3600000,platform:'shared',thread:scope,kind:'note',body}));
   }else{
-    let value:unknown;try{value=JSON.parse(document);}catch{throw new Error('记忆 JSON 格式无效');}
-    if(!value||typeof value!=='object'||(value as any).format!==MEMORY_FORMAT||(value as any).version!==1||!Array.isArray((value as any).memories))throw new Error('请选择拾光导出的记忆 JSON，或使用 TXT / Markdown 文件');
-    records=(value as {memories:PortableMemory[]}).memories;
+    const parsed=parseMemoryDocument(document,fileType,now);if(parsed.sourceFormat==='memory-card'&&scope!=='*')throw new Error('外部记忆卡请使用全部本机范围导入，以保留私聊和群聊权限');records=parsed.memories;
   }
   if(!records.length||records.length>5000)throw new Error('每次导入 1–5000 条记忆');
   const normalized=records.map(row=>{

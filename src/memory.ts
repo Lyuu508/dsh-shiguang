@@ -46,8 +46,8 @@ export class MemoryStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-    if (Number(version) > 10) throw new Error('记忆数据库来自更新版本，请升级插件');
-    if ([1,2,3,4,5,6,7,8,9].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
+    if (Number(version) > 11) throw new Error('记忆数据库来自更新版本，请升级插件');
+    if ([1,2,3,4,5,6,7,8,9,10].includes(Number(version)) && path !== ':memory:' && !existsSync(`${path}.v${version}-backup`)) this.db.prepare('VACUUM INTO ?').run(`${path}.v${version}-backup`);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, role TEXT NOT NULL, scope TEXT NOT NULL,
@@ -115,6 +115,13 @@ export class MemoryStore {
           UPDATE memories SET turn_id=id WHERE turn_id=''; PRAGMA user_version=10; COMMIT;`);
       }catch(error){this.db.exec('ROLLBACK');throw error;}
     }
+    const usageColumns=new Set(this.db.prepare('PRAGMA table_info(llm_usage)').all().map(c=>String(c.name)));
+    for(const [name,type] of [['full_total','INTEGER'],['total_source',"TEXT NOT NULL DEFAULT 'legacy'"],['unclassified','INTEGER NOT NULL DEFAULT 0'],['mismatch','INTEGER NOT NULL DEFAULT 0'],['raw_usage',"TEXT NOT NULL DEFAULT ''"]])if(!usageColumns.has(name!))this.db.exec(`ALTER TABLE llm_usage ADD COLUMN ${name} ${type}`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS llm_wire_usage(id TEXT PRIMARY KEY,session TEXT NOT NULL,role TEXT NOT NULL,day TEXT NOT NULL,time INTEGER NOT NULL,provider TEXT NOT NULL,model TEXT NOT NULL,status TEXT NOT NULL,missing INTEGER NOT NULL DEFAULT 1,input INTEGER NOT NULL DEFAULT 0,cache_read INTEGER NOT NULL DEFAULT 0,cache_write INTEGER NOT NULL DEFAULT 0,output INTEGER NOT NULL DEFAULT 0,reasoning INTEGER NOT NULL DEFAULT 0,full_total INTEGER,total_source TEXT NOT NULL DEFAULT 'missing',unclassified INTEGER NOT NULL DEFAULT 0,mismatch INTEGER NOT NULL DEFAULT 0,raw_usage TEXT NOT NULL DEFAULT '');
+      CREATE INDEX IF NOT EXISTS llm_wire_day ON llm_wire_usage(day,time,id);
+      CREATE INDEX IF NOT EXISTS llm_usage_session ON llm_usage(session);
+      CREATE TABLE IF NOT EXISTS provider_bills(day TEXT PRIMARY KEY,label TEXT NOT NULL,total_tokens INTEGER NOT NULL,calls INTEGER,amount TEXT NOT NULL,recorded_at INTEGER NOT NULL);
+      PRAGMA user_version=11;`);
     this.db.exec("CREATE INDEX IF NOT EXISTS memories_recent ON memories(role,scope,day,time DESC,rowid DESC) WHERE kind IN ('user','assistant')");
     this.db.exec('CREATE INDEX IF NOT EXISTS memories_turn ON memories(role,scope,thread,turn_id,time,rowid); CREATE INDEX IF NOT EXISTS memories_pair ON memories(role,scope,thread,kind,rowid DESC);');
 
@@ -134,16 +141,17 @@ export class MemoryStore {
       this.db.exec('RELEASE memory_append'); return id;
     } catch (error) { this.db.exec('ROLLBACK TO memory_append; RELEASE memory_append'); throw error; }
   }
+  linkConversation(scope:string,thread:string,ids:string[],turnId:string){this.db.prepare("UPDATE memories SET turn_id=? WHERE role=? AND scope=? AND thread=? AND kind='user' AND id IN (SELECT value FROM json_each(?))").run(turnId,this.roleId,scope,thread,JSON.stringify(ids));}
   recordReply(scope:string,platform:string,thread:string,body:string,turnId:string,speakerId='',speakerName='伙伴',externalKey?:string){return this.append(scope,platform,thread,'assistant',body,externalKey,this.clock(),'',{turnId,speakerId,speakerName});}
   private scopes(scope:string,allowed?:string[]){return [...new Set(allowed?.length?allowed:[scope])];}
   private speaker(row:Record<string,any>){return row.kind==='assistant'?(row.speaker_name||'伙伴'):(row.speaker_name||row.speaker_id||(/^qq:private:/.test(row.thread)?String(row.thread).slice(11):'对方（旧记录未保存姓名）'));}
-  fastContext(scope: string, thread: string,conversationScopes?:string[]): { day: string; todayNotes: string; recent: string } {
+  fastContext(scope: string, thread: string,conversationScopes?:string[],excludeTurns:string[]=[]): { day: string; todayNotes: string; recent: string } {
     const day = this.today();
     const notes = this.db.prepare("SELECT body,platform,time FROM memories WHERE role=? AND scope=? AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) AND day=? AND kind IN ('note','experience') ORDER BY time DESC,rowid DESC LIMIT 80")
       .all(this.roleId,scope,day) as {body:string;platform:string;time:number}[];
     const shared=!!conversationScopes?.length;
-    const recent=this.db.prepare(`SELECT kind,body,time,platform,thread,speaker_id,speaker_name FROM memories INDEXED BY ${shared?'memories_recent':'memories_thread'} WHERE role=? AND scope IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) AND day=? ${shared?'':'AND thread=?'} AND kind IN ('user','assistant') ORDER BY time DESC,rowid DESC LIMIT ?`)
-      .all(this.roleId,JSON.stringify(this.scopes(scope,conversationScopes)),day,...(shared?[]:[thread]),this.limits.recentMessages);
+    const recent=this.db.prepare(`SELECT kind,body,time,platform,thread,speaker_id,speaker_name FROM memories INDEXED BY ${shared?'memories_recent':'memories_thread'} WHERE role=? AND scope IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) AND day=? ${shared?'':'AND thread=?'} AND turn_id NOT IN (SELECT value FROM json_each(?)) AND kind IN ('user','assistant') ORDER BY time DESC,rowid DESC LIMIT ?`)
+      .all(this.roleId,JSON.stringify(this.scopes(scope,conversationScopes)),day,...(shared?[]:[thread]),JSON.stringify(excludeTurns),this.limits.recentMessages);
     return {day,todayNotes:budgetLines(notes.map(n=>`[${timeLabel(n.time,this.timezone)}] [${n.platform}] ${n.body}`),this.limits.todayMaxChars),recent:budgetLines(recent.map(r=>`[${timeLabel(Number(r.time),this.timezone)}] [${r.platform} ${r.thread}] ${this.speaker(r)}${r.speaker_id?'('+r.speaker_id+')':''}：${r.body}`),this.limits.recentMaxChars)};
   }
   search(scope: string, query: string, range: 'history' | 'today' | 'all' = 'history', day?: string,allowedScopes?:string[]): SearchHit[] {
@@ -160,8 +168,12 @@ export class MemoryStore {
     const rows = this.db.prepare(`WITH hits AS MATERIALIZED (SELECT rowid,rank AS score FROM memory_fts WHERE memory_fts MATCH ? AND ${dayClause} ORDER BY rank LIMIT ?) SELECT m.id,m.day,m.time,m.platform,m.kind,m.body,m.scope,m.thread,m.turn_id,m.speaker_id,m.speaker_name FROM hits CROSS JOIN memories m ON m.rowid=hits.rowid WHERE m.role=? AND m.scope IN (SELECT value FROM json_each(?)) ORDER BY hits.score*(1+coalesce((SELECT importance FROM memory_meta WHERE id=m.id),1)/10.0),m.time DESC LIMIT ?`)
       .all(match, day || this.today(), this.limits.searchLimit*4, this.roleId,JSON.stringify(scopes),this.limits.searchLimit);
     return rows.map(r => {
-      const pair=this.db.prepare("SELECT kind,body,thread,speaker_id,speaker_name FROM memories WHERE role=? AND scope=? AND thread=? AND turn_id=? AND day=? AND kind IN ('user','assistant') AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) ORDER BY time,rowid LIMIT 4").all(this.roleId,String(r.scope),String(r.thread),String(r.turn_id),String(r.day));
-      const body=pair.length>1?pair.map(x=>this.speaker(x)+'：'+String(x.body).slice(0,Math.max(40,Math.floor(this.limits.snippetChars/pair.length)-20))).join(' / '):(['user','assistant'].includes(String(r.kind))?this.speaker(r)+'：':'')+String(r.body);
+      const neighbors=this.db.prepare("SELECT id,kind,body,time,thread,speaker_id,speaker_name FROM memories WHERE role=? AND scope=? AND thread=? AND turn_id=? AND day=? AND kind IN ('user','assistant') AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) ORDER BY time DESC,rowid DESC LIMIT 4").all(this.roleId,String(r.scope),String(r.thread),String(r.turn_id),String(r.day));
+      const counterpart=neighbors.find(x=>x.kind===(r.kind==='assistant'?'user':'assistant'));
+      const pair=[counterpart,r].filter((x):x is NonNullable<typeof x>=>!!x).filter((x,i,all)=>all.findIndex(y=>y.id===x.id)===i).sort((a,b)=>Number(a.time)-Number(b.time));
+      const labels=pair.map(x=>this.speaker(x).slice(0,12)+'：'),perBody=Math.max(1,Math.floor((this.limits.snippetChars-labels.reduce((n,x)=>n+x.length,0)-3)/pair.length));
+      const clip=(value:string)=>{const found=tokens.map(t=>value.toLowerCase().indexOf(t)).filter(n=>n>=0),start=Math.max(0,(found.length?Math.min(...found):0)-Math.floor(perBody/3));return ((start?'…':'')+value.slice(start,start+Math.max(1,perBody-2))+(start+perBody-2<value.length?'…':'')).slice(0,perBody);};
+      const body=pair.length>1?pair.map((x,index)=>labels[index]+clip(String(x.body))).join(' / '):(['user','assistant'].includes(String(r.kind))?this.speaker(r)+'：':'')+String(r.body);
       const lower = body.toLowerCase();
       const positions = tokens.map(t => lower.indexOf(t)).filter(n => n >= 0);
       const start = Math.max(0, (positions.length ? Math.min(...positions) : 0) - 45);
@@ -238,7 +250,7 @@ export class MemoryStore {
     const rows=page.rows.filter(row=>{const key=JSON.stringify([row.day,row.scope,row.thread,row.turnId]);if(!['user','assistant'].includes(row.kind))return true;if(seen.has(key))return false;seen.add(key);return true;}).map(row=>{
       if(!['user','assistant'].includes(row.kind))return {...row,messages:[row]};
       const state=options.state??'active',day=row.day;
-      const records=this.db.prepare(`SELECT id,speaker_id,speaker_name,turn_id,pair_inferred,time,day,platform,kind,substr(body,1,400) AS body FROM memories WHERE role=? AND scope=? AND thread=? AND turn_id=? AND kind IN ('user','assistant') ${day?'AND day=?':''} ${state==='all'?'':'AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=?)'} ORDER BY time,rowid LIMIT 20`).all(this.roleId,row.scope,row.thread,row.turnId,...(day?[day]:[]),...(state==='all'?[]:[state==='forgotten'?1:0]));
+      const records=this.db.prepare(`SELECT id,speaker_id,speaker_name,turn_id,pair_inferred,time,day,platform,kind,substr(body,1,400) AS body FROM memories WHERE role=? AND scope=? AND thread=? AND turn_id=? AND kind IN ('user','assistant') ${day?'AND day=?':''} ${state==='all'?'':'AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=?)'} ORDER BY time,rowid`).all(this.roleId,row.scope,row.thread,row.turnId,...(day?[day]:[]),...(state==='all'?[]:[state==='forgotten'?1:0]));
       return {...row,messages:records.map(r=>({...row,...this.portableMeta(String(r.id)),id:String(r.id),kind:String(r.kind),body:String(r.body),time:Number(r.time),day:String(r.day),speakerId:String(r.speaker_id),speakerName:String(r.speaker_name),pairInferred:!!r.pair_inferred}))};
     });return {...page,rows};
   }
