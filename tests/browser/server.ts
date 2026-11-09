@@ -24,6 +24,7 @@ f.settings.qq.wsUrl=`ws://127.0.0.1:${address.port}/`;f.settings.qq.ownerQQ='100
 qq.on('connection',socket=>socket.on('message',raw=>{const request=JSON.parse(raw.toString());const data=request.action==='get_status'?{online:true,good:true}:request.action==='fetch_custom_face_detail'?[{emoji_id:'browser-animated-face',resId:'browser-animated-face',desc:'开心摇摆'}]:request.action.startsWith('send_')?{message_id:91001}:{user_id:10002,nickname:'模拟QQ伙伴'};socket.send(JSON.stringify({status:'ok',retcode:0,echo:request.echo,data}));}));
 const audio=execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=0.2','-f','mp3','pipe:1']);
 const videoFile=join(f.dir,'browser-video.mp4');execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=red:s=320x180:r=5:d=2','-threads','1','-pix_fmt','yuv420p','-y',videoFile]);const videoBytes=readFileSync(videoFile);
+const frameGif=join(f.dir,'frame-029.gif');execFileSync('ffmpeg',['-v','error','-filter_complex_threads','1',...['red','white','blue'].flatMap(c=>['-f','lavfi','-i',`color=c=${c}:s=64x64:r=20:d=2`]),'-filter_complex','[0:v][1:v][2:v]concat=n=3:v=1:a=0','-threads','1','-loop','0','-y',frameGif]);const frameGifBytes=readFileSync(frameGif);
 class BrowserVision extends LlmAdapter {
  async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as any,reasoning:{efforts:[{id:'off' as any,name:'关闭'}]}};}
  async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{const text=_options.system?.includes('图片识别自检')?JSON.stringify({left:'红色',right:'蓝色'}):JSON.stringify({summary:'红色画面配有吉他姿势字幕。',reply:'抽样画面是红色背景，字幕讲吉他持琴姿势。'});yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'usage',usage:{inputTokens:300,outputTokens:80,totalTokens:380}};yield {type:'finish',reason:{kind:'stop'}};}
@@ -31,6 +32,7 @@ class BrowserVision extends LlmAdapter {
 await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['deepseek-official'],new BrowserVision());
 let polls=0,qqPolls=0;
 const platform:typeof fetch=async(url)=>{
+ if(String(url)==='https://gchat.qpic.cn/frame-029.gif')return new Response(frameGifBytes);
  if(String(url).includes('openspeech.bytedance.com'))return new Response(JSON.stringify({code:0,data:audio.toString('base64'),usage:{text_words:12}})+'\n'+JSON.stringify({code:20000000}));
  if(String(url).includes('upos-test.bilivideo.com'))return new Response(videoBytes);
  if(String(url).includes('aisubtitle.hdslb.com'))return Response.json({body:[{from:0,content:'吉他持琴姿势'}]});
@@ -64,6 +66,12 @@ const script=result.outputFiles[0]!.contents;
 const server=createServer(async(req,res)=>{
  try{
   if(req.url==='/harness.js'){res.setHeader('Content-Type','text/javascript');res.end(script);return;}
+  if(req.method==='POST'&&req.url==='/fixture/media-029'){
+   await runtime.enqueue(()=>runtime.media.reply({id:'browser-frame-'+Date.now(),selfId:'10002',userId:'10001',owner:true,scope:'owner',thread:'qq:private:10001',text:'看看这个动图'},runtime.qq,[{type:'image',url:'https://gchat.qpic.cn/frame-029.gif'}]));res.setHeader('Content-Type','application/json');res.end(JSON.stringify(runtime.media.lastStatus));return;
+  }
+  if(req.method==='POST'&&req.url==='/fixture/duration-029'){
+   const original=runtime.bili.videoPart;try{runtime.bili.videoPart=async()=>({video:{aid:'123',bvid:'BV1xx411c7mD',title:'超长示例',description:'',owner:'作者',url:'https://www.bilibili.com/video/BV1xx411c7mD'},cid:'1',duration:601,part:1});runtime.startWatch('BV1xx411c7mD','概括内容',1);await runtime.enqueue(async()=>undefined);}finally{runtime.bili.videoPart=original;}res.setHeader('Content-Type','application/json');res.end(JSON.stringify(runtime.watchJob));return;
+  }
   if(req.url==='/api/shiguang'){
    const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
    const request=new Request('http://127.0.0.1:4178/api/shiguang',{method:'POST',headers:{'Content-Type':'application/json'},body:Buffer.concat(chunks)});

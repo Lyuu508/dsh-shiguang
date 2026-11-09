@@ -1,6 +1,7 @@
 /** Select different frames while retaining a changing beginning and ending. */
-export function pickFrames(pixels,max){
+export function pickFrames(pixels,max,mode='different'){
  const size=16*16*3,count=Math.floor(pixels.length/size);if(!count)return [];
+ if(mode==='uniform'){const n=Math.min(max,count);return Array.from({length:n},(_,i)=>n===1?Math.floor(count/2):Math.round(i*(count-1)/(n-1)));}
  const selected=[max===1?Math.floor(count/2):0];
  const distance=(a,b)=>{let sum=0;for(let p=0;p<size;p++)sum+=Math.abs(pixels[a*size+p]-pixels[b*size+p]);return sum/size;};
  if(max>1&&count>1&&distance(0,count-1)>=2)selected.push(count-1);

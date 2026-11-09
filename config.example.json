@@ -80,7 +80,8 @@
     "minDynamicIntervalMs": 3600000,
     "browseOrder": "click",
     "minViews": 0,
-    "riskCooldownSeconds": 300
+    "riskCooldownSeconds": 300,
+    "commentStyle": "像正常刷视频时随手留一句，围绕画面或评论里的一个具体点，通常一两句；可以有情绪、语气词和合适的梗，不硬玩梗，不写正式总结或夸奖模板。"
   },
   "media": {
     "enabled": false,
@@ -99,7 +100,8 @@
     "dailyLimit": 30,
     "contextChars": 600,
     "cacheHours": 24,
-    "animationFrames": 8
+    "animationFrames": 8,
+    "frameSelection": "different"
   },
   "autonomy": {
     "enabled": false,
@@ -145,7 +147,8 @@
     "subtitleChars": 1800,
     "cacheHours": 24,
     "deepSegmentSeconds": 90,
-    "deepMaxSegments": 8
+    "deepMaxSegments": 8,
+    "frameSelection": "different"
   },
   "voice": {
     "enabled": false,

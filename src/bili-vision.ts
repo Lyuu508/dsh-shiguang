@@ -26,6 +26,10 @@ export function sampleSubtitles(value:unknown,max:number,range?:{start:number;en
   const count=Math.min(24,lines.length),budget=Math.max(1,Math.floor(max/count)-12);
   return Array.from({length:count},(_,i)=>lines[count===1?0:Math.floor(i*(lines.length-1)/(count-1))]).map(r=>`[${Number(r.from).toFixed(1)}秒] ${r.content.slice(0,budget)}`).join('\n').slice(0,max);
 }
+export class BiliDurationLimitError extends Error {
+ readonly code='BILI_DURATION_LIMIT';
+ constructor(readonly durationSeconds:number,readonly limitSeconds:number){super(`这个分 P 时长 ${durationSeconds} 秒，超过已保存的 B站单个分P时长上限 ${limitSeconds} 秒（${(limitSeconds/60).toFixed(1)} 分钟）。请在“B站账号 → 看 B站视频里的内容 → B站单个分P时长上限（秒）”调整并保存；它与深看每段秒数是两个设置。`);}
+}
 export class BiliVision {
   private abort=new AbortController();
   constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly bili:BilibiliClient,readonly fetcher:typeof fetch=fetch,readonly prepare?:()=>Promise<void>){}
@@ -46,9 +50,9 @@ export class BiliVision {
     const c=this.settings.biliVision;if(!c.enabled)throw new Error('请先在 B 站账号页面开启视频内容识别并保存');
     let signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs*(depth==='deep'?c.deepMaxSegments:1)),...(externalSignal?[externalSignal]:[])]);
     const source=await this.bili.videoPart(input,part,signal);
-    if(source.duration>c.maxDurationSeconds)throw new Error(`这个分 P 超过 ${c.maxDurationSeconds} 秒的识别上限，请提高上限或换短视频`);
+    if(source.duration>c.maxDurationSeconds)throw new BiliDurationLimitError(source.duration,c.maxDurationSeconds);
     const segments=depth==='deep'?Math.ceil(source.duration/c.deepSegmentSeconds):1;if(segments>c.deepMaxSegments)throw new Error(`深度浏览需要 ${segments} 段，超过 ${c.deepMaxSegments} 段预算，尚未浏览整个视频；可调大分段长度或选择浅看`);
-    const key=createHash('sha256').update(JSON.stringify(['bili-vision-v2',depth,c.deepSegmentSeconds,c.deepMaxSegments,source.video.bvid,source.cid,c.frames,c.sheetSize,c.subtitleChars,c.provider,c.model])).digest('hex');
+    const key=createHash('sha256').update(JSON.stringify(['bili-vision-v3-sampling',depth,c.deepSegmentSeconds,c.deepMaxSegments,source.video.bvid,source.cid,c.frames,c.frameSelection,c.sheetSize,c.subtitleChars,c.provider,c.model])).digest('hex');
     const cached=this.memory.db.prepare('SELECT summary FROM media_cache WHERE role=? AND scope=? AND key=? AND expires>?').get(this.memory.roleId,'owner',key,this.memory.clock());
     if(cached){this.memory.append('owner','bilibili','bilibili','experience',`复看缓存摘要：${String(cached.summary)}；${source.video.url}`,undefined,this.memory.clock(),'watch');return String(cached.summary)+'\n（复用已识别的画面与字幕摘要，本次未重新读取视频。）';}
     const used=Number(this.memory.db.prepare("SELECT count(*) AS n FROM llm_usage WHERE role=? AND day=? AND category='bilibili-video'").get(this.memory.roleId,this.memory.today())?.n);

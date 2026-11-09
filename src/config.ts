@@ -1,3 +1,4 @@
+import {DEFAULT_BILI_COMMENT_STYLE} from './bili-comment-style.js';
 import {FLASH_MODEL} from './model-route.js';
 import { readFileSync, mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -8,7 +9,7 @@ export const QQ_CHAT_DEFAULTS={enabled:true,replyChance:85,ownerReplyChance:95,d
 export const MEDIA_DEFAULTS = {
   enabled: false, mode: 'ask' as 'ask' | 'auto', provider: '', model: '',
   ffmpegPath: 'ffmpeg', ffprobePath: 'ffprobe', localMediaDir: '',
-  frames: 3, animationFrames:8, sheetSize: 512, maxFileMB: 20, maxDurationSeconds: 120,
+  frames: 3, animationFrames:8, frameSelection: 'different' as 'different'|'uniform', sheetSize: 512, maxFileMB: 20, maxDurationSeconds: 120,
   timeoutMs: 30000, maxOutputTokens: 320, dailyLimit: 30, contextChars: 600, cacheHours: 24,
 };
 export type MediaSettings = typeof MEDIA_DEFAULTS;
@@ -19,7 +20,7 @@ export const AUTONOMY_DEFAULTS = {
   scheduleMode:'fixed' as 'fixed'|'free',minWakeMinutes:45,maxWakeMinutes:240,quietStart:'23:00',quietEnd:'08:00',chooseBrowsing:true,fillBrowseLimit:false,allowDeep:false,recommendOwner:false,autoLike:false,
 };
 export type AutonomySettings = typeof AUTONOMY_DEFAULTS;
-export const BILI_VISION_DEFAULTS = {enabled:false,autoBrowse:false,provider:'',model:'',frames:4,sheetSize:768,maxFileMB:40,maxDurationSeconds:600,timeoutMs:90000,maxOutputTokens:480,dailyLimit:12,subtitleChars:1800,cacheHours:24,deepSegmentSeconds:90,deepMaxSegments:8};
+export const BILI_VISION_DEFAULTS = {enabled:false,autoBrowse:false,provider:'',model:'',frames:4,frameSelection:'different' as 'different'|'uniform',sheetSize:768,maxFileMB:40,maxDurationSeconds:600,timeoutMs:90000,maxOutputTokens:480,dailyLimit:12,subtitleChars:1800,cacheHours:24,deepSegmentSeconds:90,deepMaxSegments:8};
 export const UPDATE_DEFAULTS={timeoutMs:15000,downloadTimeoutMs:300000,retries:2,mirrorUrl:''};
 export const PROACTIVE_DEFAULTS={enabled:false,activity:'normal' as 'silent'|'low'|'normal'|'active',minGapMinutes:60,maxGapMinutes:240,maxPerDay:4,decisionsPerDay:8,quietStart:'23:00',quietEnd:'08:00',waitForReply:true,contextChars:1200,maxTokens:480,company:30,care:25,share:20,play:15,chat:10};
 export const BILI_SOCIAL_DEFAULTS={ownerUids:[] as string[],dmEnabled:false,tasksEnabled:true,mentionEnabled:false,mentionRepliesPerDay:10,mentionMinReplySeconds:60,mentionMaxPages:5,pollSeconds:60,repliesPerDay:20,minReplySeconds:10};
@@ -52,7 +53,7 @@ export interface Settings {
   emoji:typeof EMOJI_DEFAULTS;
   slang:typeof SLANG_DEFAULTS;
   qq: { poke:typeof QQ_POKE_DEFAULTS;chat:typeof QQ_CHAT_DEFAULTS;keywordWakeEnabled:boolean;wakeWords:string[];keywordWakeChance:number;keywordCooldownSeconds:number;enabled: boolean; wsUrl: string; tokenEnv: string; ownerQQ: string; allowedPrivate: string[]; allowedGroups: string[]; groupMentionOnly: boolean; actionTimeoutMs: number; reconnectMs: number };
-  bilibili: { riskCooldownSeconds:number;browseOrder:'click'|'totalrank'|'pubdate';minViews:number;enabled: boolean; tagWeights:Record<string,number>;allowComments: boolean;manualWhitelist:boolean;allowLikes:boolean;likesPerDay:number;minLikeIntervalMs:number; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number; allowedTags:string[];blockedTags:string[];allowDynamics:boolean;dynamicsPerDay:number;minDynamicIntervalMs:number };
+  bilibili: { commentStyle:string;riskCooldownSeconds:number;browseOrder:'click'|'totalrank'|'pubdate';minViews:number;enabled: boolean; tagWeights:Record<string,number>;allowComments: boolean;manualWhitelist:boolean;allowLikes:boolean;likesPerDay:number;minLikeIntervalMs:number; commentsPerDay: number; minCommentIntervalMs: number; timeoutMs: number; allowedTags:string[];blockedTags:string[];allowDynamics:boolean;dynamicsPerDay:number;minDynamicIntervalMs:number };
 }
 
 function object(v: unknown, key: string): Record<string, unknown> {
@@ -116,12 +117,12 @@ export function parseSettings(value: unknown, file: string): Settings {
       enabled: boolean(v.enabled,'media.enabled'), mode: string(v.mode,'media.mode') as MediaSettings['mode'],
       provider: '', model: FLASH_MODEL,
       ffmpegPath: string(v.ffmpegPath,'media.ffmpegPath'), ffprobePath: string(v.ffprobePath,'media.ffprobePath'), localMediaDir: string(v.localMediaDir,'media.localMediaDir'),
-      frames: integer(v.frames,'media.frames',1),animationFrames:integer(v.animationFrames,'media.animationFrames',1), sheetSize: integer(v.sheetSize,'media.sheetSize',256),
+      frames: integer(v.frames,'media.frames',1),frameSelection:string(v.frameSelection,'media.frameSelection') as MediaSettings['frameSelection'],animationFrames:integer(v.animationFrames,'media.animationFrames',1), sheetSize: integer(v.sheetSize,'media.sheetSize',256),
       maxFileMB: integer(v.maxFileMB,'media.maxFileMB',1), maxDurationSeconds: integer(v.maxDurationSeconds,'media.maxDurationSeconds',1),
       timeoutMs: integer(v.timeoutMs,'media.timeoutMs',1000), maxOutputTokens: integer(v.maxOutputTokens,'media.maxOutputTokens',128),
       dailyLimit: integer(v.dailyLimit,'media.dailyLimit',0), contextChars: integer(v.contextChars,'media.contextChars',0), cacheHours: integer(v.cacheHours,'media.cacheHours',1),
     },
-    biliVision:{enabled:boolean(bv.enabled,'biliVision.enabled'),autoBrowse:boolean(bv.autoBrowse,'biliVision.autoBrowse'),provider:'',model:FLASH_MODEL,frames:integer(bv.frames,'biliVision.frames',1),sheetSize:integer(bv.sheetSize,'biliVision.sheetSize',256),maxFileMB:integer(bv.maxFileMB,'biliVision.maxFileMB',1),maxDurationSeconds:integer(bv.maxDurationSeconds,'biliVision.maxDurationSeconds',1),timeoutMs:integer(bv.timeoutMs,'biliVision.timeoutMs',1000),maxOutputTokens:integer(bv.maxOutputTokens,'biliVision.maxOutputTokens',128),dailyLimit:integer(bv.dailyLimit,'biliVision.dailyLimit',0),subtitleChars:integer(bv.subtitleChars,'biliVision.subtitleChars',0),cacheHours:integer(bv.cacheHours,'biliVision.cacheHours',1),deepSegmentSeconds:integer(bv.deepSegmentSeconds,'biliVision.deepSegmentSeconds',15),deepMaxSegments:integer(bv.deepMaxSegments,'biliVision.deepMaxSegments',1)},
+    biliVision:{enabled:boolean(bv.enabled,'biliVision.enabled'),autoBrowse:boolean(bv.autoBrowse,'biliVision.autoBrowse'),provider:'',model:FLASH_MODEL,frames:integer(bv.frames,'biliVision.frames',1),frameSelection:string(bv.frameSelection,'biliVision.frameSelection') as MediaSettings['frameSelection'],sheetSize:integer(bv.sheetSize,'biliVision.sheetSize',256),maxFileMB:integer(bv.maxFileMB,'biliVision.maxFileMB',1),maxDurationSeconds:integer(bv.maxDurationSeconds,'biliVision.maxDurationSeconds',1),timeoutMs:integer(bv.timeoutMs,'biliVision.timeoutMs',1000),maxOutputTokens:integer(bv.maxOutputTokens,'biliVision.maxOutputTokens',128),dailyLimit:integer(bv.dailyLimit,'biliVision.dailyLimit',0),subtitleChars:integer(bv.subtitleChars,'biliVision.subtitleChars',0),cacheHours:integer(bv.cacheHours,'biliVision.cacheHours',1),deepSegmentSeconds:integer(bv.deepSegmentSeconds,'biliVision.deepSegmentSeconds',15),deepMaxSegments:integer(bv.deepMaxSegments,'biliVision.deepMaxSegments',1)},
     voice:{enabled:boolean(vo.enabled,'voice.enabled'),authMode:string(vo.authMode,'voice.authMode') as 'app'|'apiKey',appId:string(vo.appId,'voice.appId'),speakerId:string(vo.speakerId,'voice.speakerId'),resourceId:string(vo.resourceId,'voice.resourceId'),mode:string(vo.mode,'voice.mode') as 'ask'|'auto',sendText:boolean(vo.sendText,'voice.sendText'),allowGroups:boolean(vo.allowGroups,'voice.allowGroups'),maxChars:integer(vo.maxChars,'voice.maxChars',20),dailyLimit:integer(vo.dailyLimit,'voice.dailyLimit',0),timeoutMs:integer(vo.timeoutMs,'voice.timeoutMs',1000),speechRate:integer(vo.speechRate,'voice.speechRate',-50)},
     slang:{enabled:boolean(slang.enabled,'slang.enabled'),maxContextChars:integer(slang.maxContextChars,'slang.maxContextChars',0),maxHits:integer(slang.maxHits,'slang.maxHits',0)},
     qq: {
@@ -148,7 +149,7 @@ export function parseSettings(value: unknown, file: string): Settings {
       scheduleMode:string(a.scheduleMode,'autonomy.scheduleMode') as 'fixed'|'free',minWakeMinutes:integer(a.minWakeMinutes,'autonomy.minWakeMinutes',15),maxWakeMinutes:integer(a.maxWakeMinutes,'autonomy.maxWakeMinutes',15),quietStart:string(a.quietStart,'autonomy.quietStart'),quietEnd:string(a.quietEnd,'autonomy.quietEnd'),chooseBrowsing:boolean(a.chooseBrowsing,'autonomy.chooseBrowsing'),fillBrowseLimit:boolean(a.fillBrowseLimit,'autonomy.fillBrowseLimit'),allowDeep:boolean(a.allowDeep,'autonomy.allowDeep'),recommendOwner:boolean(a.recommendOwner,'autonomy.recommendOwner'),autoLike:boolean(a.autoLike,'autonomy.autoLike'),
     },
     bilibili: {
-      riskCooldownSeconds:integer(b.riskCooldownSeconds??300,'bilibili.riskCooldownSeconds',0),
+      commentStyle:string(b.commentStyle??DEFAULT_BILI_COMMENT_STYLE,'bilibili.commentStyle'),riskCooldownSeconds:integer(b.riskCooldownSeconds??300,'bilibili.riskCooldownSeconds',0),
       browseOrder:string(b.browseOrder??'click','bilibili.browseOrder') as Settings['bilibili']['browseOrder'],minViews:integer(b.minViews??0,'bilibili.minViews',0),      enabled: boolean(b.enabled, 'bilibili.enabled'),tagWeights:Object.fromEntries(Object.entries(b.tagWeights===undefined?{}:object(b.tagWeights,'bilibili.tagWeights')).map(([tag,weight])=>{const w=integer(weight,'bilibili.tagWeights',1);if(w>10)throw new Error('标签权重为 1–10');return [tag,w];})),manualWhitelist:boolean(b.manualWhitelist??false,'bilibili.manualWhitelist'),allowLikes:boolean(b.allowLikes??false,'bilibili.allowLikes'),likesPerDay:integer(b.likesPerDay??20,'bilibili.likesPerDay',0),minLikeIntervalMs:integer(b.minLikeIntervalMs??60000,'bilibili.minLikeIntervalMs',0), allowComments: boolean(b.allowComments, 'bilibili.allowComments'),
       commentsPerDay: integer(b.commentsPerDay, 'bilibili.commentsPerDay',0),
       minCommentIntervalMs: integer(b.minCommentIntervalMs, 'bilibili.minCommentIntervalMs',1000),
@@ -158,6 +159,7 @@ export function parseSettings(value: unknown, file: string): Settings {
     },
   };
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(s.roleId)) throw new Error('roleId 只能使用字母、数字、下划线和连字符');
+  if(!['different','uniform'].includes(s.media.frameSelection)||!['different','uniform'].includes(s.biliVision.frameSelection))throw new Error('画面筛选方式应为差异筛选或均匀保留');
   if(!['click','totalrank','pubdate'].includes(s.bilibili.browseOrder))throw new Error('浏览排序应为播放量、综合或最新');
   if (!s.displayName.trim()) throw new Error('角色名称不能为空');
   if (!['ask','auto'].includes(s.media.mode)) throw new Error('视频识别模式或拼图尺寸无效');
