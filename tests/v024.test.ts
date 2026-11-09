@@ -1,3 +1,7 @@
+import {createHash} from 'node:crypto';
+import {MediaReader} from '../src/media.js';
+import {parseEmojiMeaning,readEmojiMeaning,saveEmojiMeaning,emojiMeaningScore,genericEmojiRequest} from '../src/emoji-meaning.js';
+import {panelAction} from '../src/panel-api.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
@@ -13,7 +17,7 @@ import {fixture} from './helpers.js';
 import {MemoryStore} from '../src/memory.js';
 import {ShiguangRuntime} from '../src/runtime.js';
 import {MediaError,parseVisionAnswer,frameSheet,frameSheetRange} from '../src/media.js';
-import {EmojiSender,wantsEmoji} from '../src/emoji-sender.js';
+import {EmojiSender,wantsEmoji,EmojiMatchError} from '../src/emoji-sender.js';
 import {EmojiCollector} from '../src/emoji-collector.js';
 import {BilibiliClient} from '../src/bilibili.js';
 import {BiliVision} from '../src/bili-vision.js';
@@ -86,4 +90,26 @@ test('后台安装更新路径时保留未保存的视频数与QQ白名单；同
  const base={media:{ffmpegPath:'ffmpeg'},autonomy:{videosPerWake:2},qq:{allowedPrivate:['1']}},draft={...base,autonomy:{videosPerWake:4},qq:{allowedPrivate:['1','3']}},incoming={...base,media:{ffmpegPath:'C:/tools/ffmpeg.exe'}};
  const merged=mergeSettings(base,draft,incoming);assert.deepEqual(merged.conflicts,[]);assert.equal(merged.value.autonomy.videosPerWake,4);assert.equal(merged.value.media.ffmpegPath,'C:/tools/ffmpeg.exe');assert.deepEqual(merged.value.qq.allowedPrivate,['1','3']);
  const clash=mergeSettings(base,draft,{...incoming,autonomy:{videosPerWake:6},qq:{allowedPrivate:['2']}});assert.deepEqual(clash.conflicts,['autonomy.videosPerWake','qq.allowedPrivate']);assert.equal(clash.value.autonomy.videosPerWake,4);
+});
+
+const sadMeaning={meaning:'假装可怜地撒娇，并非真的受伤',emotions:['委屈','撒娇'],situations:['想讨安慰'],avoid:[]};
+function seedEmoji(s:Awaited<ReturnType<typeof setup>>,digest:string,semantic:typeof sadMeaning,scope='owner'){
+ s.runtime.memory.db.prepare("INSERT INTO emoji_collections(role,digest,day,time,status,summary,file,emoji_id,account,scope) VALUES(?,?,?,?,'saved','同一个小人物','',?,'2',?)").run(s.runtime.memory.roleId,digest,s.runtime.memory.today(),s.runtime.memory.clock(),digest,scope);saveEmojiMeaning(s.runtime.memory,scope,digest,semantic,'vision');
+}
+test('表情含义解析、情绪近义匹配和否定约束，不把人物相同当成表达相同',()=>{
+ assert.equal(parseEmojiMeaning({meaning:'',emotions:['开心']}),undefined);assert.equal(parseEmojiMeaning({meaning:'高兴',emotions:'开心'}),undefined);assert.equal(parseVisionAnswer(JSON.stringify({summary:'小人把雪球丢出画面',reply:'在逗你玩呢',emoji:sadMeaning})).emoji?.meaning,sadMeaning.meaning);
+ const comfort={meaning:'张开手想抱抱安慰对方',emotions:['安慰'],situations:['对方低落时鼓励'],avoid:[]};assert.ok(emojiMeaningScore('来张可怜兮兮的表情','同一人物',sadMeaning)>0);assert.equal(emojiMeaningScore('发个开心的表情','同一人物',sadMeaning),-Infinity);assert.ok(emojiMeaningScore('别难过，抱抱','同一人物',comfort)>0);assert.equal(emojiMeaningScore('别难过，抱抱','同一人物',sadMeaning),-Infinity);assert.ok(genericEmojiRequest('你发个动画表情看看'));assert.ok(!genericEmojiRequest('发个委屈的表情'));
+});
+test('同次识图区分动作和梗意，收藏复用含义，按委屈近义真实发原GIF；缓存不重复看图',async()=>{
+ const bytes=Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==','base64'),model=new Model((_i,o)=>o.system?.includes('决定是否把')?{collect:true,reason:'喜欢这张用来接话'}:{summary:'小人低头缩成一团，抬眼看向对方',reply:'主人，这是委屈巴巴求安慰呢。',emoji:sadMeaning});const s=await setup(model,f=>{Object.assign(f.settings.media,{enabled:true,mode:'auto'});f.settings.emoji.enabled=true;});const reader=new MediaReader(s.ctx,s.runtime.settings,s.runtime.memory,async()=>new Response(bytes)),incoming={...message,id:'meaning-observed',text:'看看这个表情是什么意思',media:[{type:'image' as const,emoji:true,url:'https://gchat.qpic.cn/semantic.gif'}]};
+ try{await reader.reply(incoming,s.runtime.qq,incoming.media);assert.equal(model.requests.length,1);assert.match(model.requests[0].system||'',/交流含义/);assert.equal(reader.lastObservation?.emoji?.emotions[0],'委屈');await s.runtime.emoji.consider(incoming,s.runtime.qq,reader.lastObservation);assert.equal(model.requests.length,2);assert.equal(model.requests[1].messages.flatMap(m=>m.content).filter(v=>v.type==='image').length,0);seedEmoji(s,'happy-face',{meaning:'开心地拍手笑',emotions:['开心'],situations:['庆祝'],avoid:[]});await s.runtime.emojiSender.send({...message,id:'sad-request',text:'发个可怜兮兮的表情'},s.runtime.qq);const sent=s.sent.at(-1);assert.equal(sent.action,'send_private_msg');assert.deepEqual(Buffer.from(sent.params.message[0].data.file.slice(9),'base64'),bytes);assert.equal(model.requests.length,2);const digest=createHash('sha256').update(bytes).digest('hex');assert.equal(readEmojiMeaning(s.runtime.memory,'owner',digest)?.meaning,sadMeaning.meaning);await reader.reply({...incoming,id:'cached-meaning'},s.runtime.qq,incoming.media);assert.equal(reader.lastStatus.cacheHit,true);assert.equal(model.requests[2].messages.flatMap(m=>m.content).filter(v=>v.type==='image').length,0);assert.equal(reader.lastObservation?.emoji?.meaning,sadMeaning.meaning);}finally{reader.stop();await s.close();}
+});
+test('具体意思没有合适表情时不乱发、不占发送额度；旧备注可匹配，群与主人范围仍隔离',async()=>{
+ const s=await setup();try{seedEmoji(s,'sad-face',sadMeaning);await assert.rejects(s.runtime.emojiSender.send({...message,id:'wants-happy'},s.runtime.qq,'发个高兴的表情'),EmojiMatchError);assert.equal(s.sent.length,0);assert.equal(s.runtime.status().emoji.sentToday,0);s.runtime.settings.emoji.autoSend=true;s.runtime.settings.emoji.autoSendChance=100;assert.equal(await s.runtime.emojiSender.send({...message,id:'auto-mismatch'},s.runtime.qq,'开心呀',false),false);assert.equal(s.sent.length,0);s.runtime.settings.emoji.sendAllowGroups=true;await assert.rejects(s.runtime.emojiSender.send({...message,id:'group-mismatch',groupId:'8',scope:'qq:group:8',thread:'qq:group:8',owner:false},s.runtime.qq,'委屈的表情'),/没有可用/);assert.equal(s.sent.length,0);s.runtime.settings.emoji.matchMeaning=false;await s.runtime.emojiSender.send({...message,id:'legacy-choice'},s.runtime.qq,'发个高兴的表情');assert.equal(s.sent.length,1);assert.equal(s.model.requests.length,0);}finally{await s.close();}
+});
+test('本地面板可标注旧收藏、保留手动纠正并真实按含义发送，不接受其他范围ID',async()=>{
+ const s=await setup();const signal=AbortSignal.timeout(10000);try{await s.runtime.emojiSender.sync(s.runtime.qq);const rows=await panelAction(s.runtime,'emoji-meanings',{},signal) as any[];assert.equal(rows.length,1);const item=rows[0];assert.equal(item.semantic,undefined);await panelAction(s.runtime,'emoji-meaning-save',{digest:item.digest,scope:'owner',semantic:sadMeaning},signal);saveEmojiMeaning(s.runtime.memory,'owner',item.digest,{meaning:'自动错误解释',emotions:['开心'],situations:[],avoid:[]},'vision');assert.equal(readEmojiMeaning(s.runtime.memory,'owner',item.digest)?.meaning,sadMeaning.meaning);assert.equal(readEmojiMeaning(s.runtime.memory,'owner',item.digest)?.source,'manual');await assert.rejects(panelAction(s.runtime,'emoji-meaning-save',{digest:item.digest,scope:'qq:group:8',semantic:sadMeaning},signal),/没有这张/);await s.runtime.emojiSender.send({...message,id:'marked-old'},s.runtime.qq,'发个委屈的表情');assert.equal(s.sent[0].action,'send_custom_face');assert.equal(s.sent[0].params.emoji_id,'gif-face-id');assert.equal(s.model.requests.length,0);await panelAction(s.runtime,'emoji-meaning-clear',{digest:item.digest,scope:'owner'},signal);assert.equal(readEmojiMeaning(s.runtime.memory,'owner',item.digest),undefined);assert.equal(s.runtime.status().emoji.library,1);}finally{await s.close();}
+});
+test('自动穿插按伙伴回复的安慰意思选择，不因用户说委屈就发送哭脸，不增加模型调用',async()=>{
+ const s=await setup(new Model(()=>'主人，别难过，抱抱。'),f=>{Object.assign(f.settings.qq.chat,{enabled:false,splitEnabled:false});Object.assign(f.settings.emoji,{autoSend:true,autoSendChance:100});});try{seedEmoji(s,'sad-face',sadMeaning);seedEmoji(s,'comfort-face',{meaning:'抱住对方安慰一下',emotions:['安慰'],situations:['低落时给予鼓励'],avoid:[]});s.send('我今天好委屈');await wait(()=>s.sent.length===2);assert.equal(s.sent[1].action,'send_custom_face');assert.equal(s.sent[1].params.emoji_id,'comfort-face');assert.equal(s.model.requests.length,1);}finally{await s.close();}
 });

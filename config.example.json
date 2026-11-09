@@ -51,7 +51,8 @@
       "partGapMaxSeconds": 3,
       "naturalStyle": true,
       "styleNotes": "",
-      "ownerReplyChance": 95
+      "ownerReplyChance": 95,
+      "ownerTitle": "主人"
     },
     "poke": {
       "enabled": true,
@@ -60,6 +61,16 @@
       "cooldownSeconds": 30,
       "actionText": "拍了拍",
       "replyStyle": "按对方的动作自然简短回应，可以俏皮一点，不解释系统通知。"
+    },
+    "groupChat": {
+      "enabled": false,
+      "ownerReplyChance": 70,
+      "replyChance": 15,
+      "continueChance": 60,
+      "continueSeconds": 180,
+      "minGapSeconds": 20,
+      "dailyLimit": 30,
+      "interests": ""
     }
   },
   "bilibili": {
@@ -101,7 +112,9 @@
     "contextChars": 600,
     "cacheHours": 24,
     "animationFrames": 8,
-    "frameSelection": "different"
+    "frameSelection": "different",
+    "animationUnderstanding": true,
+    "animationImages": 4
   },
   "autonomy": {
     "enabled": false,
@@ -223,7 +236,8 @@
     "autoSendChance": 15,
     "sendsPerDay": 20,
     "sendMinGapSeconds": 15,
-    "syncCount": 48
+    "syncCount": 48,
+    "matchMeaning": true
   },
   "snowluma": {
     "directory": "",
@@ -240,6 +254,8 @@
   "slang": {
     "enabled": true,
     "maxContextChars": 600,
-    "maxHits": 4
+    "maxHits": 4,
+    "groupLearning": true,
+    "groupLessonsPerDay": 20
   }
 }

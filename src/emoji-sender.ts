@@ -1,3 +1,4 @@
+import {emojiMeaningScore,genericEmojiRequest,readEmojiMeaning} from './emoji-meaning.js';
 import {createHash} from 'node:crypto';
 import {readFile,realpath,stat} from 'node:fs/promises';
 import {join,relative,isAbsolute} from 'node:path';
@@ -6,11 +7,12 @@ import {searchTokens,type MemoryStore} from './memory.js';
 import type {OneBotClient,QQMessage} from './onebot.js';
 import {stateValue,setState} from './initiative.js';
 export function wantsEmoji(text:string){return !/(?:不要|别|不用|禁止).{0,12}(?:发|来|给)/.test(text)&&/(?:发|来|给).{0,18}(?:表情包|动画表情|动图|[个张].{0,4}表情)|(?:表情包|动画表情).{0,10}(?:发给|发来)/.test(text);}
+export class EmojiMatchError extends Error {}
 type Entry={digest:string;summary:string;file:string;emoji_id:string;account:string;scope:string};
 export class EmojiSender {
  private abort=new AbortController();
  constructor(readonly settings:Settings,readonly memory:MemoryStore,readonly canAct=()=>true,readonly random=Math.random){}
- status(){const c=this.settings.emoji;return {collectEnabled:c.enabled,sendEnabled:c.sendEnabled,groupSendEnabled:c.sendAllowGroups,autoSend:c.autoSend,collectLimit:c.dailyLimit,sendLimit:c.sendsPerDay,library:Number(this.memory.db.prepare("SELECT count(*) AS n FROM emoji_collections WHERE role=? AND status='saved'").get(this.memory.roleId)?.n),sentToday:this.memory.actionQuota('qq-emoji-send').today,collectAttemptsToday:this.memory.actionQuota('qq-emoji').today,last:stateValue(this.memory,'emoji:status',{at:0,message:'可以同步 QQ 已收藏表情，或开启自动收藏后积累'} )};}
+ status(){const c=this.settings.emoji;return {meaningMatchEnabled:c.matchMeaning,collectEnabled:c.enabled,sendEnabled:c.sendEnabled,groupSendEnabled:c.sendAllowGroups,autoSend:c.autoSend,collectLimit:c.dailyLimit,sendLimit:c.sendsPerDay,library:Number(this.memory.db.prepare("SELECT count(*) AS n FROM emoji_collections WHERE role=? AND status='saved'").get(this.memory.roleId)?.n),sentToday:this.memory.actionQuota('qq-emoji-send').today,collectAttemptsToday:this.memory.actionQuota('qq-emoji').today,last:stateValue(this.memory,'emoji:status',{at:0,message:'可以同步 QQ 已收藏表情，或开启自动收藏后积累'} )};}
  private notice(message:string){setState(this.memory,'emoji:status',{at:this.memory.clock(),message});}
  async sync(qq:OneBotClient){
   await qq.ready(this.abort.signal);const account=await qq.check();if(!account.online||!account.userId)throw new Error('请先登录 QQ，再同步收藏');
@@ -29,7 +31,7 @@ export class EmojiSender {
   let rows=this.memory.db.prepare("SELECT digest,summary,file,emoji_id,account,scope FROM emoji_collections WHERE role=? AND scope=? AND status='saved' AND (account='' OR account=?) ORDER BY time DESC LIMIT ?").all(this.memory.roleId,message.scope,account.userId,c.syncCount) as unknown as Entry[];
   if(!rows.length&&explicit&&message.owner){await this.sync(qq);rows=this.memory.db.prepare("SELECT digest,summary,file,emoji_id,account,scope FROM emoji_collections WHERE role=? AND scope=? AND status='saved' AND account=? ORDER BY time DESC LIMIT ?").all(this.memory.roleId,message.scope,account.userId,c.syncCount) as unknown as Entry[];}
   if(!rows.length){this.notice('当前会话还没有可用表情，请同步 QQ 收藏或先收藏表情');if(explicit)throw new Error('当前会话没有可用的收藏表情');return false;}
-  const tokens=searchTokens(query),rank=(r:Entry)=>tokens.reduce((n,t)=>n+(r.summary.toLowerCase().includes(t)?1:0),0);rows.sort((a,b)=>rank(b)-rank(a));const best=rank(rows[0]!),choices=rows.filter(r=>rank(r)===best),entry=choices[Math.floor(this.random()*choices.length)]!;
+  const tokens=searchTokens(query),scores=new Map(rows.map(r=>[r.digest,c.matchMeaning?emojiMeaningScore(query,r.summary,readEmojiMeaning(this.memory,r.scope,r.digest)):tokens.reduce((n,t)=>n+(r.summary.toLowerCase().includes(t)?1:0),0)])),rank=(r:Entry)=>scores.get(r.digest)!;rows.sort((a,b)=>rank(b)-rank(a));const best=rank(rows[0]!);if(c.matchMeaning&&(!Number.isFinite(best)||best<=0&&(!explicit||!genericEmojiRequest(query)))){this.notice('没有匹配当前意思的表情，本次没有发送');if(explicit)throw new EmojiMatchError('我还没有合适表达这个意思的表情，先换一种吧。');return false;}const choices=rows.filter(r=>rank(r)===best),entry=choices[Math.floor(this.random()*choices.length)]!;
   let file:string|undefined;if(!entry.emoji_id||!entry.account){const root=await realpath(join(this.settings.dataDir,'emoji-collection')),target=await realpath(entry.file),rel=relative(root,target);if(!rel||rel.startsWith('..')||isAbsolute(rel))throw new Error('本地表情不在拾光收藏目录中');const info=await stat(target);if(!info.isFile()||info.size>c.maxFileMB*1048576)throw new Error('表情文件超过发送大小预算');file='base64://'+(await readFile(target)).toString('base64');}
   guard();const key='qq-emoji-send:'+createHash('sha256').update(JSON.stringify([message.selfId,message.thread,message.id])).digest('hex');this.memory.reserveAction('qq-emoji-send',key,c.sendsPerDay,c.sendMinGapSeconds*1000);
   let confirmed=false;try{

@@ -1,3 +1,4 @@
+import {listSlang} from '../../src/slang.js';
 import {createServer} from 'node:http';
 import {execFileSync} from 'node:child_process';
 import {LocalAttachmentStore} from '@deepseek-ai/dsh-attachment-local';
@@ -27,7 +28,7 @@ const videoFile=join(f.dir,'browser-video.mp4');execFileSync('ffmpeg',['-hide_ba
 const frameGif=join(f.dir,'frame-029.gif');execFileSync('ffmpeg',['-v','error','-filter_complex_threads','1',...['red','white','blue'].flatMap(c=>['-f','lavfi','-i',`color=c=${c}:s=64x64:r=20:d=2`]),'-filter_complex','[0:v][1:v][2:v]concat=n=3:v=1:a=0','-threads','1','-loop','0','-y',frameGif]);const frameGifBytes=readFileSync(frameGif);
 class BrowserVision extends LlmAdapter {
  async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text','image'] as any,reasoning:{efforts:[{id:'off' as any,name:'关闭'}]}};}
- async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{const text=_options.system?.includes('图片识别自检')?JSON.stringify({left:'红色',right:'蓝色'}):JSON.stringify({summary:'红色画面配有吉他姿势字幕。',reply:'抽样画面是红色背景，字幕讲吉他持琴姿势。'});yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'usage',usage:{inputTokens:300,outputTokens:80,totalTokens:380}};yield {type:'finish',reason:{kind:'stop'}};}
+ async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{const text=JSON.stringify(_options).includes('你在旁听白名单群')?JSON.stringify({reply:'主人，这个雪球扔得也太准了吧。'}):_options.system?.includes('图片识别自检')?JSON.stringify({left:'红色',right:'蓝色'}):JSON.stringify({summary:'红色画面配有吉他姿势字幕。',reply:'抽样画面是红色背景，字幕讲吉他持琴姿势。'});yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text};yield {type:'block-end',index:0,block:{type:'text',text}};yield {type:'usage',usage:{inputTokens:300,outputTokens:80,totalTokens:380}};yield {type:'finish',reason:{kind:'stop'}};}
 }
 await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'attachments')});ctx.llm.registerAdapter(['deepseek-official'],new BrowserVision());
 let polls=0,qqPolls=0;
@@ -66,6 +67,13 @@ const script=result.outputFiles[0]!.contents;
 const server=createServer(async(req,res)=>{
  try{
   if(req.url==='/harness.js'){res.setHeader('Content-Type','text/javascript');res.end(script);return;}
+  if(req.method==='POST'&&req.url==='/fixture/group-slang-0210'){
+   for(const socket of qq.clients)socket.send(JSON.stringify({post_type:'message',message_type:'group',message_id:Date.now(),self_id:10002,user_id:10003,group_id:20001,sender:{nickname:'群友阿橙'},message:[{type:'text',data:{text:'红温的意思是因为着急或生气而脸红'}}]}));
+   let entries=listSlang(runtime.memory,'红温','all');for(let n=0;n<100&&!entries.length;n++){await new Promise(r=>setTimeout(r,10));entries=listSlang(runtime.memory,'红温','all');}res.setHeader('Content-Type','application/json');res.end(JSON.stringify(entries));return;
+  }
+  if(req.method==='POST'&&req.url==='/fixture/group-0210'){
+   for(const socket of qq.clients)socket.send(JSON.stringify({post_type:'message',message_type:'group',message_id:Date.now(),self_id:10002,user_id:10001,group_id:20001,sender:{nickname:'主人'},message:[{type:'text',data:{text:'刚刚这个雪球丢得好好笑'}}]}));res.end('{}');return;
+  }
   if(req.method==='POST'&&req.url==='/fixture/media-029'){
    await runtime.enqueue(()=>runtime.media.reply({id:'browser-frame-'+Date.now(),selfId:'10002',userId:'10001',owner:true,scope:'owner',thread:'qq:private:10001',text:'看看这个动图'},runtime.qq,[{type:'image',url:'https://gchat.qpic.cn/frame-029.gif'}]));res.setHeader('Content-Type','application/json');res.end(JSON.stringify(runtime.media.lastStatus));return;
   }

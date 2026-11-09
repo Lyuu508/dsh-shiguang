@@ -16,6 +16,6 @@ async function work<T>(data:unknown,signal:AbortSignal):Promise<T>{
  });
 }
 export async function embeddedFrameSheet(file:string,c:MediaSettings,signal:AbortSignal,range?:{start:number;duration:number}):Promise<FrameSheet>{
- const bytes=await readFile(file);if(bytes.length>c.maxFileMB*1048576)throw new MediaError('媒体超出下载大小上限');const result=await work<FrameSheet>({op:'frames',bytes,config:{frames:c.frames,frameSelection:c.frameSelection,animationFrames:c.animationFrames,sheetSize:c.sheetSize,maxDurationSeconds:c.maxDurationSeconds,maxFileMB:c.maxFileMB},range},signal);return {...result,bytes:Buffer.from(result.bytes)};
+ const bytes=await readFile(file);if(bytes.length>c.maxFileMB*1048576)throw new MediaError('媒体超出下载大小上限');const result=await work<FrameSheet>({op:'frames',bytes,config:{animationUnderstanding:c.animationUnderstanding,animationImages:c.animationImages,frames:c.frames,frameSelection:c.frameSelection,animationFrames:c.animationFrames,sheetSize:c.sheetSize,maxDurationSeconds:c.maxDurationSeconds,maxFileMB:c.maxFileMB},range},signal);return {...result,bytes:Buffer.from(result.bytes),...(result.panels?{panels:result.panels.map(p=>({...p,bytes:Buffer.from(p.bytes)}))}:{})};
 }
 export function checkEmbeddedEngine(signal:AbortSignal=timeoutSignal(30000)){return work<{ready:boolean;message:string}>({op:'check'},signal);}

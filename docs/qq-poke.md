@@ -11,3 +11,5 @@ QQ 里把动作改为拍一拍、搓一搓或揉一揉都可使用：插件按 O
 - 事件未选中只归档，不调用回复模型；选中后一次正常聊天调用。纯互动不取得 B站操作、梗教学或事实笔记工具。
 
 若没有反应，先看本区最近状态、总开关和冷却，再确认 SnowLuma 是否实际收到该通知。没有原生通知时插件不会通过轮询头像猜测双击。字段依据 [SnowLuma 通知转换源码](https://github.com/SnowLuma/SnowLuma/blob/f2ea3354f8bbe8672cbb4ae6a2b4e1fbeff44faf/packages/onebot/src/event-converter/to-notice.ts)，已用真实本机 WebSocket 与 DSH AgentLoop 验证；Windows 账号事件仍需本机联调。
+
+绑定的主人触发互动时，会收到“对主人的称呼”表达习惯，默认自然叫一次“主人”；按真实 QQ 号识别，不把其他群友叫成主人。

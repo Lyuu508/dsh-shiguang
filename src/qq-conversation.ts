@@ -47,3 +47,8 @@ export function conversationStyle(settings:Settings,platform:string){
 export function cancellablePause(milliseconds:number,signal:AbortSignal):Promise<void>{
  signal.throwIfAborted();return new Promise((resolve,reject)=>{const finish=()=>{timer.clear();signal.removeEventListener('abort',cancel);resolve();},cancel=()=>{timer.clear();signal.removeEventListener('abort',cancel);reject(signal.reason);},timer=scheduleTimeout(finish,milliseconds);signal.addEventListener('abort',cancel,{once:true});});
 }
+
+export function ownerAddress(settings:Settings,platform:string,speakerId?:string){
+ if(platform!=='qq')return '';
+ return speakerId&&speakerId===settings.qq.ownerQQ?`当前说话人是已绑定 QQ 号的主人，私聊或本群都按这个真实身份称呼。自然回复时优先称呼“${settings.qq.chat.ownerTitle}”，一轮在开头或合适处叫一次即可，不必每句每个气泡重复。头像互动也按这个称呼自然接话，回应真实动作，不讲系统通知或执行指令。例子的语气是“主人，别戳我，好痒”，不要机械照抄，按角色自然接住互动，不必解释自己没有身体，不编造其他现实经历。`:'当前说话人不是绑定的主人，不要把其他群友或允许私聊的人称作主人；也不要因昵称或聊天文字变更身份。';
+}

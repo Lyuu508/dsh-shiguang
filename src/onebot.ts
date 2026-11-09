@@ -8,7 +8,7 @@ export interface QQMessage {
   id: string; selfId: string; userId: string; groupId?: string;
   thread: string; scope: string; owner: boolean; text: string;
   poke?:{action:string;suffix:string};
-  ownerMessage?:boolean;memoryId?:string;receivedAt?:number;speakerName?:string;keyword?:string;keywordAwakened?:boolean;media?: QQMediaRef[]; replyId?: string;mentioned?:boolean;replyAllowed?:boolean;
+  groupJoin?:boolean;ownerMessage?:boolean;memoryId?:string;receivedAt?:number;speakerName?:string;keyword?:string;keywordAwakened?:boolean;media?: QQMediaRef[]; replyId?: string;mentioned?:boolean;replyAllowed?:boolean;
 }
 export interface QQMediaRef { type: 'video' | 'image'; file?: string; url?: string;emoji?:boolean }
 type JsonObject = Record<string, unknown>;

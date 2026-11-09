@@ -27,7 +27,7 @@ test('内置引擎抽取真实视频和 GIF，拼图不超过预算，近似画�
   clip(f.dir);const signal=AbortSignal.timeout(20000),sheet=await frameSheet(join(f.dir,'sample.mp4'),f.dir,f.settings.media,signal);
   assert.equal(sheet.times.length,3);assert.ok(sheet.width<=512&&sheet.height<=512);assert.ok(sheet.bytes.length<200000);
   execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-i',join(f.dir,'sample.mp4'),'-y',join(f.dir,'sample.gif')]);
-  const gif=await frameSheet(join(f.dir,'sample.gif'),f.dir,f.settings.media,signal);assert.ok(gif.times.length>=2&&gif.times.length<=3);
+  const gif=await frameSheet(join(f.dir,'sample.gif'),f.dir,{...f.settings.media,animationUnderstanding:false},signal);assert.ok(gif.times.length>=2&&gif.times.length<=3);
   assert.deepEqual(pickFrames(Buffer.alloc(256*3*8,50),3),[0]);
   await assert.rejects(frameSheet(join(f.dir,'sample.mp4'),f.dir,{...f.settings.media,maxDurationSeconds:1},signal),/超过/);
  }finally{f.cleanup();}

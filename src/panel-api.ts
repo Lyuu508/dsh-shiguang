@@ -1,4 +1,5 @@
-import {saveSlang,listSlang,deleteSlang} from './slang.js';
+import {saveSlang,listSlang,deleteSlang,slangScope} from './slang.js';
+import {listEmojiMeanings,parseEmojiMeaning,saveEmojiMeaning,clearEmojiMeaning} from './emoji-meaning.js';
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-connection';
 import type { ShiguangRuntime } from './runtime.js';
@@ -18,11 +19,17 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
   signal.throwIfAborted();
   const args = object(payload ?? {});
   switch (action) {
+    case 'emoji-meanings':return listEmojiMeanings(runtime.memory,runtime.settings.emoji.syncCount);
+    case 'emoji-meaning-save':case 'emoji-meaning-clear':return runtime.enqueue(async()=>{
+      const digest=text(args.digest),scope=text(args.scope);if(!runtime.memory.db.prepare("SELECT 1 FROM emoji_collections WHERE role=? AND digest=? AND scope=? AND status='saved'").get(runtime.memory.roleId,digest,scope))throw new Error('当前角色和会话中没有这张可用表情');
+      if(action==='emoji-meaning-clear'){clearEmojiMeaning(runtime.memory,scope,digest);return {ok:true};}
+      const semantic=parseEmojiMeaning(args.semantic);if(!semantic)throw new Error('请填写表情含义，情绪和场景使用简短文字');return saveEmojiMeaning(runtime.memory,scope,digest,semantic,'manual');
+    });
     case 'role-create':return runtime.createRole(text(args.name),text(args.persona),args.copy===true,text(args.revision));
     case 'role-switch':return runtime.switchRole(text(args.id),text(args.revision));
-    case 'slang-list':return listSlang(runtime.memory,text(args.query));
-    case 'slang-save':return runtime.enqueue(async()=>saveSlang(runtime.memory,'owner',{term:text(args.term),meaning:text(args.meaning),response:text(args.response)}));
-    case 'slang-delete':return runtime.enqueue(async()=>{deleteSlang(runtime.memory,text(args.term));return {ok:true};});
+    case 'slang-list':return listSlang(runtime.memory,text(args.query),text(args.scope,'owner'));
+    case 'slang-save':return runtime.enqueue(async()=>saveSlang(runtime.memory,slangScope(text(args.scope,'owner')),{term:text(args.term),meaning:text(args.meaning),response:text(args.response)}));
+    case 'slang-delete':return runtime.enqueue(async()=>{deleteSlang(runtime.memory,text(args.term),slangScope(text(args.scope,'owner')));return {ok:true};});
     case 'memory-concepts':return runtime.memory.concepts(text(args.scope,'owner'),text(args.query));
     case 'memory-concept-save':return runtime.enqueue(async()=>{runtime.memory.setConcept(text(args.scope,'owner'),text(args.term),Number(args.weight),args.pinned===true);return {ok:true};});
     case 'memory-remember':return runtime.enqueue(async()=>{runtime.memory.remember(text(args.id),args.pinned===true);return {ok:true};});
