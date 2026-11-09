@@ -2,7 +2,7 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.2.8 预览版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.3.0) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.3.1 正式版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.3.1) 页面进入下载。
 
 ## 在哪里打开面板
 
@@ -22,10 +22,10 @@
 
 ### 从旧版升级
 
-0.1.1 及更早版本尚无更新按钮，请先下载 [0.3.0 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.3.0.tgz)，在文件页面点 **Download raw file**，然后执行：
+0.1.1 及更早版本尚无更新按钮，请先下载 [0.3.1 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.3.1.tgz)，在文件页面点 **Download raw file**，然后执行：
 
 ```powershell
-dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.3.0.tgz"
+dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.3.1.tgz"
 ```
 
 重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。
@@ -67,7 +67,7 @@ Token 是模型分词后的计量单位，不是字数。汉字、标点、英�
 
 - 通过 SnowLuma 的 OneBot 11 正向 WebSocket，接收个人 QQ 的白名单私聊、群聊并回复文本。主人私聊默认允许，群聊默认仅在被 @ 时回复。
 - B 站手机扫码登录，在本机保存 Cookie；按要求读取视频标题、简介和作者，发表评论或回复已有评论。
-- QQ 主人私聊、B 站操作和 DSH 的 `shiguang_chat` 共用同一角色的记忆。默认仅主人私聊可查询其他私聊与群聊；其他私聊限本会话，QQ群始终只用本群。
+- QQ 主人私聊、B 站操作和 DSH 的 `shiguang_chat` 共用同一角色的记忆。默认仅主人私聊可查询其他私聊与群聊；其他私聊限本会话，QQ群默认只用本群；需要主人在群里引用私聊时，在记忆页另开独立开关。
 - 正常聊天仅注入**当天重要笔记＋当前聊天最近 12 条消息**。分别限制为 2600 和 4000 字符，不加载整个历史档案。
 - 明确追问旧事时，先查本地全文索引：最多 5 条、每条约 240 字符；不足时再按 ID 展开，每页最多 1600 字符。
 - 按本机配置时区划分“今天”。过零点后昨天的内容不再自动注入，但仍可检索。

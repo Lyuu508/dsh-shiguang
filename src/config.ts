@@ -41,7 +41,7 @@ export function mirrorBaseUrl(value:string):URL {
 export interface Settings {
   roleId: string; displayName: string; persona: string; timezone: string; dataDir: string;
   provider: string; model: string; replyTimeoutMs: number; maxReplyChars: number; maxQueue: number;
-  memory: { todayMaxChars: number; ownerOnlyCrossChat:boolean;recentMessages: number; recentMaxChars: number; searchLimit: number; snippetChars: number; detailMaxChars: number };
+  memory: { todayMaxChars: number; ownerOnlyCrossChat:boolean;allowOwnerGroupRecall:boolean;recentMessages: number; recentMaxChars: number; searchLimit: number; snippetChars: number; detailMaxChars: number };
   media: MediaSettings;
   autonomy: AutonomySettings;
   biliVision: typeof BILI_VISION_DEFAULTS;
@@ -108,6 +108,7 @@ export function parseSettings(value: unknown, file: string): Settings {
     maxReplyChars: integer(c.maxReplyChars, 'maxReplyChars',100), maxQueue: integer(c.maxQueue, 'maxQueue',1),
     memory: {
       ownerOnlyCrossChat:boolean(m.ownerOnlyCrossChat??true,'memory.ownerOnlyCrossChat'),
+      allowOwnerGroupRecall:boolean(m.allowOwnerGroupRecall??false,'memory.allowOwnerGroupRecall'),
       todayMaxChars: integer(m.todayMaxChars, 'memory.todayMaxChars',100),
       recentMessages: integer(m.recentMessages, 'memory.recentMessages',1),
       recentMaxChars: integer(m.recentMaxChars, 'memory.recentMaxChars',100),

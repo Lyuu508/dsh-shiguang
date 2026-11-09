@@ -16,7 +16,8 @@
     "searchLimit": 5,
     "snippetChars": 240,
     "detailMaxChars": 1600,
-    "ownerOnlyCrossChat": true
+    "ownerOnlyCrossChat": true,
+    "allowOwnerGroupRecall": false
   },
   "qq": {
     "enabled": false,

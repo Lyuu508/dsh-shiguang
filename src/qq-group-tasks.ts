@@ -8,21 +8,35 @@ import {flashRoute} from './model-route.js';
 import {clockContext} from './time-awareness.js';
 import {recordSingleUsage,usageSession} from './usage.js';
 import {stateValue,setState} from './initiative-state.js';
-export function groupTaskRequested(text:string){if(/(?:不要|别|不用|禁止).{0,10}(?:去|往|在|发).{0,20}群/.test(text))return false;return /(?:帮我|替我|请你|麻烦你|你.{0,8}去|去|到|往|向).{0,40}群|^(?:在).{0,30}群.{0,20}(?:说|发|问|聊|提醒|打.{0,2}招呼)/.test(text);}
+import {wantsEmoji,type EmojiSender,type EmojiReceipt} from './emoji-sender.js';
+export function groupTaskRequested(text:string){if(/(?:不要|别|不用|禁止).{0,10}(?:去|往|在|发).{0,20}群/.test(text))return false;return /(?:帮我|替我|请你|麻烦你|你.{0,8}(?:去|给|往|在)|去|到|往|向).{0,40}群|^(?:给|在).{0,30}群.{0,20}(?:说|发|问|聊|提醒|打.{0,2}招呼)/.test(text);}
 function groupPostRequested(text:string){if(/群.{0,8}(?:看看|查看|看下|了解|读)|(?:看看|查看|看下|了解|读).{0,12}群/.test(text)&&!/(?:然后|再|顺便).{0,6}(?:说|发|问|提醒|聊|打)/.test(text))return false;return groupTaskRequested(text)&&/(?:说|发|问|聊|提醒|喊|告诉|打.{0,2}招呼)/.test(text);}
 
 export class QQGroupTasks {
  private abort=new AbortController();
- constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly qq:()=>OneBotClient,readonly canAct=()=>true,readonly onSent?:(id:string)=>void){}
+ constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly qq:()=>OneBotClient,readonly canAct=()=>true,readonly onSent?:(id:string)=>void,readonly emoji?:()=>EmojiSender){}
  stop(){this.abort.abort();}
  status(){return {enabled:this.settings.qq.groupChat.allowOwnerTasks,today:this.memory.actionQuota('qq-group-task').today,limit:this.settings.qq.groupChat.tasksPerDay,last:stateValue(this.memory,'qq:group-task:last',{at:0,message:'主人可私聊安排白名单群发言任务'})};}
  private guard(){if(!this.settings.qq.enabled||!this.settings.qq.groupChat.allowOwnerTasks||!this.canAct())throw Error('主人群任务未开启或当前处于睡眠');}
  async groups(signal:AbortSignal){this.guard();signal.throwIfAborted();await this.qq().ready(signal);const rows=await this.qq().action<unknown[]>('get_group_list',{});signal.throwIfAborted();if(!Array.isArray(rows))throw Error('QQ 没有返回群列表');return rows.flatMap(row=>{if(!row||typeof row!=='object')return [];const r=row as Record<string,unknown>,id=String(r.group_id??'');return this.settings.qq.allowedGroups.includes(id)?[{id,name:typeof r.group_name==='string'?r.group_name.slice(0,100):id}]:[];});}
  context(groupId:string){this.guard();if(!this.settings.qq.allowedGroups.includes(groupId))throw Error('目标群尚未加入允许的群号');const context=this.memory.fastContext('qq:group:'+groupId,'qq:group:'+groupId);return {groupId,day:context.day,recent:context.recent.slice(-this.settings.memory.recentMaxChars),note:'仅为插件已接收并保存的本群当天消息，不代表群里的全部历史'};}
- async send(groupId:string,request:string,turnId:string,external:AbortSignal){
-  const signal=AbortSignal.any([this.abort.signal,external]);this.guard();if(!groupPostRequested(request))throw Error('本轮没有主人明确的群任务');if(!this.settings.qq.allowedGroups.includes(groupId))throw Error('目标群尚未加入允许的群号');
+ private async target(groupId:string,request:string,signal:AbortSignal){
+  this.guard();if(!this.settings.qq.allowedGroups.includes(groupId))throw Error('目标群尚未加入允许的群号');
   const groups=await this.groups(signal),target=groups.find(g=>g.id===groupId);if(!target)throw Error('伙伴账号不在这个允许的群里');
-  const named=groups.filter(g=>request.includes(g.id)||g.name!==g.id&&request.includes(g.name));if(groups.length>1&&!named.some(g=>g.id===groupId)&&!/(?:所有|全部|每个)(?:允许的|白名单)?群/.test(request))throw Error('有多个允许的群，请主人明确群名或群号后再发，不会自行挑群');
+  const named=groups.filter(g=>request.includes(g.id)||g.name!==g.id&&request.includes(g.name));if(groups.length>1&&!named.some(g=>g.id===groupId)&&!/(?:所有|全部|每个)(?:允许的|白名单)?群/.test(request))throw Error('有多个允许的群，请主人明确群名或群号后再发，不会自行挑群');return target;
+ }
+ async sendEmoji(groupId:string,request:string,turnId:string,external:AbortSignal){
+  const signal=AbortSignal.any([this.abort.signal,external]);if(!groupTaskRequested(request)||!wantsEmoji(request))throw Error('本轮没有主人明确的群表情任务');
+  if(!this.emoji||!this.settings.emoji.sendEnabled||!this.settings.emoji.sendAllowGroups)throw Error('请在 QQ 表情设置开启允许发送真实收藏表情和允许在群聊发送');
+  const target=await this.target(groupId,request,signal),account=await this.qq().check();signal.throwIfAborted();if(!account.online||!account.userId)throw Error('QQ 尚未在线');
+  let receipt:EmojiReceipt|undefined;const id='group-emoji:'+createHash('sha256').update(JSON.stringify([turnId,groupId])).digest('hex');
+  const query=request.replace(/^.{0,40}?群(?:里|内|中)?\s*(?=(?:发|给|来|送|扔))/,'').replace(/\s*(?:到|去|给|往).{0,40}群(?:里|内|中)?[吧呀啊~。！!]*$/,'');
+  await this.emoji().send({id,selfId:account.userId,userId:this.settings.qq.ownerQQ,groupId,thread:'qq:group:'+groupId,scope:'qq:group:'+groupId,owner:false,ownerMessage:true,text:request},this.qq(),query,true,signal,value=>{receipt=value;});
+  if(!receipt)throw Error('没有收到群表情回执，本次不确认完成');
+  setState(this.memory,'qq:group-task:last',{at:this.memory.clock(),message:`已向群 ${groupId} 发送收藏表情，QQ 回执 ${receipt.messageId}`});this.onSent?.(groupId);return {groupId,groupName:target.name,...receipt};
+ }
+ async send(groupId:string,request:string,turnId:string,external:AbortSignal){
+  const signal=AbortSignal.any([this.abort.signal,external]);this.guard();if(wantsEmoji(request))throw Error('群表情任务请使用群表情发送工具，不能改成文字或发回主人私聊');if(!groupPostRequested(request))throw Error('本轮没有主人明确的群任务');const target=await this.target(groupId,request,signal);
   const account=await this.qq().check();signal.throwIfAborted();if(!account.online||!account.userId)throw Error('QQ 尚未在线');
   const key='qq-group-task:'+createHash('sha256').update(JSON.stringify([turnId,groupId])).digest('hex');this.memory.reserveAction('qq-group-task',key,this.settings.qq.groupChat.tasksPerDay,0);
   let sent=false;try{
