@@ -63,32 +63,32 @@ export class MediaReader {
   private stage(stage:string){this.lastStatus={...this.lastStatus,stage};}
   lastObservation?:MediaObservation;
   ensureTools(){return Promise.resolve();}
-  readSource(media:QQMediaRef,qq:OneBotClient,signal:AbortSignal){return this.source(media,qq,signal);}
+  readSource(media:QQMediaRef,qq:OneBotClient,signal:AbortSignal,maxBytes=this.settings.media.maxFileMB*1048576){return this.source(media,qq,signal,Math.min(maxBytes,this.settings.media.maxFileMB*1048576));}
   private abort=new AbortController();
   constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore,readonly fetcher:typeof fetch=fetch,readonly prepare?:()=>Promise<void>){}
   stop():void{this.abort.abort();}
   private route(){return flashRoute(this.ctx);}
 
-  private async download(url:string,signal:AbortSignal):Promise<Buffer>{
-    let target=mediaURL(url);const limit=this.settings.media.maxFileMB*1024*1024;
+  private async download(url:string,signal:AbortSignal,limit=this.settings.media.maxFileMB*1048576):Promise<Buffer>{
+    let target=mediaURL(url);
     for(let i=0;i<4;i++){
       const response=await this.fetcher(target,{signal,redirect:'manual'});
       if([301,302,303,307,308].includes(response.status)){await response.body?.cancel();target=mediaURL(new URL(response.headers.get('location')||'',target).href);continue;}
       if(!response.ok||!response.body){await response.body?.cancel();throw new MediaError(`QQ 媒体下载失败（HTTP ${response.status}），请重新发送后重试`);}
-      if(Number(response.headers.get('content-length'))>limit){await response.body.cancel();throw new MediaError(`媒体超过 ${this.settings.media.maxFileMB} MB，请先压缩`);}
+      if(Number(response.headers.get('content-length'))>limit){await response.body.cancel();throw new MediaError(`媒体超过 ${Math.ceil(limit/1048576)} MB，请先压缩`);}
       const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
-      try {for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw new MediaError(`媒体超过 ${this.settings.media.maxFileMB} MB，请先压缩`);chunks.push(value);}return Buffer.concat(chunks);}
+      try {for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw new MediaError(`媒体超过 ${Math.ceil(limit/1048576)} MB，请先压缩`);chunks.push(value);}return Buffer.concat(chunks);}
       finally{await reader.cancel().catch(()=>{});}
     }
     throw new MediaError('QQ 媒体下载重定向过多，请重新发送');
   }
-  private async source(media:QQMediaRef,qq:OneBotClient,signal:AbortSignal):Promise<Buffer>{
+  private async source(media:QQMediaRef,qq:OneBotClient,signal:AbortSignal,limit=this.settings.media.maxFileMB*1048576):Promise<Buffer>{
     let info:Record<string,unknown>={};try{info=await qq.mediaInfo(media);}catch{/* Try the bounded CDN URL carried by the event. */}
-    signal.throwIfAborted();const limit=this.settings.media.maxFileMB*1024*1024;
-    if(Number(info.file_size)>limit)throw new MediaError(`媒体超过 ${this.settings.media.maxFileMB} MB，请先压缩`);
+    signal.throwIfAborted();
+    if(Number(info.file_size)>limit)throw new MediaError(`媒体超过 ${Math.ceil(limit/1048576)} MB，请先压缩`);
     const urls=[info.url,info.download_url,info.file,info.file_path,media.url,media.file].filter((u):u is string=>typeof u==='string'&&/^https?:\/\//i.test(u));
     let failure:unknown;
-    for(const url of [...new Set(urls)]){signal.throwIfAborted();try{return await this.download(url,signal);}catch(error){failure=error;}}
+    for(const url of [...new Set(urls)]){signal.throwIfAborted();try{return await this.download(url,signal,limit);}catch(error){failure=error;}}
     const root=this.settings.media.localMediaDir;
     if(root&&typeof info.file==='string'){
       const allowed=await realpath(root),path=await realpath(info.file.startsWith('file:')?fileURLToPath(info.file):info.file);

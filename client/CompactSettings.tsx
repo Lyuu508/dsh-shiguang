@@ -1,0 +1,17 @@
+import React,{createContext,useContext,useEffect,useId,useRef,useState} from 'react';
+interface Layout {mode:'default'|'all'|'none';first?:string;open:Map<string,boolean>;toggle:(id:string,open:boolean)=>void}
+const Context=createContext<Layout|undefined>(undefined);
+function text(node:React.ReactNode):string {return typeof node==='string'||typeof node==='number'?String(node):React.isValidElement<{children:React.ReactNode}>(node)?text(node.props.children):Array.isArray(node)?node.map(text).join(''):'';}
+export function SettingSection({children,...props}:React.ComponentPropsWithoutRef<'section'>){
+ const context=useContext(Context),id=useId(),parts=React.Children.toArray(children),index=parts.findIndex(c=>React.isValidElement(c)&&c.type==='h2');
+ if(!context||index<0)return <section {...props}>{children}</section>;
+ const heading=parts[index]!,title=text(heading),open=context.open.get(id)??(context.mode==='all'||context.mode==='default'&&(context.first===id||/连接你的 QQ|一个熟悉的伙伴/.test(title)));
+ return <section {...props} data-setting-id={id} data-setting-title={title}><details open={open} className="sg-fold"><summary aria-expanded={open} aria-controls={id+'-body'} onClick={e=>{e.preventDefault();context.toggle(id,!open);}}>{heading}</summary><div id={id+'-body'} className="sg-fold-body">{parts.filter((_,i)=>i!==index)}</div></details></section>;
+}
+export function CompactSettings({children}:{children:React.ReactNode}){
+ const root=useRef<HTMLDivElement>(null),[mode,setMode]=useState<Layout['mode']>('default'),[open,setOpen]=useState(new Map<string,boolean>()),[items,setItems]=useState<{id:string;title:string}[]>([]);
+ useEffect(()=>{const scan=()=>{const next=Array.from(root.current?.querySelectorAll<HTMLElement>('section[data-setting-id]')||[]).map(e=>({id:e.dataset.settingId!,title:e.dataset.settingTitle!}));setItems(before=>JSON.stringify(before)===JSON.stringify(next)?before:next);};scan();const navigate=(event:Event)=>jump((event as CustomEvent<string>).detail);root.current?.addEventListener('shiguang:open-setting',navigate);const observer=new MutationObserver(scan);if(root.current)observer.observe(root.current,{childList:true,subtree:true});return()=>{observer.disconnect();root.current?.removeEventListener('shiguang:open-setting',navigate);};},[]);
+ const toggle=(id:string,value:boolean)=>setOpen(before=>new Map(before).set(id,value));
+ function jump(id:string){const section=Array.from(root.current?.querySelectorAll<HTMLElement>('section[data-setting-id]')||[]).find(e=>e.dataset.settingId===id);if(!section)return;setOpen(before=>{const next=new Map(before);let current:HTMLElement|null=section;while(current){if(current.dataset.settingId)next.set(current.dataset.settingId,true);current=current.parentElement?.closest<HTMLElement>('section[data-setting-id]')||null;}return next;});requestAnimationFrame(()=>section.scrollIntoView({behavior:'smooth',block:'start'}));}
+ return <Context.Provider value={{mode,first:items[0]?.id,open,toggle}}><div ref={root} className="sg-compact"><nav className="sg-section-nav" aria-label="本页功能导航"><select aria-label="快速跳到功能" value="" onChange={e=>jump(e.target.value)}><option value="">选择要调整的功能…</option>{items.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select><button onClick={()=>{setOpen(new Map());setMode('all');}}>展开本页全部设置</button><button onClick={()=>{setOpen(new Map());setMode('none');}}>收起本页全部设置</button></nav><p className="sg-help sg-compact-hint">常用项优先显示，其余点击标题展开；折叠和跳转会保留未保存的修改。</p>{children}</div></Context.Provider>;
+}

@@ -11,9 +11,10 @@ export class GroupChat {
  chance(message:QQMessage):number|undefined {
   const c=this.settings.qq.groupChat;if(!c.enabled||!message.groupId||message.poke||message.mentioned||message.keywordAwakened)return undefined;
   if(!this.settings.qq.allowedGroups.includes(message.groupId)||!message.text.trim())return 0;
+  if(message.ownerMessage)return c.ownerReplyChance;
   const now=this.memory.clock(),r=this.recent(message.thread);if(this.usage().attempts>=c.dailyLimit||Math.max(r.attemptAt,r.replyAt)>0&&now-Math.max(r.attemptAt,r.replyAt)<c.minGapSeconds*1000)return 0;
   const continuing=r.replyAt>0&&now-r.replyAt<=c.continueSeconds*1000;
-  return message.ownerMessage?c.ownerReplyChance:continuing?c.continueChance:c.replyChance;
+  return continuing?c.continueChance:c.replyChance;
  }
  begin(thread:string){const c=this.settings.qq.groupChat,r=this.recent(thread),now=this.memory.clock(),u=this.usage();if(!c.enabled||u.attempts>=c.dailyLimit||Math.max(r.attemptAt,r.replyAt)>0&&now-Math.max(r.attemptAt,r.replyAt)<c.minGapSeconds*1000){this.last={at:now,message:'按群接话间隔或今日额度继续旁听'};return false;}setState(this.memory,'qq:group-chat:usage',{...u,attempts:u.attempts+1});setState(this.memory,'qq:group-chat:'+thread,{...r,attemptAt:now});this.last={at:now,message:'正在结合本群话题决定是否接话'};return true;}
  quiet(){this.last={at:this.memory.clock(),message:'这轮选择继续旁听，原话已归档'};}

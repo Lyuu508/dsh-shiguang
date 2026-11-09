@@ -70,7 +70,10 @@
       "continueSeconds": 180,
       "minGapSeconds": 20,
       "dailyLimit": 30,
-      "interests": ""
+      "interests": "",
+      "mentionReplyChance": 100,
+      "allowOwnerTasks": true,
+      "tasksPerDay": 20
     }
   },
   "bilibili": {
@@ -237,7 +240,10 @@
     "sendsPerDay": 20,
     "sendMinGapSeconds": 15,
     "syncCount": 48,
-    "matchMeaning": true
+    "matchMeaning": true,
+    "backfillEnabled": false,
+    "backfillPerDay": 20,
+    "backfillGapSeconds": 3
   },
   "snowluma": {
     "directory": "",

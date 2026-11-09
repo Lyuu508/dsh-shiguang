@@ -1,6 +1,6 @@
 import React from 'react';
 import type {Status} from './types.js';
-export function focusBiliDuration(){const root=document.getElementById('sg-bili-duration-limit');root?.scrollIntoView({behavior:'smooth',block:'center'});root?.querySelector('input')?.focus({preventScroll:true});}
+export function focusBiliDuration(){const root=document.getElementById('sg-bili-duration-limit'),section=root?.closest<HTMLElement>('section[data-setting-id]');if(section)section.dispatchEvent(new CustomEvent('shiguang:open-setting',{bubbles:true,detail:section.dataset.settingId}));requestAnimationFrame(()=>{root?.scrollIntoView({behavior:'smooth',block:'center'});root?.querySelector('input')?.focus({preventScroll:true});});}
 export function MediaSamplingInfo({status}:{status?:Status}){
  const live=status?.effective.media,last=status?.media,sample=last?.sampling,applied=last?.applied;
  return <div className="sg-notice" role="status">{live&&<p>当前运行：视频上限 {live.videoFrames} 帧 · 动图上限 {live.animationFrames} 帧 · {live.animationUnderstanding?'动图动作优先 / 最多 '+live.animationImages+' 张图':live.frameSelection==='uniform'?'均匀保留画面':'差异筛选'} · 拼图上限 {live.sheetSize} px · 输出上限 {live.maxOutputTokens} Token</p>}

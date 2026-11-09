@@ -3,7 +3,7 @@ import {searchTokens} from './memory.js';
 import {stateValue,setState} from './initiative-state.js';
 
 export interface EmojiMeaning {meaning:string;emotions:string[];situations:string[];avoid:string[]}
-export interface SavedEmojiMeaning extends EmojiMeaning {source:'vision'|'collector'|'manual';updatedAt:number}
+export interface SavedEmojiMeaning extends EmojiMeaning {source:'vision'|'collector'|'backfill'|'manual';updatedAt:number}
 const key=(scope:string,digest:string)=>'emoji:meaning:'+JSON.stringify([scope,digest]);
 export function parseEmojiMeaning(value:unknown):EmojiMeaning|undefined {
  if(!value||typeof value!=='object')return;const v=value as Record<string,unknown>;

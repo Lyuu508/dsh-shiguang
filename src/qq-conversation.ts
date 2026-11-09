@@ -3,6 +3,7 @@ import type {QQMessage} from './onebot.js';
 import type {Settings} from './config.js';
 export interface QQBatch {id:string;thread:string;messages:QQMessage[];target:QQMessage;firstAt:number;dueAt:number}
 interface Pending extends QQBatch {lastAt:number;delay:number;timer?:ScheduledTimer}
+const replyPriority=(m:QQMessage)=>m.mentioned?4:m.poke?3:m.ownerMessage||m.owner?2:m.keywordAwakened?1:0;
 /** Intake and quiet timers never occupy the model/configuration queue. */
 export class QQConversation {
  private pending=new Map<string,Pending>();private active=new Map<string,AbortController>();private stopped=false;
@@ -14,7 +15,7 @@ export class QQConversation {
   let batch=this.pending.get(message.thread);
   if(!batch&&!selected){this.last={at:now,reason:eligible?'本条按回应概率保持安静；原话已归档':'本条未触发回复；原话已归档'};return false;}
   if(!batch){batch={id:message.id,thread:message.thread,messages:[],target:message,firstAt:now,lastAt:now,dueAt:now,delay:c.enabled?(c.delayMinSeconds+(c.delayMaxSeconds-c.delayMinSeconds)*this.random())*1000:0};this.pending.set(message.thread,batch);}
-  batch.messages.push(message);batch.lastAt=now;if(selected)batch.target=message;
+  batch.messages.push(message);batch.lastAt=now;if(selected&&replyPriority(message)>=replyPriority(batch.target))batch.target=message;
   const maximum=c.enabled?Math.max(batch.delay,c.maxWaitSeconds*1000):0;
   batch.dueAt=Math.min(batch.firstAt+maximum,Math.max(batch.firstAt+batch.delay,now+(c.enabled?c.mergeWindowSeconds*1000:0)));
   if(batch.messages.length>=c.maxMessages)batch.dueAt=now;

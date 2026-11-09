@@ -19,6 +19,10 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
   signal.throwIfAborted();
   const args = object(payload ?? {});
   switch (action) {
+    case 'emoji-backfill-start':return runtime.emojiBackfill.start();
+    case 'emoji-backfill-status':return runtime.emojiBackfill.status();
+    case 'emoji-backfill-pause':return runtime.emojiBackfill.pause();
+    case 'emoji-backfill-retry':return runtime.emojiBackfill.retry();
     case 'emoji-meanings':return listEmojiMeanings(runtime.memory,runtime.settings.emoji.syncCount);
     case 'emoji-meaning-save':case 'emoji-meaning-clear':return runtime.enqueue(async()=>{
       const digest=text(args.digest),scope=text(args.scope);if(!runtime.memory.db.prepare("SELECT 1 FROM emoji_collections WHERE role=? AND digest=? AND scope=? AND status='saved'").get(runtime.memory.roleId,digest,scope))throw new Error('当前角色和会话中没有这张可用表情');

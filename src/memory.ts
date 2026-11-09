@@ -204,17 +204,17 @@ export class MemoryStore {
   reserveComment(key: string, perDay: number, intervalMs: number): void {
     this.reserveAction('bili-comment',key,perDay,intervalMs);
   }
-  actionQuota(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention'|'qq-emoji-send',day=this.today()):{today:number;last:number|null}{
+  actionQuota(kind:'qq-emoji-backfill'|'qq-group-task'|'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention'|'qq-emoji-send',day=this.today()):{today:number;last:number|null}{
     const count=this.db.prepare('SELECT count(*) AS n FROM actions WHERE role=? AND kind=? AND day=?').get(this.roleId,kind,day);
     const last=this.db.prepare('SELECT time FROM actions WHERE role=? AND kind=? ORDER BY time DESC LIMIT 1').get(this.roleId,kind);
     return {today:Number(count?.n),last:last?Number(last.time):null};
   }
-  reserveAction(kind:'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention'|'qq-emoji-send',key:string,perDay:number,intervalMs:number):void {
+  reserveAction(kind:'qq-emoji-backfill'|'qq-group-task'|'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention'|'qq-emoji-send',key:string,perDay:number,intervalMs:number):void {
     const day = this.today(), time = this.clock();
-    const label=kind==='bili-comment'?'评论':kind==='bili-dynamic'?'动态':kind==='bili-dm'?'B 站私信':kind==='bili-mention'?'B站评论 @ 回复':kind==='bili-like'?'B 站点赞':kind==='qq-emoji'?'QQ 表情收藏':kind==='qq-emoji-send'?'QQ 发表情':'QQ 主动联系';
+    const label=kind==='qq-emoji-backfill'?'旧收藏整理':kind==='qq-group-task'?'主人群任务':kind==='bili-comment'?'评论':kind==='bili-dynamic'?'动态':kind==='bili-dm'?'B 站私信':kind==='bili-mention'?'B站评论 @ 回复':kind==='bili-like'?'B 站点赞':kind==='qq-emoji'?'QQ 表情收藏':kind==='qq-emoji-send'?'QQ 发表情':'QQ 主动联系';
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      if (this.db.prepare('SELECT key FROM actions WHERE key=?').get(key)) throw new Error(`这次${label}已提交过或结果待核实；请先去 B 站查看，插件不会重复发送`);
+      if (this.db.prepare('SELECT key FROM actions WHERE key=?').get(key)) throw new Error(`这次${label}已提交过或结果待核实；请先在对应平台核实，插件不会重复执行`);
       const quota=this.actionQuota(kind,day);
       if (quota.today >= perDay) throw new Error(`今日${label}次数已用完`);
       if (quota.last !== null && time - quota.last < intervalMs) throw new Error(`${label}间隔过短，请稍后再试`);
