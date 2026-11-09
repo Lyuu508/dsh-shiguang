@@ -6,8 +6,9 @@ import { MemoryStore, dayKey, searchTokens } from '../src/memory.js';
 import { historyRequested } from '../src/policy.js';
 import { fixture } from './helpers.js';
 
-test('正常聊天只加载今天的笔记和限量最近对话，旧记忆留在归档', () => {
-  const f = fixture(); let now = Date.parse('2026-11-07T10:00:00Z');
+test('关闭短期窗口后只加载今天的笔记和限量最近对话，旧记忆留在归档', () => {
+  const f = fixture();
+  f.settings.memory.shortTermEnabled=false; let now = Date.parse('2026-11-07T10:00:00Z');
   const store = new MemoryStore(':memory:', 'a', 'UTC', f.settings.memory, () => now);
   try {
     store.append('owner', 'qq', 'qq:private:1', 'note', '昨天学了吉他', undefined, now - 86400000);

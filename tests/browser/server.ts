@@ -48,6 +48,10 @@ const platform:typeof fetch=async(url)=>{
  if(String(url).includes('/generate')){polls=0;return Response.json({code:0,data:{url:'https://account.bilibili.com/h5/account-h5/auth/scan-web?qrcode_key=browser-test',qrcode_key:'browser-test'}});}
  if(String(url).includes('/spi'))return Response.json({code:0,data:{b_3:'browser-buvid'}});
  if(String(url).includes('search/type'))return Response.json({code:0,data:{result:[]}});
+ if(String(url).includes('/x/msgfeed/reply'))return Response.json({code:0,data:{cursor:{is_end:true},items:[]}});
+ if(String(url).includes('/x/v2/reply/add'))return Response.json({code:0,data:{rpid_str:'92001'}});
+ if(String(url).includes('/x/v2/reply/reply'))return Response.json({code:0,data:{root:{rpid_str:'500',root_str:'0',oid:123,type:1,member:{mid:'10003',uname:'评论者阿橙'},content:{message:'这个细节是怎么拍出来的？'}},replies:[{rpid_str:'501',root_str:'500',parent_str:'500',oid:123,type:1,member:{mid:'10004',uname:'评论者小雨'},content:{message:'我也想知道这个镜头'}}]}});
+ if(String(url).includes('/x/v2/reply?'))return Response.json({code:0,data:{replies:[{rpid_str:'500',root_str:'0',oid:123,type:1,member:{mid:'10003',uname:'评论者阿橙'},content:{message:'这个细节是怎么拍出来的？'}}]}});
  if(String(url).includes('/x/msgfeed/at'))return Response.json({code:0,data:{cursor:{is_end:true},items:[]}});
  if(String(url).includes('/fetch_session_msgs'))return Response.json({code:0,data:{max_seqno:'0',has_more:0,messages:[]}});
  if(String(url).includes('/nav'))return Response.json({code:0,data:{isLogin:true,mid:123456,uname:'测试B站伙伴',wbi_img:{img_url:'https://i0.hdslb.com/bfs/wbi/'+'a'.repeat(32)+'.png',sub_url:'https://i0.hdslb.com/bfs/wbi/'+'b'.repeat(32)+'.png'}}});
@@ -73,6 +77,7 @@ const server=createServer(async(req,res)=>{
    for(const socket of qq.clients)socket.send(JSON.stringify({post_type:'message',message_type:'group',message_id:Date.now(),self_id:10002,user_id:10003,group_id:20001,sender:{nickname:'群友阿橙'},message:[{type:'text',data:{text:'红温的意思是因为着急或生气而脸红'}}]}));
    let entries=listSlang(runtime.memory,'红温','all');for(let n=0;n<100&&!entries.length;n++){await new Promise(r=>setTimeout(r,10));entries=listSlang(runtime.memory,'红温','all');}res.setHeader('Content-Type','application/json');res.end(JSON.stringify(entries));return;
   }
+  if(req.method==='POST'&&req.url==='/fixture/short-term-032'){await runtime.enqueue(async()=>{const m=runtime.memory,now=m.clock();m.append('qq:group:20001','qq','qq:group:20001','user','周六团建在东门集合','short-trip',now-2*3600000,'',{turnId:'short-trip',speakerId:'10003',speakerName:'群友阿橙'});m.append('qq:group:20001','qq','qq:group:20001','assistant','好呀，东门集合记住啦','short-reply',now-2*3600000+1000,'',{turnId:'short-trip',speakerId:'10002',speakerName:'小拾'});for(let i=0;i<100;i++)m.append('qq:group:20001','qq','qq:group:20001','user','其他群聊'+i,'short-noise-'+i,now-10000+i,'',{speakerId:'10004',speakerName:'群友小雨'});m.fastContext('qq:group:20001','qq:group:20001',undefined,[],{speakerIds:['10003'],query:'接着说呢'});});res.setHeader('Content-Type','application/json');res.end(JSON.stringify(runtime.status().memory.shortTerm));return;}
   if(req.method==='POST'&&req.url==='/fixture/group-emoji-031'){const value=await runtime.enqueue(()=>runtime.qqGroups.sendEmoji('20001','去游戏群发个开心的表情包','browser-group-emoji-'+Date.now(),AbortSignal.timeout(10000)));res.setHeader('Content-Type','application/json');res.end(JSON.stringify({...value,delivery:qqSent.at(-1)}));return;}
   if(req.method==='POST'&&req.url==='/fixture/group-task-030'){const value=await runtime.enqueue(()=>runtime.qqGroups.send('20001','去游戏群说：大家晚上好','browser-task-'+Date.now(),AbortSignal.timeout(10000)));res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));return;}
   if(req.method==='POST'&&req.url==='/fixture/group-0210'){

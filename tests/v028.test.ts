@@ -38,7 +38,7 @@ for(const [extension,codec] of [['mp4','libx264'],['mp4','mpeg4'],['flv','flv1']
  }finally{f.cleanup();}
 });
 test('内置引擎真实启动，任务取消退出且不残留外部进程',async()=>{
- const result=await checkEmbeddedEngine();assert.equal(result.ready,true);assert.match(result.message,/内置/);const f=fixture();try{const file=gif(f.dir),abort=new AbortController();const job=frameSheet(file,f.dir,f.settings.media,abort.signal);setTimeout(()=>abort.abort(),10);await assert.rejects(job,/取消或超时/);await assert.rejects(frameSheet(file,f.dir,f.settings.media,AbortSignal.abort()),/abort|取消|operation/i);}finally{f.cleanup();}
+ const result=await checkEmbeddedEngine();assert.equal(result.ready,true);assert.match(result.message,/内置/);const f=fixture();try{const file=gif(f.dir),abort=new AbortController();const job=frameSheet(file,f.dir,f.settings.media,abort.signal);setTimeout(()=>abort.abort(),10);await assert.rejects(job,(error:unknown)=>error instanceof Error&&(error.name==='AbortError'||/取消或超时/.test(error.message)));await assert.rejects(frameSheet(file,f.dir,f.settings.media,AbortSignal.abort()),/abort|取消|operation/i);}finally{f.cleanup();}
 });
 function owned(dir:string){const root=join(dir,'media-tools'),digest='a'.repeat(64),bin=join(root,digest,'bin');mkdirSync(bin,{recursive:true});for(const name of ['ffmpeg.exe','ffprobe.exe'])writeFileSync(join(bin,name),'owned-old-tool');writeFileSync(join(root,'installed.json'),JSON.stringify({version:'latest',digest,ffmpeg:digest+'/bin/ffmpeg.exe',ffprobe:digest+'/bin/ffprobe.exe'}));writeFileSync(join(root,'ffmpeg.zip'),'archive');mkdirSync(join(root,'parts'));writeFileSync(join(root,'keep-user.txt'),'user-owned');return {root,digest,bin};}
 test('升级先验证内置引擎再清理有记录的旧安装，保留系统和用户文件',async()=>{

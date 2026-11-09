@@ -2,7 +2,7 @@
 
 拾光，是把每天的聊天、见闻和记忆收集起来的 AI 伙伴。它是从零编写的独立 DeepSeek Harness（DSH）插件，没有依赖或复制 SurfCore。当前版本面向 Windows 本机运行。角色名和人格可自行修改。
 
-仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.3.1 正式版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.3.1) 页面进入下载。
+仓库：`Lyuu508/dsh-shiguang`。源码 ZIP、预构建安装包及 SHA256 校验文件保存在 [downloads 目录](https://github.com/Lyuu508/dsh-shiguang/tree/main/downloads)，也可以从 [v0.3.2 正式版](https://github.com/Lyuu508/dsh-shiguang/releases/tag/v0.3.2) 页面进入下载。
 
 ## 在哪里打开面板
 
@@ -22,10 +22,10 @@
 
 ### 从旧版升级
 
-0.1.1 及更早版本尚无更新按钮，请先下载 [0.3.1 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.3.1.tgz)，在文件页面点 **Download raw file**，然后执行：
+0.1.1 及更早版本尚无更新按钮，请先下载 [0.3.2 安装包](https://github.com/Lyuu508/dsh-shiguang/blob/main/downloads/dsh-shiguang-0.3.2.tgz)，在文件页面点 **Download raw file**，然后执行：
 
 ```powershell
-dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.3.1.tgz"
+dsh plugin --profile web add "C:\你的下载目录\dsh-shiguang-0.3.2.tgz"
 ```
 
 重启 DSH 并刷新页面。之后可在 **设置 → 拾光 → 版本更新** 点击“检查更新”和“下载并安装更新”。更新读取此仓库的已发布 Release（含预览版），下载对应 tag 下的预构建包，校验 SHA256 后调用 DSH 插件管理服务；不从 `main` 自动安装未发布的代码。安装时请等待；DSH 替换插件可能关闭设置页，重新打开本页即可查看保存的进度和结果，按提示重启。若 DSH 未启用插件管理服务，可继续手动安装。

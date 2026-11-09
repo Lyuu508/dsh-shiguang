@@ -48,14 +48,15 @@ export function videoId(input: string): { bvid: string } | { aid: string } {
   if (!match) throw new Error('链接中未找到有效视频编号');
   return videoId(match[1]!);
 }
-export interface BiliComment {id:string;root:string;uid:string;name:string;text:string;mentions:string[];likes:number}
+export interface BiliComment {parent?:string;id:string;root:string;uid:string;name:string;text:string;mentions:string[];likes:number}
+export interface BiliReplyNotice {id:string;time:number;uid:string;name:string;aid:string;root:string;source:string;target:string}
 export interface BiliMention {id:string;time:number;uid:string;name:string;aid:string;root:string;parent:string}
 function decimalId(value:unknown){const id=String(value??'');return /^[1-9]\d*$/.test(id)&&!(typeof value==='number'&&!Number.isSafeInteger(value))?id:'';}
 function parsedComment(value:unknown,aid:string):BiliComment|undefined{
  if(!value||typeof value!=='object')return;const r=value as any,id=decimalId(r.rpid_str??r.rpid),uid=decimalId(r.member?.mid??r.mid);
  if(!id||!uid||r.oid!==undefined&&String(r.oid)!==aid||r.type!==undefined&&Number(r.type)!==1||typeof r.content?.message!=='string'||r.state!==undefined&&Number(r.state)!==0)return;
  const root=decimalId(r.root_str??r.root)||id;
- return {id,root,uid,name:String(r.member?.uname||uid).slice(0,80),text:r.content.message.slice(0,10000),mentions:Array.isArray(r.content.members)?r.content.members.flatMap((m:any)=>decimalId(m?.mid)||[]):[],likes:Number.isSafeInteger(r.like)&&r.like>=0?r.like:0};
+ return {parent:decimalId(r.parent_str??r.parent)||undefined,id,root,uid,name:String(r.member?.uname||uid).slice(0,80),text:r.content.message.slice(0,10000),mentions:Array.isArray(r.content.members)?r.content.members.flatMap((m:any)=>decimalId(m?.mid)||[]):[],likes:Number.isSafeInteger(r.like)&&r.like>=0?r.like:0};
 }
 export class BilibiliClient {
   private readonly cookiesPath: string;
@@ -321,6 +322,31 @@ export class BilibiliClient {
       const raw=Array.isArray(data.replies)?data.replies:[];for(const row of raw){const comment=parsedComment(row,video.aid);if(comment&&!rows.some(r=>r.id===comment.id))rows.push(comment);}
       if(raw.length<Math.min(20,limit-rows.length+raw.length)||!raw.length||page>=Math.ceil(limit/20)+1)break;
     }return rows.slice(0,limit);
+  }
+  async commentThread(input:string,root:string,page=1,signal?:AbortSignal):Promise<{root:BiliComment;replies:BiliComment[];more:boolean}>{
+    if(!decimalId(root)||!Number.isSafeInteger(page)||page<1)throw new Error('请提供合法根评论 ID 和页码');
+    const video=await this.video(input,signal),cookies=this.cookies(),query=new URLSearchParams({type:'1',oid:video.aid,root,pn:String(page),ps:'20'});
+    const {data}=await this.request('https://api.bilibili.com/x/v2/reply/reply?'+query,{headers:{Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ')}},signal),original=parsedComment(data.root,video.aid);
+    if(!original||original.id!==root||original.root!==root)throw new Error('根评论不存在或不属于这个视频');
+    const raw=Array.isArray(data.replies)?data.replies:[],replies=raw.flatMap(r=>{const c=parsedComment(r,video.aid);return c&&c.root===root?[c]:[];});return {root:original,replies,more:raw.length===20};
+  }
+  async findComment(input:string,root:string,id:string,signal?:AbortSignal){
+    if(!decimalId(id))throw new Error('目标评论 ID 无效');
+    for(let page=1;page<=this.settings.biliSocial.commentReplyMaxPages;page++){const thread=await this.commentThread(input,root,page,signal),found=[thread.root,...thread.replies].find(c=>c.id===id);if(found)return found;if(!thread.more)break;}
+    throw new Error('当前楼层中未找到目标评论；请核对根评论 ID 或提高评论读取页数');
+  }
+  async replyToComment(input:string,root:string,parent:string,text:string,signal?:AbortSignal){const original=await this.findComment(input,root,parent,signal);return this.comment(input,text,original.root,original.id,signal);}
+  async repliesPage(cursor?:{id:string;time:number},signal?:AbortSignal):Promise<{items:BiliReplyNotice[];oldestTime:number;newest:{id:string;time:number};next?:{id:string;time:number}}>{
+    if(!this.settings.bilibili.enabled||!this.settings.biliSocial.commentRepliesEnabled||this.identity==='owner')throw new Error('请先开启伙伴账号评论回复');
+    const cookies=this.cookies(),query=new URLSearchParams({platform:'web',mobi_app:'web',build:'0',...(cursor?{id:cursor.id,reply_time:String(cursor.time)}:{})});
+    const {data}=await this.request('https://api.bilibili.com/x/msgfeed/reply?'+query,{headers:{Cookie:Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; '),Referer:'https://message.bilibili.com/'}},signal);
+    if(!Array.isArray(data.items))throw new Error('B站回复通知格式异常');let oldestTime=Infinity,newest={id:'0',time:0};const items:BiliReplyNotice[]=[];
+    for(const value of data.items){const r=value as any,id=decimalId(r?.id),time=Number(r?.reply_time);if(!id||!Number.isSafeInteger(time)||time<0)continue;oldestTime=Math.min(oldestTime,time);if(time>newest.time||time===newest.time&&BigInt(id)>BigInt(newest.id))newest={id,time};const item=r.item,uid=decimalId(r.user?.mid),aid=decimalId(item?.subject_id),source=decimalId(item?.source_id),target=decimalId(item?.target_id),root=decimalId(item?.root_id)||target;if(Number(item?.business_id)!==1||!uid||!aid||!source||!target||!root)continue;items.push({id,time,uid,name:String(r.user.nickname||uid).slice(0,80),aid,source,target,root});}
+    const c=data.cursor as {is_end?:boolean;id?:unknown;time?:unknown}|undefined,next=c&&!c.is_end&&decimalId(c.id)&&Number.isSafeInteger(Number(c.time))?{id:String(c.id),time:Number(c.time)}:undefined;return {items,oldestTime,newest,next};
+  }
+  async verifyReply(notice:BiliReplyNotice,selfId:string,signal?:AbortSignal){
+    const input='av'+notice.aid,source=await this.findComment(input,notice.root,notice.source,signal),target=await this.findComment(input,notice.root,notice.target,signal);
+    if(source.uid!==notice.uid||source.uid===selfId||source.root!==notice.root||source.parent!==notice.target||target.uid!==selfId)throw new Error('通知作者、根楼层或被回复账号不匹配，本次不接话');return {source,target};
   }
   async mentionsPage(cursor?:{id:string;time:number},signal?:AbortSignal):Promise<{items:BiliMention[];oldestTime:number;newest:{id:string;time:number};next?:{id:string;time:number}}>{
     if(!this.settings.bilibili.enabled||!this.settings.biliSocial.mentionEnabled||this.identity==='owner')throw new Error('请先开启伙伴账号的评论 @ 监听');

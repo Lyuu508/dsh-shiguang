@@ -1,3 +1,4 @@
+import {claimPublicReply} from './bili-reply-state.js';
 import type {Settings} from './config.js';
 import type {MemoryStore} from './memory.js';
 import type {BilibiliClient,BiliMention} from './bilibili.js';
@@ -35,6 +36,7 @@ export class BiliMentions {
    const key='bili-mention:'+account.userId+':'+notice.id;let sent=false;
    try{
     this.message='正在核实原评论作者与真实 @，随后处理任务';const original=await this.bili.verifyMention(notice,account.userId,signal),video=await this.bili.video('av'+notice.aid,signal);
+    if(!claimPublicReply(this.memory,account.userId,original.id)){this.memory.db.prepare("UPDATE bili_mention_receipts SET status='ignored',summary='同条评论已由评论回复入口处理' WHERE role=? AND account=? AND notice_id=?").run(this.memory.roleId,account.userId,notice.id);continue;}
     const thread=`bilibili:comment:${notice.aid}:${original.root}`,turnId=key;
     const reply=await this.driver.reply({scope:thread,thread,owner:true,public:true,allowPlatformTools:c.tasksEnabled,platform:'bilibili',text:original.text,externalKey:key,turnId,speakerId:notice.uid,speakerName:original.name,signal,taskContext:`这是主人在公开的视频评论区真实 @ 你。当前视频：${JSON.stringify({bvid:video.bvid,title:video.title,url:video.url})}。当前 root=${original.root}、parent=${original.id}。主人说“这个视频”指当前视频；明确要求读取视频内容时调用观看工具，完成后在本楼层自然回复。只使用当前评论区与公开视频资料，不能查询或转述私聊记忆。不要额外重复给本楼层发评论，最终回复由服务端发送。公开任务支持读取视频、浏览、点赞与在原楼层回复；另发评论或动态请让主人通过私信安排。`});
     signal.throwIfAborted();if(!this.canAct())throw new Error('已到睡眠时间，本轮评论不再发送');if(!reply||!publicTextAllowed(reply))throw new Error('没有可公开发送的回复，本次停止');

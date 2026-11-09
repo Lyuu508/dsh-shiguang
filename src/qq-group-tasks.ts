@@ -10,6 +10,8 @@ import {recordSingleUsage,usageSession} from './usage.js';
 import {stateValue,setState} from './initiative-state.js';
 import {wantsEmoji,type EmojiSender,type EmojiReceipt} from './emoji-sender.js';
 export function groupTaskRequested(text:string){if(/(?:不要|别|不用|禁止).{0,10}(?:去|往|在|发).{0,20}群/.test(text))return false;return /(?:帮我|替我|请你|麻烦你|你.{0,8}(?:去|给|往|在)|去|到|往|向).{0,40}群|^(?:给|在).{0,30}群.{0,20}(?:说|发|问|聊|提醒|打.{0,2}招呼)/.test(text);}
+export function groupEmojiRequested(text:string){return groupTaskRequested(text)&&wantsEmoji(text)&&!(/(?:记得|回忆|为什么|为啥|有没有|是否|发过|发了没|发没发|发不出去|只能当前窗口)/.test(text)&&!/(?:现在|这次|再|重新|直接|帮我|替我|请你).{0,30}(?:群|表情)/.test(text));}
+
 function groupPostRequested(text:string){if(/群.{0,8}(?:看看|查看|看下|了解|读)|(?:看看|查看|看下|了解|读).{0,12}群/.test(text)&&!/(?:然后|再|顺便).{0,6}(?:说|发|问|提醒|聊|打)/.test(text))return false;return groupTaskRequested(text)&&/(?:说|发|问|聊|提醒|喊|告诉|打.{0,2}招呼)/.test(text);}
 
 export class QQGroupTasks {
@@ -25,12 +27,21 @@ export class QQGroupTasks {
   const groups=await this.groups(signal),target=groups.find(g=>g.id===groupId);if(!target)throw Error('伙伴账号不在这个允许的群里');
   const named=groups.filter(g=>request.includes(g.id)||g.name!==g.id&&request.includes(g.name));if(groups.length>1&&!named.some(g=>g.id===groupId)&&!/(?:所有|全部|每个)(?:允许的|白名单)?群/.test(request))throw Error('有多个允许的群，请主人明确群名或群号后再发，不会自行挑群');return target;
  }
+ async routeEmoji(request:string,turnId:string,signal:AbortSignal){
+  if(!groupEmojiRequested(request))throw Error('本轮没有明确的群表情要求');
+  const groups=await this.groups(signal);if(!groups.length)throw Error('没有可发送的允许群，请先添加群号');
+  const ids=groups.filter(g=>new RegExp('(?:^|\\D)'+g.id+'(?!\\d)').test(request)),named=groups.filter(g=>g.name!==g.id&&request.includes(g.name)).sort((a,b)=>b.name.length-a.name.length),matches=ids.length?ids:named.length?named.filter(g=>g.name.length===named[0]!.name.length):[];
+  const explicit=/(?:去|到|往|给|在|向)([^去到往给在向，。！？!?,\n]{0,30}?群)(?:里|内|中)?/.exec(request)?.[1];
+  if(matches.length>1||!matches.length&&groups.length>1)throw Error('请明确目标群：'+groups.map(g=>g.name+'（'+g.id+'）').join('、'));
+  if(!matches.length&&explicit&&!/^(?:这个|那个|这个QQ|那个QQ|QQ|本|一|一个|任意|某个)?群$/.test(explicit))throw Error('没有找到“'+explicit+'”，请填写已允许的群名或群号');
+  return this.sendEmoji((matches[0]||groups[0])!.id,request,turnId,signal);
+ }
  async sendEmoji(groupId:string,request:string,turnId:string,external:AbortSignal){
   const signal=AbortSignal.any([this.abort.signal,external]);if(!groupTaskRequested(request)||!wantsEmoji(request))throw Error('本轮没有主人明确的群表情任务');
   if(!this.emoji||!this.settings.emoji.sendEnabled||!this.settings.emoji.sendAllowGroups)throw Error('请在 QQ 表情设置开启允许发送真实收藏表情和允许在群聊发送');
   const target=await this.target(groupId,request,signal),account=await this.qq().check();signal.throwIfAborted();if(!account.online||!account.userId)throw Error('QQ 尚未在线');
   let receipt:EmojiReceipt|undefined;const id='group-emoji:'+createHash('sha256').update(JSON.stringify([turnId,groupId])).digest('hex');
-  const query=request.replace(/^.{0,40}?群(?:里|内|中)?\s*(?=(?:发|给|来|送|扔))/,'').replace(/\s*(?:到|去|给|往).{0,40}群(?:里|内|中)?[吧呀啊~。！!]*$/,'');
+  const query=request.replace(/^.{0,40}?群(?:里|内|中)?\s*(?=(?:发|给|来|送|扔))/,'').replace(/\s*(?:到|去|给|往)[^到去给往，。！？!?,\n]{0,30}群(?:里|内|中)?[吧呀啊~。！!]*$/,'').replace(/^(?:你|请|帮我|替我|去|到|往|给|向|在)+/,'');
   await this.emoji().send({id,selfId:account.userId,userId:this.settings.qq.ownerQQ,groupId,thread:'qq:group:'+groupId,scope:'qq:group:'+groupId,owner:false,ownerMessage:true,text:request},this.qq(),query,true,signal,value=>{receipt=value;});
   if(!receipt)throw Error('没有收到群表情回执，本次不确认完成');
   setState(this.memory,'qq:group-task:last',{at:this.memory.clock(),message:`已向群 ${groupId} 发送收藏表情，QQ 回执 ${receipt.messageId}`});this.onSent?.(groupId);return {groupId,groupName:target.name,...receipt};

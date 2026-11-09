@@ -7,7 +7,7 @@ import type { UpdateState } from '../src/updates.js';
 
 const message=(e:unknown)=>e instanceof Error?e.message:'读取失败，请重试';
 const number=(n:number)=>n.toLocaleString();
-const labels:Record<string,string>={'vision-test':'图片识别自检','qq-emoji':'QQ 挑选表情','qq-emoji-backfill':'旧收藏含义补齐','qq-group-task':'主人群发言任务','qq-proactive':'QQ 主动联系','bilibili-mention':'B站评论 @ 任务','bilibili-dm':'B 站私信',qq:'QQ 聊天','qq-media':'QQ 视频 / 动图','bilibili-auto':'B 站自主生活','bilibili-video':'B 站视频识别',bilibili:'B 站任务',dsh:'DSH 对话'};
+const labels:Record<string,string>={'vision-test':'图片识别自检','qq-emoji':'QQ 挑选表情','qq-emoji-backfill':'旧收藏含义补齐','qq-group-task':'主人群发言任务','qq-proactive':'QQ 主动联系','bilibili-reply':'B站评论自动接话','bilibili-mention':'B站评论 @ 任务','bilibili-dm':'B 站私信',qq:'QQ 聊天','qq-media':'QQ 视频 / 动图','bilibili-auto':'B 站自主生活','bilibili-video':'B 站视频识别',bilibili:'B 站任务',dsh:'DSH 对话'};
 type Recovery={busy:boolean;checked:number;restored:number;unavailable:number;message:string};
 const emptyUsage:UsageTotals={calls:0,missing:0,input:0,cacheRead:0,cacheWrite:0,output:0,reasoning:0,total:0,exactCalls:0,exactTotal:0,partialCalls:0,unclassified:0,mismatches:0,pending:0};
 export function UsagePanel({api,today}:{api:PanelApi;today?:string}) {

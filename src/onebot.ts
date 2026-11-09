@@ -5,7 +5,7 @@ import { randomUUID,createHash } from 'node:crypto';
 import type { Settings } from './config.js';
 
 export interface QQMessage {
-  id: string; selfId: string; userId: string; groupId?: string;
+  sourceMessageId?:string;quoteReply?:boolean;quoted?:{id:string;speakerId:string;speakerName:string;text:string;media:QQMediaRef[]};id: string; selfId: string; userId: string; groupId?: string;
   thread: string; scope: string; owner: boolean; text: string;
   poke?:{action:string;suffix:string};
   groupJoin?:boolean;ownerMessage?:boolean;memoryId?:string;receivedAt?:number;speakerName?:string;keyword?:string;keywordAwakened?:boolean;media?: QQMediaRef[]; replyId?: string;mentioned?:boolean;replyAllowed?:boolean;
@@ -49,7 +49,7 @@ export function parseMessage(value: unknown, config: Settings['qq'],includePassi
   const media=mediaSegments(value.message);
   if ((!text && !media.length) || text.length > 10000) return null;
   const thread = groupId ? `qq:group:${groupId}` : `qq:private:${userId}`;
-  return { id: `${selfId}:${thread}:${messageId}`, selfId, userId, groupId: groupId || undefined, thread, scope: owner ? 'owner' : thread, owner, ownerMessage:userId===config.ownerQQ, text, speakerName,keyword,media, replyId,mentioned,replyAllowed:!groupId||!config.groupMentionOnly||mentioned||!!keyword };
+  return { sourceMessageId:/^-?\d{1,24}$/.test(messageId)?messageId:undefined,id: `${selfId}:${thread}:${messageId}`, selfId, userId, groupId: groupId || undefined, thread, scope: owner ? 'owner' : thread, owner, ownerMessage:userId===config.ownerQQ, text, speakerName,keyword,media, replyId,mentioned,replyAllowed:!groupId||!config.groupMentionOnly||mentioned||!!keyword };
 }
 
 export function parsePoke(value:unknown,config:Settings['qq']):QQMessage|null {
@@ -132,8 +132,8 @@ export class OneBotClient {
       });
     });
   }
-  send(message: QQMessage, text: string): Promise<JsonObject> {
-    const params = message.groupId ? { group_id: message.groupId, message: [{ type: 'text', data: { text } }] } : { user_id: message.userId, message: [{ type: 'text', data: { text } }] };
+  send(message: QQMessage, text: string, quote=false): Promise<JsonObject> {
+    const params = message.groupId ? { group_id: message.groupId, message: [...(quote&&message.groupId&&message.sourceMessageId&&/^-?\d{1,24}$/.test(message.sourceMessageId)?[{type:'reply',data:{id:message.sourceMessageId}}]:[]),{ type: 'text', data: { text } }] } : { user_id: message.userId, message: [...(quote&&message.groupId&&message.sourceMessageId&&/^-?\d{1,24}$/.test(message.sourceMessageId)?[{type:'reply',data:{id:message.sourceMessageId}}]:[]),{ type: 'text', data: { text } }] };
     return this.action(message.groupId ? 'send_group_msg' : 'send_private_msg', params);
   }
   sendVoice(message:QQMessage,bytes:Buffer):Promise<JsonObject>{
@@ -141,15 +141,16 @@ export class OneBotClient {
     const record={type:'record',data:{file:'base64://'+bytes.toString('base64')}};
     return this.action(message.groupId?'send_group_msg':'send_private_msg',message.groupId?{group_id:message.groupId,message:[record]}:{user_id:message.userId,message:[record]});
   }
-  async quotedMedia(message: QQMessage): Promise<QQMediaRef[]> {
-    if(!message.replyId)return [];
+  async quotedMessage(message:QQMessage){
+    if(message.quoted)return message.quoted;if(!message.replyId)return;
     const result=await this.action('get_msg',{message_id:message.replyId});
-    const same=message.groupId
-      ? result.message_type==='group' && String(result.group_id)===message.groupId
-      : result.message_type==='private' && String(result.user_id ?? (record(result.sender)?result.sender.user_id:''))===message.userId;
-    if(!same)throw new Error('引用的媒体不属于当前会话，无法读取');
-    return mediaSegments(result.message);
+    const same=message.groupId?result.message_type==='group'&&String(result.group_id)===message.groupId:result.message_type==='private'&&String(result.user_id??(record(result.sender)?result.sender.user_id:''))===message.userId;
+    if(!same)throw new Error('引用的消息不属于当前会话，无法读取');
+    const sender=record(result.sender)?result.sender:{},speakerId=id(result.user_id??sender.user_id)||'',speakerName=String(sender.card||sender.nickname||speakerId||'未知发言人').slice(0,80);
+    const text=Array.isArray(result.message)?result.message.flatMap(s=>record(s)&&record(s.data)&&s.type==='text'&&typeof s.data.text==='string'?[s.data.text]:[]).join('').slice(0,1600):typeof result.message==='string'?result.message.slice(0,1600):'';
+    return {id:message.replyId,speakerId,speakerName,text,media:mediaSegments(result.message)};
   }
+  async quotedMedia(message: QQMessage): Promise<QQMediaRef[]> {return (await this.quotedMessage(message))?.media||[];}
   async mediaInfo(media: QQMediaRef): Promise<JsonObject> {
     if(!media.file||/^(?:[a-z]:[\\/]|[\\/]|\.\.)/i.test(media.file)||media.file.includes('..')||media.file.length>1024||/[\r\n\0]/.test(media.file)||/^https?:\/\//i.test(media.file))return {};
     return this.action(media.type==='image'?'get_image':'get_file',{file:media.file});

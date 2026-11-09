@@ -7,7 +7,7 @@ import type {Settings} from './config.js';
 import {searchTokens,type MemoryStore} from './memory.js';
 import type {OneBotClient,QQMessage} from './onebot.js';
 import {stateValue,setState} from './initiative.js';
-export function wantsEmoji(text:string){return !/(?:不要|别|不用|禁止).{0,12}(?:发|来|给)/.test(text)&&/(?:发|来|给).{0,18}(?:表情包|动画表情|动图|[个张].{0,4}表情)|(?:表情包|动画表情).{0,10}(?:发给|发来)/.test(text);}
+export function wantsEmoji(text:string){return !/(?:不要|别|不用|禁止).{0,12}(?:发|来|给)/.test(text)&&/(?:发|来|给).{0,18}(?:表情包|动画表情|动图|[个张].{0,4}表情)|(?:表情包|动画表情).{0,12}(?:发给|发来|发到|发去|送到|转发)/.test(text);}
 export class EmojiMatchError extends Error {}
 export interface EmojiReceipt {messageId:string;summary:string;emojiId:string}
 type Entry={digest:string;summary:string;file:string;emoji_id:string;account:string;scope:string};

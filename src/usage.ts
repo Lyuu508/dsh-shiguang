@@ -5,7 +5,7 @@ import type {SessionEvent} from '@deepseek-ai/dsh-session';
 import type {MemoryStore} from './memory.js';
 import {dayKey} from './memory.js';
 export const usageSession=(session:string)=>brandString<SessionId>(session);
-export interface UsageOrigin {session:string;category?:'bilibili-mention';source:'qq'|'dsh'|'bilibili';provider:string;model:string}
+export interface UsageOrigin {session:string;category?:'bilibili-mention'|'bilibili-reply';source:'qq'|'dsh'|'bilibili';provider:string;model:string}
 export interface UsageTotals {calls:number;missing:number;input:number;cacheRead:number;cacheWrite:number;output:number;reasoning:number;total:number;exactCalls:number;exactTotal:number;partialCalls:number;unclassified:number;mismatches:number;pending:number}
 export interface UsageReport {day:string;timezone:string;scope:'plugin'|'dsh';total:UsageTotals;categories:(UsageTotals&{category:string})[];models:(UsageTotals&{provider:string;model:string})[];bill?:{label:string;totalTokens:number;calls:number|null;amount:string;recordedAt:number};coverageStarted:number|null}
 export const validCount=(n:unknown):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0;
@@ -24,7 +24,7 @@ export function counterValues(usage?:TokenUsage){const c=usageCounters(usage);re
 const columns='role,session,seq,day,time,source,category,provider,model,missing,input,cache_read,cache_write,output,reasoning,full_total,total_source,unclassified,mismatch,raw_usage';
 const upsert=`INSERT INTO llm_usage(${columns}) VALUES(${Array(20).fill('?').join(',')}) ON CONFLICT(role,session,seq) DO UPDATE SET missing=excluded.missing,input=excluded.input,cache_read=excluded.cache_read,cache_write=excluded.cache_write,output=excluded.output,reasoning=excluded.reasoning,full_total=excluded.full_total,total_source=excluded.total_source,unclassified=excluded.unclassified,mismatch=excluded.mismatch,raw_usage=excluded.raw_usage WHERE excluded.total_source IN ('provider','complete-components') OR llm_usage.total_source NOT IN ('provider','complete-components') AND excluded.missing<=llm_usage.missing`;
 export function recordMediaUsage(memory:MemoryStore,origin:UsageOrigin,usage?:TokenUsage){recordSingleUsage(memory,origin,'qq-media',usage);}
-export function recordSingleUsage(memory:MemoryStore,origin:UsageOrigin,category:'qq-group-task'|'qq-emoji-backfill'|'vision-test'|'qq-media'|'bilibili-auto'|'bilibili-video'|'qq-proactive'|'qq-emoji',usage?:TokenUsage){const time=memory.clock();memory.db.prepare(upsert).run(memory.roleId,origin.session,0,dayKey(time,memory.timezone),time,origin.source,category,origin.provider,origin.model,...counterValues(usage));}
+export function recordSingleUsage(memory:MemoryStore,origin:UsageOrigin,category:'bilibili-reply'|'qq-group-task'|'qq-emoji-backfill'|'vision-test'|'qq-media'|'bilibili-auto'|'bilibili-video'|'qq-proactive'|'qq-emoji',usage?:TokenUsage){const time=memory.clock();memory.db.prepare(upsert).run(memory.roleId,origin.session,0,dayKey(time,memory.timezone),time,origin.source,category,origin.provider,origin.model,...counterValues(usage));}
 /** Settled attempts are distinct; cumulative usage chunks within an attempt are not added. */
 export function recordUsage(memory:MemoryStore,origin:UsageOrigin,events:readonly SessionEvent[]){
  const category=origin.category??(events.some(e=>e.type==='tool/call'&&e.data.name.startsWith('shiguang_bili_'))?'bilibili':origin.source==='bilibili'?'bilibili-dm':origin.source),insert=memory.db.prepare(upsert);

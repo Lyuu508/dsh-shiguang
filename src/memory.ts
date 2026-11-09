@@ -1,3 +1,4 @@
+import {workingContext,type WorkingFocus} from './working-memory.js';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -43,6 +44,7 @@ function budgetLines(lines: string[], max: number): string {
 
 export class MemoryStore {
   readonly db: DatabaseSync;
+  shortTermLast?:ReturnType<typeof workingContext>['window'];
   constructor(path: string, readonly roleId: string, readonly timezone: string, readonly limits: Settings['memory'], readonly clock = Date.now,readonly retention=RETENTION_DEFAULTS) {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
@@ -129,10 +131,12 @@ export class MemoryStore {
     for(const [name,definition] of [['emoji_id',"TEXT NOT NULL DEFAULT ''"],['account',"TEXT NOT NULL DEFAULT ''"],['scope',"TEXT NOT NULL DEFAULT 'owner'"]])if(!this.db.prepare('PRAGMA table_info(emoji_collections)').all().some(c=>c.name===name))this.db.exec(`ALTER TABLE emoji_collections ADD COLUMN ${name} ${definition}`);
     this.db.exec("CREATE INDEX IF NOT EXISTS memories_recent ON memories(role,scope,day,time DESC,rowid DESC) WHERE kind IN ('user','assistant')");
     this.db.exec('CREATE INDEX IF NOT EXISTS memories_turn ON memories(role,scope,thread,turn_id,time,rowid); CREATE INDEX IF NOT EXISTS memories_pair ON memories(role,scope,thread,kind,rowid DESC);');
+    this.db.exec("CREATE INDEX IF NOT EXISTS memories_working ON memories(role,scope,thread,time DESC,rowid DESC) WHERE kind IN ('user','assistant'); CREATE INDEX IF NOT EXISTS memories_working_shared ON memories(role,scope,time DESC,rowid DESC) WHERE kind IN ('user','assistant'); CREATE INDEX IF NOT EXISTS memories_working_speaker ON memories(role,scope,thread,speaker_id,time DESC,rowid DESC) WHERE kind='user'");
 
   }
   today(): string { return dayKey(this.clock(), this.timezone); }
   seen(externalKey: string): boolean { return !!this.db.prepare('SELECT 1 FROM memories WHERE external_key=?').get(`${this.roleId}:${externalKey}`); }
+  namespaceFor(scope: string){return this.namespace(scope);}
   private namespace(scope: string): string { return createHash('sha256').update(JSON.stringify([this.roleId, scope])).digest('hex'); }
   append(scope: string, platform: string, thread: string, kind: string, body: string, externalKey?: string, time = this.clock(),category = '',metadata:ConversationMeta={}): string | null {
     const id = randomUUID(),speakerId=(metadata.speakerId??'').slice(0,200),speakerName=(metadata.speakerName??'').replace(/[\x00-\x1f\x7f]/g,'').slice(0,80),turnId=(metadata.turnId||externalKey||id).slice(0,300);
@@ -157,10 +161,12 @@ export class MemoryStore {
     if(row.turn_id)this.db.prepare("SELECT speaker_id,speaker_name,platform,thread FROM memories INDEXED BY memories_turn WHERE role=? AND scope=? AND thread=? AND turn_id=? AND day=? AND kind='user' ORDER BY time DESC,rowid DESC LIMIT 32").all(this.roleId,row.scope,row.thread,row.turn_id,row.day).reverse().forEach(add);
     return [...people.values()];
   }
-  fastContext(scope: string, thread: string,conversationScopes?:string[],excludeTurns:string[]=[]): { day: string; todayNotes: string; recent: string } {
+  fastContext(scope: string, thread: string,conversationScopes?:string[],excludeTurns:string[]=[],focus:WorkingFocus={}): { day: string; todayNotes: string; recent: string } {
     const day = this.today();
     const notes = this.db.prepare("SELECT body,platform,time,thread,kind,speaker_id,speaker_name FROM memories WHERE role=? AND scope=? AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) AND day=? AND kind IN ('note','experience') ORDER BY time DESC,rowid DESC LIMIT 80")
       .all(this.roleId,scope,day);
+    const todayNotes=budgetLines(notes.map(n=>`[${timeLabel(Number(n.time),this.timezone)}] [${n.platform} ${n.thread}] [${n.speaker_id||n.speaker_name?'来源：'+this.speaker(n)+(n.speaker_id?'('+n.speaker_id+')':''):n.kind==='experience'?'伙伴活动；未记录其他参与人':'来源身份未知'}] ${n.body}`),this.limits.todayMaxChars);
+    if(thread.startsWith('qq:')&&this.limits.shortTermEnabled){const hot=workingContext(this,scope,thread,conversationScopes,excludeTurns,focus);this.shortTermLast=hot.window;return {day,todayNotes,recent:hot.recent};}
     const shared=!!conversationScopes?.length;
     const recent=this.db.prepare(`SELECT kind,body,time,platform,thread,speaker_id,speaker_name FROM memories INDEXED BY ${shared?'memories_recent':'memories_thread'} WHERE role=? AND scope IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM memory_meta WHERE memory_meta.id=memories.id AND forgotten=0) AND day=? ${shared?'':'AND thread=?'} AND turn_id NOT IN (SELECT value FROM json_each(?)) AND kind IN ('user','assistant') ORDER BY time DESC,rowid DESC LIMIT ?`)
       .all(this.roleId,JSON.stringify(this.scopes(scope,conversationScopes)),day,...(shared?[]:[thread]),JSON.stringify(excludeTurns),this.limits.recentMessages);
@@ -204,12 +210,12 @@ export class MemoryStore {
   reserveComment(key: string, perDay: number, intervalMs: number): void {
     this.reserveAction('bili-comment',key,perDay,intervalMs);
   }
-  actionQuota(kind:'qq-emoji-backfill'|'qq-group-task'|'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention'|'qq-emoji-send',day=this.today()):{today:number;last:number|null}{
+  actionQuota(kind:'bili-reply'|'qq-emoji-backfill'|'qq-group-task'|'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention'|'qq-emoji-send',day=this.today()):{today:number;last:number|null}{
     const count=this.db.prepare('SELECT count(*) AS n FROM actions WHERE role=? AND kind=? AND day=?').get(this.roleId,kind,day);
     const last=this.db.prepare('SELECT time FROM actions WHERE role=? AND kind=? ORDER BY time DESC LIMIT 1').get(this.roleId,kind);
     return {today:Number(count?.n),last:last?Number(last.time):null};
   }
-  reserveAction(kind:'qq-emoji-backfill'|'qq-group-task'|'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention'|'qq-emoji-send',key:string,perDay:number,intervalMs:number):void {
+  reserveAction(kind:'bili-reply'|'qq-emoji-backfill'|'qq-group-task'|'bili-comment'|'bili-dynamic'|'qq-proactive'|'bili-dm'|'bili-like'|'qq-emoji'|'bili-mention'|'qq-emoji-send',key:string,perDay:number,intervalMs:number):void {
     const day = this.today(), time = this.clock();
     const label=kind==='qq-emoji-backfill'?'旧收藏整理':kind==='qq-group-task'?'主人群任务':kind==='bili-comment'?'评论':kind==='bili-dynamic'?'动态':kind==='bili-dm'?'B 站私信':kind==='bili-mention'?'B站评论 @ 回复':kind==='bili-like'?'B 站点赞':kind==='qq-emoji'?'QQ 表情收藏':kind==='qq-emoji-send'?'QQ 发表情':'QQ 主动联系';
     this.db.exec('BEGIN IMMEDIATE');
@@ -222,15 +228,15 @@ export class MemoryStore {
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
-  settleAction(key: string, status: 'sent' | 'failed' | 'unknown', result: string): void {
+  settleAction(key: string, status: 'sent' | 'failed' | 'unknown' | 'quiet', result: string): void {
     this.db.prepare('UPDATE actions SET status=?,result=? WHERE key=?').run(status, result.slice(0, 500), key);
   }
   availableScopes():string[]{return [...new Set(['owner',...this.db.prepare('SELECT DISTINCT scope FROM memories WHERE role=?').all(this.roleId).map(r=>String(r.scope))])];}
-  overview(): { total: number; today: number; scopes: string[]; commentsToday: number } {
+  overview(): { shortTerm?:ReturnType<typeof workingContext>['window'];total: number; today: number; scopes: string[]; commentsToday: number } {
     const total = this.db.prepare('SELECT count(*) AS n FROM memories WHERE role=?').get(this.roleId)!;
     const today = this.db.prepare('SELECT count(*) AS n FROM memories WHERE role=? AND day=?').get(this.roleId, this.today())!;
     const comments = this.db.prepare("SELECT count(*) AS n FROM actions WHERE role=? AND day=? AND kind='bili-comment'").get(this.roleId, this.today())!;
-    return { total: Number(total.n), today: Number(today.n), scopes:this.availableScopes(), commentsToday: Number(comments.n) };
+    return { shortTerm:this.shortTermLast,total: Number(total.n), today: Number(today.n), scopes:this.availableScopes(), commentsToday: Number(comments.n) };
   }
   list(scope: string, day: string, before = 0): { rows: (MemoryRow & { cursor: number })[]; nextCursor: number | null } {
     if (day!==''&&!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isSafeInteger(before) || before < 0) throw new Error('日期或分页参数无效');

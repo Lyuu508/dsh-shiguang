@@ -63,6 +63,9 @@ export async function panelAction(runtime: ShiguangRuntime, action: string, payl
     case 'bili-watch':return runtime.startWatch(text(args.video),text(args.question,'概括视频里的主要内容'),typeof args.part==='number'?args.part:1,args.depth==='deep'?'deep':'shallow');
     case 'watch-status':return {...runtime.watchJob};
     case 'watch-cancel':return runtime.cancelWatch();
+    case 'bili-replies-poll':return runtime.biliReplies.requestPoll();
+    case 'bili-comments':return runtime.enqueue(async()=>{if(args.root){const r=await runtime.bili.commentThread(text(args.video),text(args.root),typeof args.page==='number'?args.page:1,signal);return {comments:[r.root,...r.replies],more:r.more};}return {comments:await runtime.bili.topComments(text(args.video),20,signal),more:false};});
+    case 'bili-comment-reply':return runtime.enqueue(()=>runtime.bili.replyToComment(text(args.video),text(args.root),text(args.parent),text(args.text),signal));
     case 'bili-mentions-poll':return runtime.biliMentions.requestPoll();
     case 'bili-dm-poll':return runtime.biliSocial.requestPoll();
     case 'proactive-now':return runtime.proactive.consider();

@@ -17,7 +17,11 @@
     "snippetChars": 240,
     "detailMaxChars": 1600,
     "ownerOnlyCrossChat": true,
-    "allowOwnerGroupRecall": false
+    "allowOwnerGroupRecall": false,
+    "shortTermEnabled": true,
+    "shortTermHours": 6,
+    "shortTermMessages": 60,
+    "shortTermMaxChars": 8000
   },
   "qq": {
     "enabled": false,
@@ -53,7 +57,8 @@
       "naturalStyle": true,
       "styleNotes": "",
       "ownerReplyChance": 95,
-      "ownerTitle": "主人"
+      "ownerTitle": "主人",
+      "groupQuoteMode": "auto"
     },
     "poke": {
       "enabled": true,
@@ -214,7 +219,13 @@
     "tasksEnabled": true,
     "mentionEnabled": false,
     "mentionRepliesPerDay": 10,
-    "mentionMinReplySeconds": 60
+    "mentionMinReplySeconds": 60,
+    "commentRepliesEnabled": false,
+    "commentReplyAudience": "owner",
+    "commentRepliesPerDay": 10,
+    "commentReplyGapSeconds": 60,
+    "commentReplyMaxPages": 3,
+    "commentReplyMaxTokens": 240
   },
   "clock": {
     "enabled": false,
