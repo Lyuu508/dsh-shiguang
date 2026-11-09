@@ -9,7 +9,7 @@ import {Context} from '@deepseek-ai/cordis';
 import {MemoryStore} from '../src/memory.js';
 import {exportMemoryPage,importMemory} from '../src/memory-transfer.js';
 import {SnowLumaManager} from '../src/snowluma.js';
-import {MediaToolsManager,mediaToolsAsset} from '../src/media-tools.js';
+import {MediaToolsManager} from '../src/media-tools.js';
 import {BilibiliClient,weightedTag} from '../src/bilibili.js';
 import {parseSettings} from '../src/config.js';
 import {ShiguangRuntime} from '../src/runtime.js';
@@ -22,22 +22,6 @@ test('SnowLuma 只启动已安装官方目录及 QQ 原生窗口，重复启动�
   manager.start();manager.start();assert.equal(launches,1);assert.equal(opens,1);assert.equal(manager.consoleUrl().url,'http://127.0.0.1:5099/');assert.equal(manager.view().installed,true);await manager.stop();assert.equal(kills,1);
   for(const webuiUrl of ['http://evil.example','http://127.0.0.1:5099/?token=secret','http://user@127.0.0.1:5099'])assert.throws(()=>parseSettings({...f.settings,snowluma:{...f.settings.snowluma,webuiUrl}},join(f.dir,'config.json')));
  }finally{await manager.stop();f.cleanup();}
-});
-
-test('便携媒体工具校验官方元数据与字节，解压后自动应用路径，重启无需重下',async()=>{
- const f=fixture(),bytes=Buffer.from('fixture LGPL media archive'),digest=createHash('sha256').update(bytes).digest('hex'),release={tag_name:'latest',assets:[{name:'ffmpeg-master-latest-win64-lgpl.zip',size:bytes.length,digest:'sha256:'+digest,browser_download_url:'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip'}]};let extracts=0,downloads=0;
- const fetcher:typeof fetch=async url=>{if(String(url).includes('api.github.com'))return Response.json(release);downloads++;return new Response(bytes);};
- const host={platform:'win32',arch:'x64',async check(media:typeof f.settings.media){const ready=media.ffmpegPath.endsWith('.exe')&&existsSync(media.ffmpegPath)&&existsSync(media.ffprobePath);return {ready,message:ready?'FFmpeg 与 FFprobe 可用':'未安装'};},async extract(_archive:string,destination:string){extracts++;mkdirSync(join(destination,'bin'));for(const name of ['ffmpeg.exe','ffprobe.exe'])writeFileSync(join(destination,'bin',name),'fixture');}};
- const apply=(paths:{ffmpegPath:string;ffprobePath:string})=>Object.assign(f.settings.media,paths),manager=new MediaToolsManager(f.dir,()=>f.settings,apply,fetcher,host);
- try{assert.equal((await manager.check()).ready,false);await manager.ensure();assert.equal(manager.view().ready,true);assert.equal(extracts,1);assert.equal(downloads,1);assert.match(f.settings.media.ffmpegPath,/ffmpeg\.exe$/);f.settings.media.ffmpegPath='missing';f.settings.media.ffprobePath='missing';const next=new MediaToolsManager(f.dir,()=>f.settings,apply,fetcher,host);assert.equal((await next.check()).ready,true);assert.equal(downloads,1);
-  assert.throws(()=>mediaToolsAsset({...release,tag_name:'../bad'}),/官方/);assert.throws(()=>mediaToolsAsset({...release,assets:[{...release.assets[0],digest:''}]}),/SHA256/);
- }finally{manager.stop();f.cleanup();}
-});
-
-test('损坏媒体工具包不会解压、不会应用路径，失败可重试',async()=>{
- const f=fixture(),digest=createHash('sha256').update('good').digest('hex');let extracted=false,applied=false;
- const manager=new MediaToolsManager(f.dir,()=>f.settings,()=>{applied=true;},async url=>String(url).includes('api.github.com')?Response.json({tag_name:'latest',assets:[{name:'ffmpeg-master-latest-win64-lgpl.zip',size:4,digest:'sha256:'+digest,browser_download_url:'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip'}]}):new Response('evil'),{platform:'win32',arch:'x64',async extract(){extracted=true;},async check(){return {ready:false,message:'missing'};}});
- try{await assert.rejects(manager.ensure(),/校验/);assert.equal(extracted,false);assert.equal(applied,false);assert.equal(manager.view().busy,false);assert.equal(manager.view().phase,'error');}finally{manager.stop();f.cleanup();}
 });
 
 test('插件停止期间媒体检测返回，不会重新启动下载或写入配置',async()=>{

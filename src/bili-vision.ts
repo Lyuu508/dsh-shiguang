@@ -56,9 +56,7 @@ export class BiliVision {
     const route=await flashRoute(this.ctx);
     const llm=this.ctx.get('llm'),attachments=this.ctx.get('attachments');if(!route||!llm||!attachments)throw new Error('请配置视觉模型，并启用 DSH 模型与附件服务');
     const model=await llm.resolveModelInfo(route.provider,route.model,signal);if(!model.inputModalities?.includes('image'))throw new Error('B 站视频识别需要支持图片输入的模型');
-    await this.prepare?.();
     signal=AbortSignal.any([this.abort.signal,timeoutSignal(c.timeoutMs+this.settings.replyTimeoutMs*(depth==='deep'?c.deepMaxSegments:1)),...(externalSignal?[externalSignal]:[])]);signal.throwIfAborted();
-    const tools=await checkMediaTools(this.settings.media);if(!tools.ready)throw new Error(tools.message);
     const processing=signal,playback=await this.bili.playback(source.video.bvid,source.cid,processing);
     if(playback.duration>c.maxDurationSeconds||Math.abs(playback.duration-source.duration)>Math.max(5,source.duration*.05))throw new Error('播放时长与完整视频不符，可能仅可试看，本次不识别');
     const urls=playback.urls.filter(url=>{try{biliContentURL(url);return true;}catch{return false;}}).sort((a,b)=>Number(new URL(a).hostname.endsWith('.bilivideo.cn'))-Number(new URL(b).hostname.endsWith('.bilivideo.cn')));

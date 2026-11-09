@@ -10,7 +10,6 @@ import {Context} from '@deepseek-ai/cordis';
 import {WebSocketServer} from 'ws';
 import {locatePrograms} from '../src/discovery.js';
 import {SnowLumaManager,parseSnowConnection} from '../src/snowluma.js';
-import {MediaToolsManager,mediaToolsAsset} from '../src/media-tools.js';
 import {ShiguangRuntime} from '../src/runtime.js';
 import {flashRoute} from '../src/model-route.js';
 import {fixture} from './helpers.js';
@@ -38,11 +37,6 @@ test('自动读取 OneBot 快照和覆盖配置，保留鉴权，多个账号不
 test('真实 OneBot WebSocket 从 SnowLuma 自动同步地址和密钥，开启回复不要求手填 Token',async()=>{
  const f=fixture(),ctx=new Context(),ws=new WebSocketServer({host:'127.0.0.1',port:0});await once(ws,'listening');const address=ws.address();assert.ok(address&&typeof address==='object');const dir=join(f.dir,'SnowLuma');install(dir);f.settings.snowluma.directory=dir;Object.assign(f.settings.qq,{enabled:true,ownerQQ:'10001',wsUrl:'ws://127.0.0.1:1',reconnectMs:500});mkdirSync(join(dir,'config'));writeFileSync(join(dir,'config','onebot.json'),JSON.stringify({networks:{wsServers:[{name:'sg',port:address.port,accessToken:'autodetected-fixture-token',role:'Universal',messageFormat:'array'}]}}));const file=join(f.dir,'config.json');writeFileSync(file,JSON.stringify(f.settings));const runtime=new ShiguangRuntime(ctx,file);let token='';ws.on('connection',(socket,req)=>{token=req.headers.authorization||'';socket.on('message',raw=>{const r=JSON.parse(raw.toString());socket.send(JSON.stringify({status:'ok',retcode:0,echo:r.echo,data:r.action==='get_status'?{online:true}:{user_id:222,nickname:'自动连接伙伴'}}));});});
  try{await runtime.syncQQConnection();const until=Date.now()+3000;while(runtime.qq.status().state!=='connected'){if(Date.now()>until)throw Error('not connected');await new Promise(r=>setTimeout(r,10));}assert.equal(token,'Bearer autodetected-fixture-token');assert.equal((await runtime.qq.check()).nickname,'自动连接伙伴');assert.ok(!readFileSync(file,'utf8').includes('autodetected-fixture-token'));assert.ok(!JSON.stringify(runtime.status()).includes('autodetected-fixture-token'));assert.equal(readFileSync(join(f.dir,'onebot.token'),'utf8'),'autodetected-fixture-token');}finally{await runtime.stop();await ctx.fiber.dispose();for(const s of ws.clients)s.terminate();await new Promise<void>(r=>ws.close(()=>r()));f.cleanup();}
-});
-
-for(const damaged of [false,true])test('FFmpeg 仓库迁移、元数据备用清单和系统下载校验：'+(damaged?'损坏包拒绝':'正常包应用'),async()=>{
- const f=fixture(),bytes=Buffer.from('media-tools-fixture'),digest=createHash('sha256').update(bytes).digest('hex'),release={tag_name:'latest',assets:[{name:'ffmpeg-master-latest-win64-lgpl.zip',size:bytes.length,digest:'sha256:'+digest,browser_download_url:'https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip'}]};let extracted=false,systemDownloads=0;const fetcher:typeof fetch=async url=>{if(String(url).includes('raw.githubusercontent.com'))return Response.json(release);throw Error('fetch failed');};const manager=new MediaToolsManager(f.dir,()=>f.settings,paths=>Object.assign(f.settings.media,paths),fetcher,{platform:'win32',arch:'x64',async download(_asset,target){systemDownloads++;writeFileSync(target,damaged?'invalid':bytes);},async check(media){return {ready:media.ffmpegPath.endsWith('.exe')&&existsSync(media.ffmpegPath),message:'fixture check'};},async extract(_archive,dest){extracted=true;writeFileSync(join(dest,'ffmpeg.exe'),'fixture');writeFileSync(join(dest,'ffprobe.exe'),'fixture');}});
- try{assert.ok(mediaToolsAsset(release));if(damaged){await assert.rejects(manager.ensure(),/SHA256/);assert.equal(extracted,false);}else{await manager.ensure();assert.equal(extracted,true);assert.equal(manager.view().ready,true);}assert.equal(systemDownloads,1);}finally{manager.stop();f.cleanup();}
 });
 
 test('所有场景固定最新 Flash，沿用 DSH 已选官方连接，不回退到其他模型',async()=>{

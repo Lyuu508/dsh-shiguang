@@ -61,7 +61,7 @@ test('未知表情发送结果只尝试一次，不记成已发送；相同消�
 });
 test('表情请求词覆盖常用说法，否定请求不触发发送',()=>{for(const s of ['发个表情包','你发个动画表情看看','来张表情','把这个表情包发给我'])assert.equal(wantsEmoji(s),true);for(const s of ['不要发表情包','别给我发动画表情','看看这个表情包'])assert.equal(wantsEmoji(s),false);});
 
-test('真实 FLV 与 fragmented MP4 可浅看和分段读帧；兼容旧版 -vsync 参数，不需要 MPEG4 中间编码器',async()=>{
+test('真实 FLV 与 fragmented MP4 由内置引擎浅看和分段读帧，不依赖外部程序参数',async()=>{
  const f=fixture(),wrapper=join(f.dir,'ffmpeg-compat.mjs');writeFileSync(wrapper,"#!/usr/bin/env node\nimport {spawnSync} from 'node:child_process';const args=process.argv.slice(2);if(args.includes('-fps_mode')||args.includes('-c:v'))process.exit(77);const r=spawnSync('ffmpeg',args,{stdio:'inherit'});process.exit(r.status??1);\n");chmodSync(wrapper,0o700);
  try{for(const ext of ['flv','mp4']){const file=join(f.dir,'sample.'+ext);execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=s=160x120:r=4:d=3','-threads','1','-c:v',ext==='flv'?'flv1':'mpeg4',...(ext==='mp4'?['-movflags','frag_keyframe+empty_moov']:[]),'-y',file]);const dir=join(f.dir,'frames-'+ext);mkdirSync(dir);const config={...f.settings.media,ffmpegPath:wrapper};const sheet=await frameSheet(file,dir,config,AbortSignal.timeout(15000));assert.ok(sheet.times.length>0);const part=join(f.dir,'part-'+ext);mkdirSync(part);const range=await frameSheetRange(file,part,config,AbortSignal.timeout(15000),1,1);assert.ok(range.times.length>0);assert.equal(range.duration,1);assert.equal(existsSync(join(part,'segment.mp4')),false);}}finally{f.cleanup();}
 });

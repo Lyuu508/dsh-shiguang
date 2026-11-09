@@ -1,3 +1,4 @@
+import {clockContext} from './time-awareness.js';
 import {blockedBrowseReply} from './bili-errors.js';
 import {saveSlang,recallSlang,teachingRequested,parseSlangLesson} from './slang.js';
 import {BiliBrowser,biliBrowseIntent,biliRecommendationIntent} from './bili-browser.js';
@@ -160,7 +161,7 @@ export class ChatDriver {
         scoped.systemPrompt.suppressRuntimeContext();
         scoped.systemPrompt.context({ name: 'shiguang:today', order: 500, interpolate: false, required: true, text: () => {
           const current = this.memory.fastContext(input.scope, input.thread,access.recentScopes,input.archived&&input.turnId?[input.turnId]:[]);
-          return `当前日期：${current.day}，时区：${this.settings.timezone}。\n跨 QQ / B 站的相关往事片段（仅有权限且仍记得的记录）：\n${recalled.length?recalledText:'未预先命中；如用户追问往事，可用具体主题检索。'}\n今天的重要事实：\n${current.todayNotes || '暂无'}\n本次输入前的近期对话：\n${fast.recent || '暂无'}\n记忆规则：日常聊天只使用以上今天的信息。${history ? '用户提到旧事，可以先搜索短片段，确有必要再展开。' : '本轮禁止读取历史；不能为了聊天自动遍历归档。'}\n用户问今天早些时候的事但这里没有时，可搜索 today。不要编造记忆。新事实可调用 shiguang_note_today 简短保存。`;
+          return `${clockContext(this.settings,this.memory)}\n当前日期：${current.day}，时区：${this.settings.timezone}。\n跨 QQ / B 站的相关往事片段（仅有权限且仍记得的记录）：\n${recalled.length?recalledText:'未预先命中；如用户追问往事，可用具体主题检索。'}\n今天的重要事实：\n${current.todayNotes || '暂无'}\n本次输入前的近期对话：\n${fast.recent || '暂无'}\n记忆规则：日常聊天只使用以上今天的信息。${history ? '用户提到旧事，可以先搜索短片段，确有必要再展开。' : '本轮禁止读取历史；不能为了聊天自动遍历归档。'}\n用户问今天早些时候的事但这里没有时，可搜索 today。不要编造记忆。新事实可调用 shiguang_note_today 简短保存。`;
         } });
       },
     });

@@ -22,7 +22,7 @@ export function clip(dir:string):Buffer {
  execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-filter_complex_threads','1',...['red','white','blue'].flatMap(color=>['-f','lavfi','-i',`color=c=${color}:s=320x180:r=10:d=0.6`]),'-filter_complex','[0:v][1:v][2:v]concat=n=3:v=1:a=0','-threads','1','-pix_fmt','yuv420p','-y',file]);
  return readFileSync(file);
 }
-test('真实 FFmpeg 抽取视频和 GIF，拼图不超过预算，近似画面本机去重',async()=>{
+test('内置引擎抽取真实视频和 GIF，拼图不超过预算，近似画面本机去重',async()=>{
  const f=fixture();try{
   clip(f.dir);const signal=AbortSignal.timeout(20000),sheet=await frameSheet(join(f.dir,'sample.mp4'),f.dir,f.settings.media,signal);
   assert.equal(sheet.times.length,3);assert.ok(sheet.width<=512&&sheet.height<=512);assert.ok(sheet.bytes.length<200000);
@@ -58,7 +58,7 @@ test('真实 DSH LLM 与附件服务：一次视觉调用、缓存只传文字�
   reader=new MediaReader(ctx,f.settings,memory,async()=>{fetches++;return new Response(bytes);},async()=>{prepared++;});
   assert.equal(await reader.reply(message,qq,[reference]),'主要是三种颜色在切换。');assert.equal(adapter.requests.length,1);
   const first=adapter.requests[0]!;assert.equal(first.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,1);assert.equal(first.maxTokens,320);assert.equal(first.tools,undefined);
-  assert.equal(await reader.reply({...message,id:'2',text:'看看还有什么'},qq,[reference]),'主要是三种颜色在切换。');assert.equal(adapter.requests.length,2);assert.equal(prepared,1);assert.equal(adapter.requests[1]!.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,0);
+  assert.equal(await reader.reply({...message,id:'2',text:'看看还有什么'},qq,[reference]),'主要是三种颜色在切换。');assert.equal(adapter.requests.length,2);assert.equal(prepared,0);assert.equal(adapter.requests[1]!.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,0);
   assert.equal(memory.db.prepare("SELECT count(*) AS n FROM memories WHERE kind='experience'").get()?.n,1);
   await reader.reply({...message,id:'3',scope:'qq:group:5',thread:'qq:group:5',owner:false},qq,[reference]);assert.equal(adapter.requests[2]!.messages.flatMap(m=>m.content).filter(b=>b.type==='image').length,1);
   assert.match(await reader.reply({...message,id:'4'},qq,[reference]),/额度已用完/);assert.equal(fetches,3);

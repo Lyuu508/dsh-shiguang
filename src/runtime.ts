@@ -62,10 +62,10 @@ export class ShiguangRuntime {
   private login?: { ticket: string; key: string; expires: number };
   private lastError = '';
   constructor(readonly ctx: Context, file = '', readonly fetcher: typeof fetch = fetch,readonly services:{snowHost?:SnowLumaHost;locator?:LocatorHost;mediaHost?:MediaToolsHost;localFetch?:typeof fetch}={}) {
-    this.file = ensureSettings(file);const settings=loadSettings(this.file);this.roles=new RoleManager(settings.dataDir);this.roles.remember(settings);this.mediaTools=new MediaToolsManager(settings.dataDir,()=>this.settings,paths=>this.applyMediaPaths(paths),fetcher,this.services.mediaHost,()=>this.locateMediaOnly());this.open(settings);this.usageObserver=new UsageObserver(ctx,join(settings.dataDir,'memory.sqlite'),()=>this.settings);
+    this.file = ensureSettings(file);const settings=loadSettings(this.file);this.roles=new RoleManager(settings.dataDir);this.roles.remember(settings);this.mediaTools=new MediaToolsManager(settings.dataDir,()=>this.settings,undefined,fetcher,this.services.mediaHost);this.open(settings);this.usageObserver=new UsageObserver(ctx,join(settings.dataDir,'memory.sqlite'),()=>this.settings);
     this.updates = new UpdateManager(ctx,this.settings.dataDir,fetcher,()=>this.settings.updates);
     this.snowluma=new SnowLumaManager(this.settings.dataDir,()=>this.settings,this.services.snowHost,this.services.localFetch);
-    this.snowluma.configure();this.connectionTimer=setInterval(()=>void this.syncQQConnection().catch(e=>this.log(e instanceof Error?e.message:'QQ 自动同步未完成')),3000);this.connectionTimer.unref();
+    this.snowluma.configure();this.connectionTimer=setInterval(()=>void this.syncQQConnection().catch(e=>this.log(e instanceof Error?e.message:'QQ 自动同步未完成')),3000);this.connectionTimer.unref();this.mediaTools.migrate();
   }
   private log = (message: string) => { this.lastError = message; console.info(`[Shiguang] ${message}`); };
   private secretFile(): string { return join(this.settings.dataDir,'onebot.token'); }
@@ -222,8 +222,8 @@ export class ShiguangRuntime {
   async createRole(name:string,persona:string,copy:boolean,revision:string){if(revision!==this.revision())throw new Error('配置已变化，请重新载入再新建角色');this.roles.remember(this.settings);const id=this.roles.create(this.settings,name,persona,copy);return this.switchRole(id,revision);}
   async switchRole(id:string,revision:string){this.roles.remember(this.settings);const view=this.view();const next=this.roles.settingsFor(this.settings,id);return this.save({...next,dataDir:view.settings.dataDir,timezone:view.settings.timezone},revision,'',true);}
   async modelStatus(){try{return {ready:true,...await flashRoute(this.ctx),name:'DeepSeek Flash（跟随官方最新）',message:'使用 DSH 中的 DeepSeek 连接，不需要在拾光填写模型或密钥'};}catch(e){return {ready:false,model:'deepseek-flash',name:'DeepSeek Flash（跟随官方最新）',message:e instanceof Error?e.message:'请先在 DSH 登录 DeepSeek'};}}
-  async locateLocal(){const found=await locatePrograms(this.settings,this.services.locator);if(this.stopped)throw new Error('拾光正在停止');const raw=JSON.parse(readFileSync(this.file,'utf8'));raw.snowluma={...this.settings.snowluma,...Object.fromEntries(['directory','qqPath'].filter(k=>found[k as keyof typeof found]).map(k=>[k,found[k as keyof typeof found]]))};if(found.ffmpegPath&&found.ffprobePath)raw.media={...raw.media,ffmpegPath:found.ffmpegPath,ffprobePath:found.ffprobePath};parseSettings(raw,this.file);this.atomicWrite(this.file,JSON.stringify(raw,null,2)+'\n');Object.assign(this.settings.snowluma,raw.snowluma);if(found.ffmpegPath&&found.ffprobePath)Object.assign(this.settings.media,{ffmpegPath:found.ffmpegPath,ffprobePath:found.ffprobePath});return {...this.view(),found,message:`已检查 ${found.scanned} 个常用目录；${found.directory?'找到 SnowLuma':'未找到 SnowLuma'}，${found.qqPath?'找到桌面 QQ':'未找到桌面 QQ'}，${found.ffmpegPath&&found.ffprobePath?'找到视频工具':'未找到完整视频工具'}`};}
-  private async locateMediaOnly(){const found=await locatePrograms(this.settings,this.services.locator);if(this.stopped)throw new Error('拾光正在停止');if(found.ffmpegPath&&found.ffprobePath)this.applyMediaPaths({ffmpegPath:found.ffmpegPath,ffprobePath:found.ffprobePath});}
+  async locateLocal(){const found=await locatePrograms(this.settings,this.services.locator,undefined,false);if(this.stopped)throw new Error('拾光正在停止');const raw=JSON.parse(readFileSync(this.file,'utf8'));raw.snowluma={...this.settings.snowluma,...Object.fromEntries(['directory','qqPath'].filter(k=>found[k as keyof typeof found]).map(k=>[k,found[k as keyof typeof found]]))};parseSettings(raw,this.file);this.atomicWrite(this.file,JSON.stringify(raw,null,2)+'\n');Object.assign(this.settings.snowluma,raw.snowluma);return {...this.view(),found,message:`已检查 ${found.scanned} 个常用目录；${found.directory?'找到 SnowLuma':'未找到 SnowLuma'}，${found.qqPath?'找到桌面 QQ':'未找到桌面 QQ'}`};}
+
   async syncQQConnection(){
     if(this.stopped||this.syncBusy||!this.settings.snowluma.directory)return;
     const connection=this.snowluma.connection();if(!connection||connection.url===this.settings.qq.wsUrl&&connection.token===this.token())return;
@@ -234,7 +234,7 @@ export class ShiguangRuntime {
     }finally{this.syncBusy=false;}
   }
   startQQSetup(mode:'full'|'bridge'='full'){
-    if(this.setupJob)return {...this.qqSetup};this.qqSetup={phase:'locating',message:'正在快速查找 SnowLuma、QQ 与视频工具',busy:true};
+    if(this.setupJob)return {...this.qqSetup};this.qqSetup={phase:'locating',message:'正在快速查找 SnowLuma 与桌面 QQ',busy:true};
     this.setupJob=(async()=>{
       await this.locateLocal();if(this.stopped)throw new Error('拾光正在停止');if(!this.snowluma.view().installed)throw new Error('未找到 SnowLuma。请点“下载官方 SnowLuma”，解压后再点自动定位');await this.snowluma.prepareConnection();
       this.qqSetup={phase:'starting',message:mode==='bridge'?'正在启动并连接 QQ 桥接':'正在检查并复用 QQ 与 SnowLuma',busy:true};

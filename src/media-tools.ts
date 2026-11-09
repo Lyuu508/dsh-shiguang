@@ -1,45 +1,45 @@
-import {windowsPublicJSON,windowsPublicPackage,verifyPublicPackage} from './public-download.js';
-import {readFileSync,writeFileSync,existsSync,mkdirSync,readdirSync,renameSync,rmSync} from 'node:fs';
-import {join,relative,isAbsolute} from 'node:path';
-import {execFile} from 'node:child_process';
-import {fileURLToPath} from 'node:url';
+import {readFileSync,existsSync,lstatSync,realpathSync,rmSync} from 'node:fs';
+import {join,relative,isAbsolute,basename,sep} from 'node:path';
 import type {Settings,MediaSettings} from './config.js';
-import {checkMediaTools} from './media.js';
-import {downloadPackage} from './package-download.js';
-import {timeoutSignal} from './timeouts.js';
+import {checkEmbeddedEngine} from './embedded-media.js';
 export interface ToolPaths {ffmpegPath:string;ffprobePath:string}
-export interface MediaToolsHost {publicJSON?:(url:string,signal:AbortSignal)=>Promise<unknown>;download?:(asset:ReturnType<typeof mediaToolsAsset>,target:string,mirror:string,signal:AbortSignal,progress:(p:any)=>void)=>Promise<void>;platform:string;arch:string;extract:(archive:string,destination:string,signal:AbortSignal)=>Promise<void>;check:(config:MediaSettings)=>Promise<{ready:boolean;message:string}>}
-const native:MediaToolsHost={publicJSON:process.platform==='win32'?windowsPublicJSON:undefined,download:process.platform==='win32'?windowsPublicPackage:undefined,platform:process.platform,arch:process.arch,check:checkMediaTools,extract:(archive,destination,signal)=>new Promise((resolve,reject)=>execFile('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',fileURLToPath(new URL('../scripts/Expand-MediaTools.ps1',import.meta.url)),'-Archive',archive,'-Destination',destination],{windowsHide:true,signal,timeout:180000,maxBuffer:65536},e=>e?reject(new Error('媒体工具解压未完成，请检查磁盘空间与 PowerShell')):resolve()))};
-export function mediaToolsAsset(value:unknown){const release=value as any,asset=release?.assets?.find((a:any)=>a.name==='ffmpeg-master-latest-win64-lgpl.zip');if(!release||typeof release.tag_name!=='string'||!/^[-A-Za-z0-9._]+$/.test(release.tag_name)||!asset||!['BtbN/FFmpeg-Builds','FFmpeg-Builds/FFmpeg-Builds'].some(repo=>asset.browser_download_url===`https://github.com/${repo}/releases/download/${release.tag_name}/ffmpeg-master-latest-win64-lgpl.zip`)||!/^sha256:[a-f0-9]{64}$/i.test(asset.digest)||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>256*1048576)throw new Error('官方 FFmpeg 包缺少可验证的地址、大小或 SHA256');return {url:asset.browser_download_url as string,size:asset.size as number,digest:String(asset.digest).slice(7),version:String(release.tag_name)};}
+export interface MediaToolsHost {check?:(config:MediaSettings)=>Promise<{ready:boolean;message:string}>;[key:string]:unknown}
+/** Only retire files carrying the exact manifest written by our old installer. */
+export function cleanupOwnedMediaTools(dataDir:string){
+ const root=join(dataDir,'media-tools'),manifest=join(root,'installed.json');
+ if(!existsSync(manifest))return {removed:false,message:'没有拾光自行安装的旧视频工具需要清理'};
+ try{
+  if(lstatSync(root).isSymbolicLink()||lstatSync(manifest).isSymbolicLink())throw Error('旧工具记录是链接');
+  const m=JSON.parse(readFileSync(manifest,'utf8'));if(!/^[a-f0-9]{64}$/.test(m.digest)||typeof m.version!=='string')throw Error('旧安装记录无法验证');
+  for(const [key,name] of [['ffmpeg','ffmpeg.exe'],['ffprobe','ffprobe.exe']] as const){
+   const value=m[key];if(typeof value!=='string'||isAbsolute(value)||value.includes('\\')&&sep!=='\\'||value.split(/[\\/]/).some((part:string)=>part==='..')||value.split(/[\\/]/)[0]!==m.digest||basename(value)!==name)throw Error('旧工具路径不属于拾光安装包');
+   const file=join(root,value);if(existsSync(file)){const rel=relative(realpathSync(root),realpathSync(file));if(rel.startsWith('..')||isAbsolute(rel))throw Error('旧工具指向其他目录');}
+  }
+  const bundle=join(root,m.digest);if(existsSync(bundle)&&lstatSync(bundle).isSymbolicLink())throw Error('旧工具目录是链接');
+  // Never remove the root: it can also contain user-owned files or other versions.
+  for(const name of [m.digest,'ffmpeg.zip','parts']){const file=join(root,name);if(existsSync(file)&&lstatSync(file).isSymbolicLink())throw Error('旧工具文件是链接，保留等待手动检查');}
+  for(const name of [m.digest,'ffmpeg.zip','parts'])rmSync(join(root,name),{recursive:true,force:true});rmSync(manifest);
+  return {removed:true,message:'已清理拾光旧版自行安装的 FFmpeg / FFprobe、安装包及下载断点'};
+ }catch(error){return {removed:false,message:'旧工具保留：'+(error instanceof Error?error.message:'清理未完成')};}
+}
 export class MediaToolsManager {
- private checkRevision=0;private stopped=false;private abort=new AbortController();private job?:Promise<void>;private root:string;
- private state={phase:'idle',message:'需要 FFmpeg 与 FFprobe，先检测已安装的程序',ready:false,downloaded:0,total:0,speed:0};
- constructor(readonly dataDir:string,readonly settings:()=>Settings,readonly apply:(paths:ToolPaths)=>void,readonly fetcher:typeof fetch=fetch,readonly host:MediaToolsHost=native,readonly findLocal?:()=>Promise<void>){this.root=join(dataDir,'media-tools');}
- view(){return {...this.state,supported:this.host.platform==='win32'&&this.host.arch==='x64',busy:!!this.job};}
- private installed():ToolPaths|undefined{try{const m=JSON.parse(readFileSync(join(this.root,'installed.json'),'utf8'));const paths={ffmpegPath:join(this.root,m.ffmpeg),ffprobePath:join(this.root,m.ffprobe)};if(Object.values(paths).some(p=>relative(this.root,p).startsWith('..')||!existsSync(p)))return;return paths;}catch{return;}}
- async check(){const revision=++this.checkRevision;let result=await this.host.check(this.settings().media);if(!result.ready){const installed=this.installed();if(installed){result=await this.host.check({...this.settings().media,...installed});if(result.ready&&!this.stopped)this.apply(installed);}}if(revision===this.checkRevision&&!this.stopped)this.state={...this.state,ready:result.ready,message:result.message,phase:result.ready?'ready':this.installed()?'needs-check':this.state.phase};return {...this.view(),...result};}
- start(){if(this.stopped)throw new Error('媒体工具服务正在停止');if(this.job)return this.view();if(!this.view().supported)throw new Error('Windows x64 可在这里安装便携媒体工具；此系统请安装 FFmpeg 后重新检测');this.abort=new AbortController();this.state={...this.state,phase:'locating',message:'正在定位本机视频工具，缺少时再准备下载',ready:false};this.job=(async()=>{await this.findLocal?.();if(this.stopped)throw new Error('媒体工具服务正在停止');if((await this.check()).ready)return;await this.install();})().catch(e=>{if(this.state.ready)return;this.state={...this.state,phase:this.installed()?'needs-check':'error',message:this.abort.signal.aborted?'媒体工具准备已暂停，已完成的文件与断点保留':e instanceof Error&&(/TimeoutError|AbortError/.test(e.name)||/aborted|timeout/i.test(e.message))?`媒体工具${({checking:'版本查询',downloading:'下载',verifying:'校验',extracting:'解压','checking-tools':'启动检测'} as Record<string,string>)[this.state.phase]||'准备'}等待超时，已完成的文件与断点保留。可重试，或先自动定位已有工具。`:e instanceof Error&&/fetch failed|network|ECONN|ENOTFOUND/i.test(e.message)?'无法连接 GitHub，已保留断点。可点自动定位已有工具，或使用下方官方下载入口解压后再定位。':e instanceof Error?e.message:'媒体工具安装未完成'};}).finally(()=>{this.job=undefined;});return this.view();}
- async ensure(){if(this.stopped)throw new Error('媒体工具服务正在停止');const checked=await this.check();if(this.stopped)throw new Error('媒体工具服务正在停止');if(checked.ready)return;if(!this.view().supported)throw new Error('没有找到 FFmpeg / FFprobe，请在当前系统安装，或在视频识别区域填写程序路径');this.start();await this.job;if(!this.state.ready)throw new Error(this.state.message);}
- pause(){this.abort.abort();return this.view();}
- async whenIdle(){await this.job;}
- private async metadata(signal:AbortSignal){
- const urls=['https://api.github.com/repos/FFmpeg-Builds/FFmpeg-Builds/releases/latest','https://raw.githubusercontent.com/Lyuu508/dsh-shiguang/main/downloads/media-tools.json'];let last:unknown;
- for(const url of urls){for(let attempt=0;attempt<2;attempt++){signal.throwIfAborted();try{const response=await this.fetcher(url,{signal:AbortSignal.any([signal,timeoutSignal(this.settings().updates.timeoutMs)]),redirect:'error',headers:{'User-Agent':'dsh-shiguang'}});if(!response.ok)throw new Error('媒体工具版本查询 HTTP '+response.status);return mediaToolsAsset(await response.json());}catch(e){last=e;if(signal.aborted)throw e;}}
- if(this.host.publicJSON){this.state.message='正在通过 Windows 系统网络读取官方工具信息';try{return mediaToolsAsset(await this.host.publicJSON(url,AbortSignal.any([signal,timeoutSignal(25000)])));}catch(e){last=e;if(signal.aborted)throw e;}}
- }throw last instanceof Error?last:new Error('媒体工具版本查询未完成');
+ private stopped=false;private abort=new AbortController();private pending?:Promise<{ready:boolean;message:string}>;
+ private state={phase:'idle',message:'使用随插件安装的内置动图与视频引擎，无需定位或下载 FFmpeg',ready:false,downloaded:0,total:0,speed:0,cleanup:'尚未检查旧工具'};
+ constructor(readonly dataDir:string,readonly settings:()=>Settings,_apply?:(paths:ToolPaths)=>void,_fetcher?:typeof fetch,readonly host:MediaToolsHost={},_findLocal?:()=>Promise<void>){}
+ view(){return {...this.state,supported:true,busy:!!this.pending,engine:'embedded'};}
+ migrate(){if(existsSync(join(this.dataDir,'media-tools','installed.json')))this.start();}
+ async check(){
+  if(this.stopped)throw Error('媒体工具服务正在停止');
+  if(!this.pending){this.abort=new AbortController();this.state={...this.state,phase:'checking',message:'正在检测内置动画和视频解码引擎'};
+   this.pending=(async()=>{try{const result=this.host.check?await this.host.check(this.settings().media):await checkEmbeddedEngine(this.abort.signal);this.abort.signal.throwIfAborted();if(!result.ready)throw Error(result.message);
+    const cleanup=cleanupOwnedMediaTools(this.dataDir);this.state={...this.state,phase:'ready',ready:true,message:result.message,cleanup:cleanup.message};return result;
+   }catch(error){this.state={...this.state,phase:'error',ready:false,message:this.abort.signal.aborted?'内置引擎检测已停止':error instanceof Error?error.message:'内置引擎未就绪'};return {ready:false,message:this.state.message};}finally{this.pending=undefined;}})();
+  }
+  const result=await this.pending;return {...this.view(),...result};
  }
- private async install(){this.state={...this.state,phase:'checking',message:'正在读取官方视频工具版本'};mkdirSync(this.root,{recursive:true,mode:0o700});const signal=this.abort.signal,asset=await this.metadata(signal),zip=join(this.root,'ffmpeg.zip'),downloadSignal=AbortSignal.any([signal,timeoutSignal(this.settings().updates.downloadTimeoutMs)]);this.state={...this.state,phase:'downloading',total:asset.size};const progress=(p:any)=>{this.state={...this.state,...p,message:`正在下载媒体工具 ${(p.downloaded/1048576).toFixed(1)} / ${(asset.size/1048576).toFixed(1)} MB`};};
- let cached=false;if(existsSync(zip)){try{await verifyPublicPackage(zip,asset,signal);cached=true;}catch{signal.throwIfAborted();}}
- if(!cached)try{await downloadPackage(asset,zip,join(this.root,'parts'),{connections:4,mirrorUrl:this.settings().updates.mirrorUrl},downloadSignal,this.fetcher,progress);}catch(e){signal.throwIfAborted();if(!this.host.download||e instanceof Error&&/校验|地址异常|跳转地址/.test(e.message))throw e;this.state.message='正在切换 Windows 系统下载，保留已完成的断点';await this.host.download(asset,zip,this.settings().updates.mirrorUrl,AbortSignal.any([signal,timeoutSignal(this.settings().updates.downloadTimeoutMs)]),progress);}
-
- this.state={...this.state,phase:'verifying',message:'下载完成，正在校验 SHA256'};await verifyPublicPackage(zip,asset,signal);
- this.state={...this.state,phase:'extracting',message:'校验通过，正在解压 FFmpeg 与 FFprobe'};const destination=join(this.root,asset.digest);if(existsSync(destination))rmSync(destination,{recursive:true,force:true});mkdirSync(destination,{recursive:true});await this.host.extract(zip,destination,AbortSignal.any([signal,timeoutSignal(180000)]));const find=(dir:string,depth=0):ToolPaths|undefined=>{if(depth>4)return;const a=join(dir,'ffmpeg.exe'),b=join(dir,'ffprobe.exe');if(existsSync(a)&&existsSync(b))return {ffmpegPath:a,ffprobePath:b};for(const entry of readdirSync(dir,{withFileTypes:true})){if(entry.isDirectory()&&!entry.isSymbolicLink()){const paths=find(join(dir,entry.name),depth+1);if(paths)return paths;}}};const paths=find(destination);if(!paths)throw new Error('安装包中未找到 FFmpeg 与 FFprobe');// Persist verified extracted files before the cold-start check, so a slow
- // first launch never makes the next attempt download the whole package again.
- signal.throwIfAborted();const file=join(this.root,'installed.json');writeFileSync(file+'.tmp',JSON.stringify({version:asset.version,digest:asset.digest,ffmpeg:relative(this.root,paths.ffmpegPath),ffprobe:relative(this.root,paths.ffprobePath)}),{mode:0o600});renameSync(file+'.tmp',file);this.apply(paths);
- const revision=++this.checkRevision;this.state={...this.state,phase:'checking-tools',message:'已解压并保存工具，正在分别检测 FFmpeg 与 FFprobe（首次启动可能较慢）'};
- let result=await this.host.check({...this.settings().media,...paths});
- if(!result.ready&&!this.stopped&&!signal.aborted)result=await this.host.check({...this.settings().media,...paths});
- if(this.stopped||revision!==this.checkRevision)return;
- this.state={...this.state,phase:result.ready?'ready':'needs-check',ready:result.ready,message:result.ready?'FFmpeg 与 FFprobe 已安装并应用，可以直接重试视频识别':'工具已下载、校验并解压；启动检测尚未通过。稍后点自动定位重新检测，无需重新下载。'+result.message};}
+ start(){if(this.stopped)throw Error('媒体工具服务正在停止');void this.check();return this.view();}
+ async ensure(){if(!this.state.ready){const result=await this.check();if(!result.ready)throw Error(result.message);}}
+ pause(){this.abort.abort();return this.view();}
+ async whenIdle(){await this.pending;}
  stop(){this.stopped=true;this.abort.abort();}
 }

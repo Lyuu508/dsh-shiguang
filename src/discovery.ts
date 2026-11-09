@@ -13,13 +13,13 @@ export function nativeLocator(settings:Settings):LocatorHost{
  return {roots:roots.filter(Boolean),async onPath(name){if(process.platform!=='win32')return (await exec('which',[name])).trim().split(/\r?\n/).filter(Boolean);const found=(await exec('where.exe',[name])).trim().split(/\r?\n/).filter(Boolean);if(name.toLowerCase()==='qq.exe')for(const hive of ['HKCU','HKLM']){const text=await exec('reg.exe',['query',hive+'\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\QQ.exe','/ve']);const match=text.match(/REG_(?:EXPAND_)?SZ\s+(.+)/);if(match)found.push(match[1]!.trim().replace(/^"|"$/g,''));}return found;}};
 }
 /** Bounded common-directory discovery; never recursively traverses a whole drive. */
-export async function locatePrograms(settings:Settings,host=nativeLocator(settings),signal?:AbortSignal):Promise<LocalPaths&{scanned:number}>{
+export async function locatePrograms(settings:Settings,host=nativeLocator(settings),signal?:AbortSignal,includeMedia=true):Promise<LocalPaths&{scanned:number}>{
  const result:LocalPaths={},queue=[...new Set(host.roots.filter(Boolean))].map(dir=>({dir,depth:0})),seen=new Set<string>();const deadline=Date.now()+5000;
- const [qq,ff,fp]=await Promise.all(['QQ.exe','ffmpeg','ffprobe'].map(name=>host.onPath(name).catch(()=>[])));
+ const [qq,ff,fp]=await Promise.all(['QQ.exe',...(includeMedia?['ffmpeg','ffprobe']:[])].map(name=>host.onPath(name).catch(()=>[])));
  for(const [key,files] of [['qqPath',qq],['ffmpegPath',ff],['ffprobePath',fp]] as const)for(const file of files||[]){try{if((await stat(file)).isFile()){result[key]=await realpath(file);break;}}catch{}}
  while(queue.length&&seen.size<700&&Date.now()<deadline){signal?.throwIfAborted();const {dir,depth}=queue.shift()!;let canonical:string;try{canonical=await realpath(dir);if(seen.has(canonical.toLowerCase()))continue;seen.add(canonical.toLowerCase());}catch{continue;}
   if(!result.directory&&existsSync(join(dir,'index.mjs'))&&(existsSync(join(dir,'launcher.bat'))||/snowluma/i.test(basename(dir))))result.directory=canonical;
-  for(const [key,names] of [['qqPath',['QQ.exe']],['ffmpegPath',['ffmpeg.exe','ffmpeg']],['ffprobePath',['ffprobe.exe','ffprobe']]] as const)if(!result[key])for(const name of names){const file=join(dir,name);try{if((await stat(file)).isFile()){result[key]=await realpath(file);break;}}catch{}}
+  for(const [key,names] of [['qqPath',['QQ.exe']],['ffmpegPath',['ffmpeg.exe','ffmpeg']],['ffprobePath',['ffprobe.exe','ffprobe']]] as const)if((includeMedia||key==='qqPath')&&!result[key])for(const name of names){const file=join(dir,name);try{if((await stat(file)).isFile()){result[key]=await realpath(file);break;}}catch{}}
   if(depth>=3)continue;try{for(const entry of await readdir(dir,{withFileTypes:true})){if(!entry.isDirectory()||entry.isSymbolicLink()||/^(?:node_modules|\.git|cache|logs|data)$/i.test(entry.name))continue;if(depth===0||/snowluma|ffmpeg|QQNT|Tencent|^QQ$|^bin$|^runtime$|^current$|^[a-f\d]{64}$/i.test(entry.name))queue.push({dir:join(dir,entry.name),depth:depth+1});}}catch{}
  }
  return {...result,scanned:seen.size};

@@ -98,17 +98,6 @@ test('睡眠关键词使用自己的开关，不把普通文字 @ 当作真正 @
  try{assert.equal(c.receive(message),false);f.settings.clock.wakeOnKeyword=true;assert.equal(c.receive(message),true);assert.equal(c.canAct(),true);}finally{c.stop();m.close();f.cleanup();}
 });
 
-test('真实可执行工具首次启动超过旧五秒仍可通过，两个程序独立并行检测',{skip:process.platform==='win32'},async()=>{
- const f=fixture(),program=join(f.dir,'cold-video-tool');writeFileSync(program,'#!'+process.execPath+'\nsetTimeout(()=>process.stdout.write("fixture tool version"),5500);\n');chmodSync(program,0o700);
- try{const start=Date.now(),result=await checkMediaTools({...f.settings.media,ffmpegPath:program,ffprobePath:program});assert.equal(result.ready,true);assert.ok(Date.now()-start<12000);}finally{f.cleanup();}
-});
-
-for(const recovers of [false,true])test('下载完成后冷启动检测'+(recovers?'重试成功':'未通过但保留安装；稍后定位恢复且不再下载'),async()=>{
- const f=fixture(),bytes=Buffer.from('fixture-video-tools'),asset={tag_name:'latest',assets:[{name:'ffmpeg-master-latest-win64-lgpl.zip',size:bytes.length,digest:'sha256:'+createHash('sha256').update(bytes).digest('hex'),browser_download_url:'https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip'}]};let downloads=0,checks=0,ready=false;const manager=new MediaToolsManager(f.dir,()=>f.settings,paths=>Object.assign(f.settings.media,paths),async url=>String(url).includes('api.github.com')?Response.json(asset):(()=>{throw Error('fetch failed');})(),{platform:'win32',arch:'x64',async download(_a,target){downloads++;writeFileSync(target,bytes);},async extract(_a,dir){writeFileSync(join(dir,'ffmpeg.exe'),'');writeFileSync(join(dir,'ffprobe.exe'),'');},async check(c){if(!existsSync(c.ffmpegPath))return {ready:false,message:'missing'};checks++;return {ready:ready||recovers&&checks>1,message:'工具启动检测超时'};}});
- try{manager.start();await manager.whenIdle();assert.equal(manager.view().ready,recovers);assert.ok(existsSync(join(f.dir,'media-tools','installed.json')));assert.equal(downloads,1);if(!recovers){assert.equal(manager.view().phase,'needs-check');assert.match(manager.view().message,/无需重新下载/);ready=true;assert.equal((await manager.check()).ready,true);manager.start();await manager.whenIdle();assert.equal(downloads,1);}}
- finally{manager.stop();f.cleanup();}
-});
-
 test('调度状态明确给出未行动原因与自主互动权限，无需猜测后台是否在工作',async()=>{
  const f=fixture(),ctx=new Context(),m=new MemoryStore(':memory:',f.settings.roleId,'UTC',f.settings.memory),qq={status:()=>({state:'disconnected'})} as any,p=new Proactive(ctx,f.settings,m,qq,async r=>r(),()=>{}),b=new BilibiliClient(f.settings,m),a=new Autonomy(ctx,f.settings,m,b,async r=>r(),()=>{});
  try{assert.match(p.status().reason,/尚未开启/);assert.ok(p.status().blockedReasons.some(s=>s.includes('桥接')));assert.match(a.status().reason,/尚未开启/);assert.equal(a.status().permissions.comment,false);f.settings.autonomy.autoComment=true;assert.equal(a.status().permissions.comment,false);f.settings.bilibili.allowComments=true;assert.equal(a.status().permissions.comment,true);f.settings.proactive.enabled=true;f.settings.proactive.activity='silent';assert.match(p.status().reason,/沉默/);}finally{p.stop();a.stop();await ctx.fiber.dispose();m.close();f.cleanup();}

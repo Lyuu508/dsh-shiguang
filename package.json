@@ -1,6 +1,6 @@
 {
   "name": "dsh-shiguang",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "拾光：跨 QQ 与 B 站的 AI 伙伴，使用当天优先、历史按需检索的共享记忆。",
   "type": "module",
   "main": "./dist/plugin.js",
@@ -45,7 +45,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
-    "test": "node scripts/build-client.mjs && node --import tsx --test tests/*.test.ts",
+    "test": "node scripts/build-client.mjs && node --import tsx --test --test-concurrency=2 tests/*.test.ts",
     "setup": "node scripts/setup.mjs",
     "bili:login": "node dist/cli.js login",
     "memory:today": "node dist/cli.js today",
@@ -58,7 +58,9 @@
     "@deepseek-ai/dsh-brand": "0.2.2-rc.1",
     "@deepseek-ai/dsh-tool-executor-native": "0.2.2-rc.1",
     "@deepseek-ai/schemastery": "3.19.0",
+    "@ffmpeg/core": "0.12.10",
     "qrcode": "1.5.4",
+    "sharp": "0.35.5",
     "ws": "8.18.3"
   },
   "peerDependencies": {

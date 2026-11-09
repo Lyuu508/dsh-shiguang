@@ -1,7 +1,7 @@
 import type {Settings} from './config.js';
 import type {MemoryStore} from './memory.js';
 import type {QQMessage} from './onebot.js';
-import {quietAt,stateValue,setState} from './initiative.js';
+import {quietAt,stateValue,setState} from './initiative-state.js';
 
 export class BodyClock {
  private timer?:NodeJS.Timeout;
@@ -9,7 +9,7 @@ export class BodyClock {
  stop(){if(this.timer)clearInterval(this.timer);}
  tick(){const sleeping=this.status().sleeping,previous=stateValue<boolean|null>(this.memory,'body:sleeping',null);if(previous!==sleeping){setState(this.memory,'body:sleeping',sleeping);this.memory.append('owner','dsh','dsh:body-clock','activity',sleeping?'生物钟：进入睡眠，暂停自主浏览和主动联系':'生物钟：已起床，恢复正常活动',undefined,this.memory.clock(),'sleep');}}
  constructor(readonly settings:Settings,readonly memory:MemoryStore,readonly random=Math.random){}
- status(){const c=this.settings.clock,now=this.memory.clock(),night=c.enabled&&quietAt(now,this.settings.timezone,c.sleepAt,c.wakeAt),awakeUntil=stateValue<number>(this.memory,'body:awake-until',0);return {enabled:c.enabled,sleeping:night&&now>=awakeUntil,night,awakeUntil,wakeAt:c.wakeAt,sleepAt:c.sleepAt};}
+ status(){return bodyClockStatus(this.settings,this.memory);}
  canAct(){return !this.status().sleeping;}
  receive(message:QQMessage):boolean{
   const state=this.status();if(!state.sleeping)return true;
@@ -20,3 +20,6 @@ export class BodyClock {
   this.memory.append(message.scope,'qq',message.thread,'activity',`睡眠期间被 ${message.userId} ${message.poke?'头像互动':keyword?'关键词“'+message.keyword+'”':'@'} 唤醒，临时清醒 ${c.awakeMinutes} 分钟`,undefined,now,'sleep');return true;
  }
 }
+
+export function localClockTime(now:number,timezone:string){return new Intl.DateTimeFormat('sv-SE',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(now);}
+export function bodyClockStatus(settings:Settings,memory:MemoryStore){const c=settings.clock,now=memory.clock(),night=c.enabled&&quietAt(now,settings.timezone,c.sleepAt,c.wakeAt),awakeUntil=stateValue<number>(memory,'body:awake-until',0);return {enabled:c.enabled,sleeping:night&&now>=awakeUntil,night,awakeUntil,wakeAt:c.wakeAt,sleepAt:c.sleepAt,now,localTime:localClockTime(now,settings.timezone)};}
