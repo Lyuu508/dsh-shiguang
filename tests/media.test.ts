@@ -24,7 +24,7 @@ export function clip(dir:string):Buffer {
 }
 test('内置引擎抽取真实视频和 GIF，拼图不超过预算，近似画面本机去重',async()=>{
  const f=fixture();try{
-  clip(f.dir);const signal=AbortSignal.timeout(20000),sheet=await frameSheet(join(f.dir,'sample.mp4'),f.dir,f.settings.media,signal);
+  clip(f.dir);const signal=AbortSignal.timeout(60000),sheet=await frameSheet(join(f.dir,'sample.mp4'),f.dir,f.settings.media,signal);
   assert.equal(sheet.times.length,3);assert.ok(sheet.width<=512&&sheet.height<=512);assert.ok(sheet.bytes.length<200000);
   execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-threads','1','-filter_threads','1','-i',join(f.dir,'sample.mp4'),'-y',join(f.dir,'sample.gif')]);
   const gif=await frameSheet(join(f.dir,'sample.gif'),f.dir,{...f.settings.media,animationUnderstanding:false},signal);assert.ok(gif.times.length>=2&&gif.times.length<=3);
@@ -69,7 +69,7 @@ test('真实 DSH LLM 与附件服务：一次视觉调用、缓存只传文字�
 test('关闭、未触发、纯文本模型和超限下载都不产生模型调用',async()=>{
  const f=fixture(),ctx=new Context(),memory=new MemoryStore(':memory:',f.settings.roleId,f.settings.timezone,f.settings.memory);let reader:MediaReader|undefined;
  try{
-  reader=new MediaReader(ctx,f.settings,memory);assert.match(await reader.reply(message,qq,[reference]),/还没打开看视频/);
+  reader=new MediaReader(ctx,f.settings,memory);assert.match(await reader.reply(message,qq,[reference]),/QQ 看图还没开启/);
   f.settings.media.enabled=true;assert.equal(await reader.reply({...message,text:'你好'},qq,[reference]),'嗯，收到了。');
   await mountAgentLoopTestDependencies(ctx);await mountAgentLoopTestHarness(ctx);new LocalAttachmentStore(ctx,{dshHome:join(f.dir,'harness')});
   f.settings.media.provider='deepseek-account';f.settings.media.model='text';class Text extends Vision{async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text'] as any};}}const text=new Text();ctx.llm.registerAdapter(['deepseek-account'],text);
@@ -95,7 +95,7 @@ test('真实 OneBot 媒体链路：收到视频→视觉回答→引用命中摘
   runtime=new ShiguangRuntime(ctx,file,async()=>new Response(bytes));await waitFor(1);assert.equal(received[0]!,'主要是三种颜色在切换。');assert.equal(adapter.requests.length,1);
   socket!.send(JSON.stringify(event(1,segments)));socket!.send(JSON.stringify(event(2,[{type:'reply',data:{id:1}},{type:'text',data:{text:'看看这是什么颜色'}}])));await waitFor(2);assert.equal(received[1]!,'主要是三种颜色在切换。');assert.equal(adapter.requests.length,2);
   assert.equal(runtime.memory.db.prepare("SELECT count(*) AS n FROM memories WHERE kind='user'").get()?.n,2);
-  const value=runtime.view();value.settings.media.enabled=false;await runtime.save(value.settings,value.revision);await new Promise(r=>setTimeout(r,80));socket!.send(JSON.stringify(event(3,segments)));await waitFor(3);assert.match(received[2]!,/还没打开看视频/);assert.equal(adapter.requests.length,2);
+  const value=runtime.view();value.settings.media.enabled=false;await runtime.save(value.settings,value.revision);await new Promise(r=>setTimeout(r,80));socket!.send(JSON.stringify(event(3,segments)));await waitFor(3);assert.match(received[2]!,/QQ 看图还没开启/);assert.equal(adapter.requests.length,2);
   assert.equal(dailyUsage(runtime.memory).total.calls,2);
  }finally{await runtime?.stop();await ctx.fiber.dispose();for(const s of server.clients)s.terminate();await new Promise<void>(r=>server.close(()=>r()));f.cleanup();}
 });

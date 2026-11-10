@@ -123,7 +123,8 @@
     "animationFrames": 8,
     "frameSelection": "different",
     "animationUnderstanding": true,
-    "animationImages": 4
+    "animationImages": 4,
+    "reactToEmoji": true
   },
   "autonomy": {
     "enabled": false,
@@ -203,12 +204,7 @@
     "quietEnd": "08:00",
     "waitForReply": true,
     "contextChars": 1200,
-    "maxTokens": 480,
-    "company": 30,
-    "care": 25,
-    "share": 20,
-    "play": 15,
-    "chat": 10
+    "maxTokens": 480
   },
   "biliSocial": {
     "ownerUids": [],

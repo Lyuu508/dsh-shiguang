@@ -131,6 +131,7 @@ export class MemoryStore {
     for(const [name,definition] of [['emoji_id',"TEXT NOT NULL DEFAULT ''"],['account',"TEXT NOT NULL DEFAULT ''"],['scope',"TEXT NOT NULL DEFAULT 'owner'"]])if(!this.db.prepare('PRAGMA table_info(emoji_collections)').all().some(c=>c.name===name))this.db.exec(`ALTER TABLE emoji_collections ADD COLUMN ${name} ${definition}`);
     this.db.exec("CREATE INDEX IF NOT EXISTS memories_recent ON memories(role,scope,day,time DESC,rowid DESC) WHERE kind IN ('user','assistant')");
     this.db.exec('CREATE INDEX IF NOT EXISTS memories_turn ON memories(role,scope,thread,turn_id,time,rowid); CREATE INDEX IF NOT EXISTS memories_pair ON memories(role,scope,thread,kind,rowid DESC);');
+    this.db.exec("CREATE INDEX IF NOT EXISTS memories_bili_ref ON memories(role,platform,speaker_id,time DESC,rowid DESC) WHERE kind='user' AND scope GLOB 'bilibili:comment:*'");
     this.db.exec("CREATE INDEX IF NOT EXISTS memories_working ON memories(role,scope,thread,time DESC,rowid DESC) WHERE kind IN ('user','assistant'); CREATE INDEX IF NOT EXISTS memories_working_shared ON memories(role,scope,time DESC,rowid DESC) WHERE kind IN ('user','assistant'); CREATE INDEX IF NOT EXISTS memories_working_speaker ON memories(role,scope,thread,speaker_id,time DESC,rowid DESC) WHERE kind='user'");
 
   }

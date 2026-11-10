@@ -2,18 +2,22 @@ import {scheduleTimeout,type ScheduledTimer} from './timeouts.js';
 import type {QQMessage} from './onebot.js';
 import type {Settings} from './config.js';
 export interface QQBatch {id:string;thread:string;messages:QQMessage[];target:QQMessage;firstAt:number;dueAt:number}
+export interface QQDecision {at:number;id:string;thread:string;trigger:string;chance:number;roll:number|null;eligible:boolean;selected:boolean;reason:string}
 interface Pending extends QQBatch {lastAt:number;delay:number;timer?:ScheduledTimer}
 const replyPriority=(m:QQMessage)=>m.mentioned?4:m.poke?3:m.ownerMessage||m.owner?2:m.keywordAwakened?1:0;
 /** Intake and quiet timers never occupy the model/configuration queue. */
 export class QQConversation {
  private pending=new Map<string,Pending>();private active=new Map<string,AbortController>();private stopped=false;
  private last={at:0,reason:'等待新的白名单消息'};
+ private decisions:QQDecision[]=[];
  constructor(readonly config:Settings['qq']['chat'],readonly run:(batch:QQBatch,signal:AbortSignal)=>Promise<void>,readonly log:(message:string)=>void,readonly clock=Date.now,readonly random=Math.random){}
- offer(message:QQMessage,eligible:boolean,admit:()=>boolean=()=>true,replyChance?:number){
+ offer(message:QQMessage,eligible:boolean,admit:()=>boolean=()=>true,replyChance?:number,meta:{trigger?:string;blockedReason?:string}={}){
   if(this.stopped)return false;
-  const now=this.clock(),c=this.config,selected=eligible&&(replyChance!==undefined?this.random()*100<replyChance:!c.enabled||this.random()*100<(message.ownerMessage||message.owner?c.ownerReplyChance:c.replyChance))&&admit();
+  const now=this.clock(),c=this.config,chance=replyChance??(!c.enabled?100:message.ownerMessage||message.owner?c.ownerReplyChance:c.replyChance),roll=eligible?this.random()*100:null,probable=eligible&&roll!<chance,selected=probable&&admit();
+  const reason=!eligible?(meta.blockedReason||'未满足点名、开关或冷却条件'):!probable?'本条按回应概率保持安静':!selected?'生物钟或接收规则阻止本轮回复':'已选中，等待合并这一轮再回复';
+  this.decisions=[{at:now,id:message.id,thread:message.thread,trigger:meta.trigger||(message.poke?'头像互动':message.mentioned?'明确 @':message.keyword?'关键词':message.ownerMessage||message.owner?'主人消息':'普通消息'),chance,roll,eligible,selected,reason},...this.decisions].slice(0,16);
   let batch=this.pending.get(message.thread);
-  if(!batch&&!selected){this.last={at:now,reason:eligible?'本条按回应概率保持安静；原话已归档':'本条未触发回复；原话已归档'};return false;}
+  if(!batch&&!selected){this.last={at:now,reason:reason+'；原话已归档'};return false;}
   if(!batch){batch={id:message.id,thread:message.thread,messages:[],target:message,firstAt:now,lastAt:now,dueAt:now,delay:c.enabled?(c.delayMinSeconds+(c.delayMaxSeconds-c.delayMinSeconds)*this.random())*1000:0};this.pending.set(message.thread,batch);}
   batch.messages.push(message);batch.lastAt=now;if(selected&&replyPriority(message)>=replyPriority(batch.target))batch.target=message;
   const maximum=c.enabled?Math.max(batch.delay,c.maxWaitSeconds*1000):0;
@@ -27,7 +31,7 @@ export class QQConversation {
   this.pending.delete(thread);batch.timer?.clear();const abort=new AbortController();this.active.set(thread,abort);this.last={at:this.clock(),reason:`正在理解 ${batch.messages.length} 条连续消息`};
   void this.run(batch,abort.signal).catch(e=>{if(!abort.signal.aborted)this.log(e instanceof Error?e.message:'本轮 QQ 回复未完成');}).finally(()=>{this.active.delete(thread);if(this.stopped)return;const next=this.pending.get(thread);if(next)this.arm(next);else this.last={at:this.clock(),reason:'这一轮已处理，等待新消息'};});
  }
- status(){return {enabled:this.config.enabled,pending:this.pending.size,active:this.active.size,last:this.last,waiting:[...this.pending.values()].map(b=>({thread:b.thread,messages:b.messages.length,dueAt:b.dueAt}))};}
+ status(){return {enabled:this.config.enabled,pending:this.pending.size,active:this.active.size,last:this.last,decisions:this.decisions,waiting:[...this.pending.values()].map(b=>({thread:b.thread,messages:b.messages.length,dueAt:b.dueAt}))};}
  stop(){this.stopped=true;for(const b of this.pending.values())b.timer?.clear();this.pending.clear();for(const a of this.active.values())a.abort();}
 }
 export function splitQQReply(text:string,config:Settings['qq']['chat']):string[]{

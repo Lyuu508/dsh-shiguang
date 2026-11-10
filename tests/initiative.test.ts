@@ -1,3 +1,4 @@
+import {relationship} from '../src/relationship.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Context} from '@deepseek-ai/cordis';
@@ -5,7 +6,7 @@ import {LlmAdapter,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh
 import {mountAgentLoopTestDependencies,mountAgentLoopTestHarness} from '@deepseek-ai/dsh-agent-loop-testkit';
 import {writeFileSync} from 'node:fs';import {join} from 'node:path';
 import {MemoryStore} from '../src/memory.js';import {BilibiliClient,losslessJSON} from '../src/bilibili.js';
-import {Proactive,chooseMotive} from '../src/proactive.js';import {BiliSocial} from '../src/bili-social.js';
+import {Proactive} from '../src/proactive.js';import {BiliSocial} from '../src/bili-social.js';
 import {quietAt,stateValue,setState} from '../src/initiative.js';import {Autonomy} from '../src/autonomy.js';
 import {BodyClock} from '../src/body-clock.js';
 import {ChatDriver} from '../src/agent.js';import type {OneBotClient} from '../src/onebot.js';import type {BiliVision} from '../src/bili-vision.js';
@@ -18,11 +19,11 @@ async function harness(f:ReturnType<typeof fixture>,planner:Planner){const ctx=n
 function login(f:ReturnType<typeof fixture>){f.settings.bilibili.enabled=true;writeFileSync(join(f.dir,'bilibili.cookies.json'),JSON.stringify({SESSDATA:'fake-session',bili_jct:'fake-csrf'}));}
 const keys={img_url:'https://i0.hdslb.com/bfs/wbi/'+'a'.repeat(32)+'.png',sub_url:'https://i0.hdslb.com/bfs/wbi/'+'b'.repeat(32)+'.png'};
 const good='BV1xx411c7mD',other='BV1xx411c7mE';
-test('跨午夜免打扰按时区计算；动机权重为 0 不会被抽中',()=>{
- const f=fixture();try{Object.assign(f.settings.proactive,{company:0,care:0,share:100,play:0,chat:0});for(const n of [0,.25,.99999])assert.equal(chooseMotive(f.settings.proactive,()=>n),'share');assert.equal(quietAt(Date.parse('2026-11-07T16:00Z'),'Asia/Shanghai','23:00','08:00'),true);assert.equal(quietAt(Date.parse('2026-11-07T04:00Z'),'Asia/Shanghai','23:00','08:00'),false);assert.equal(quietAt(Date.now(),'UTC','00:00','00:00'),false);}finally{f.cleanup();}
+test('跨午夜免打扰按时区计算；好感和自主愿望初始均为30',()=>{
+ const f=fixture();try{const m=new MemoryStore(':memory:',f.settings.roleId,'UTC',f.settings.memory);try{assert.equal(relationship(m,f.settings).affection,30);assert.deepEqual(Object.values(relationship(m,f.settings).motives),[30,30,30,30,30]);}finally{m.close();}assert.equal(quietAt(Date.parse('2026-11-07T16:00Z'),'Asia/Shanghai','23:00','08:00'),true);assert.equal(quietAt(Date.parse('2026-11-07T04:00Z'),'Asia/Shanghai','23:00','08:00'),false);assert.equal(quietAt(Date.now(),'UTC','00:00','00:00'),false);}finally{f.cleanup();}
 });
 for(const send of [true,false])test(`QQ 主动联系：${send?'只发主人，未回复不重复，沉默不调用模型':'模型可选择安静，计思考用量但不占发送额度'}`,async()=>{
- const f=fixture(),model=new Planner(()=>({send,text:send?'今天想陪你聊聊。':null,reason:'尊重主人的节奏'})),ctx=await harness(f,model);let now=Date.parse('2026-11-07T12:00Z');const memory=new MemoryStore(join(f.dir,'memory.sqlite'),f.settings.roleId,'UTC',f.settings.memory,()=>now),targets:string[]=[];
+ const f=fixture(),model=new Planner(()=>({send,motive:send?'share':null,text:send?'今天想陪你聊聊。':null,reason:'尊重主人的节奏'})),ctx=await harness(f,model);let now=Date.parse('2026-11-07T12:00Z');const memory=new MemoryStore(join(f.dir,'memory.sqlite'),f.settings.roleId,'UTC',f.settings.memory,()=>now),targets:string[]=[];
  Object.assign(f.settings.qq,{enabled:true,ownerQQ:'10001'});Object.assign(f.settings.proactive,{enabled:true,contextChars:200});
  const qq={status:()=>({state:'connected'}),check:async()=>({online:true,userId:'10002'}),send:async(m:any)=>{targets.push(m.userId);}} as unknown as OneBotClient;
  let p=new Proactive(ctx,f.settings,memory,qq,async run=>run(),()=>{},()=>0);
@@ -34,7 +35,7 @@ for(const send of [true,false])test(`QQ 主动联系：${send?'只发主人，�
  }finally{p.stop();await ctx.fiber.dispose();memory.close();f.cleanup();}
 });
 test('QQ 未知发送结果占额度且重启后未回复不再发送；限额与免打扰无模型请求',async()=>{
- const f=fixture(),model=new Planner(()=>({send:true,text:'想分享今天的小事',reason:'分享'})),ctx=await harness(f,model);let now=Date.parse('2026-11-07T12:00Z');const m=new MemoryStore(join(f.dir,'m.sqlite'),f.settings.roleId,'UTC',f.settings.memory,()=>now);let sends=0;
+ const f=fixture(),model=new Planner(()=>({send:true,motive:'share',text:'想分享今天的小事',reason:'分享'})),ctx=await harness(f,model);let now=Date.parse('2026-11-07T12:00Z');const m=new MemoryStore(join(f.dir,'m.sqlite'),f.settings.roleId,'UTC',f.settings.memory,()=>now);let sends=0;
  Object.assign(f.settings.qq,{enabled:true,ownerQQ:'10001'});f.settings.proactive.enabled=true;
  const qq={status:()=>({state:'connected'}),check:async()=>({online:true,userId:'10002'}),send:async()=>{sends++;throw Error('unknown send');}} as unknown as OneBotClient;
  f.settings.clock.enabled=true;let p=new Proactive(ctx,f.settings,m,qq,async r=>r(),()=>{},Math.random,()=>new BodyClock(f.settings,m).canAct());

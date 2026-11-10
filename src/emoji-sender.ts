@@ -1,4 +1,5 @@
-import {saveEmojiSource} from './emoji-source.js';
+import {saveEmojiSource,readEmojiSource} from './emoji-source.js';
+import {QQActionError} from './onebot.js';
 import {emojiMeaningScore,genericEmojiRequest,readEmojiMeaning} from './emoji-meaning.js';
 import {createHash} from 'node:crypto';
 import {readFile,realpath,stat} from 'node:fs/promises';
@@ -7,7 +8,12 @@ import type {Settings} from './config.js';
 import {searchTokens,type MemoryStore} from './memory.js';
 import type {OneBotClient,QQMessage} from './onebot.js';
 import {stateValue,setState} from './initiative.js';
-export function wantsEmoji(text:string){return !/(?:不要|别|不用|禁止).{0,12}(?:发|来|给)/.test(text)&&/(?:发|来|给).{0,18}(?:表情包|动画表情|动图|[个张].{0,4}表情)|(?:表情包|动画表情).{0,12}(?:发给|发来|发到|发去|送到|转发)/.test(text);}
+export function wantsEmoji(text:string){
+ if(/(?:不要|别|不用|禁止).{0,12}(?:发|来|给)/.test(text))return false;
+ const explicit=/(?:再发|也发|重新发|你也|你再|你给我|你发个|你发一|给我发)/.test(text);
+ if(!explicit&&(/(?:看|识别|意思|含义|反应|内容)/.test(text)&&/(?:我|他|她|群友).{0,10}(?:发|给|送).{0,18}(?:表情|动图)/.test(text)||/(?:有没有发|是否发|发了没|发没发|为什么没发|刚才发过)/.test(text)))return false;
+ return /(?:发|来|给).{0,18}(?:表情包|动画表情|动图|[个张].{0,4}表情)|(?:表情包|动画表情).{0,12}(?:发给|发来|发到|发去|送到|转发)/.test(text);
+}
 export class EmojiMatchError extends Error {}
 export interface EmojiReceipt {messageId:string;summary:string;emojiId:string}
 type Entry={digest:string;summary:string;file:string;emoji_id:string;account:string;scope:string};
@@ -41,7 +47,16 @@ export class EmojiSender {
   let file:string|undefined;if(!entry.emoji_id||!entry.account){const root=await realpath(join(this.settings.dataDir,'emoji-collection')),target=await realpath(entry.file),rel=relative(root,target);if(!rel||rel.startsWith('..')||isAbsolute(rel))throw new Error('本地表情不在拾光收藏目录中');const info=await stat(target);if(!info.isFile()||info.size>c.maxFileMB*1048576)throw new Error('表情文件超过发送大小预算');file='base64://'+(await readFile(target)).toString('base64');}
   guard();const current=await qq.check();guard();if(!current.online||current.userId!==account.userId)throw new Error('QQ 账号已变化，表情没有发送');const key='qq-emoji-send:'+createHash('sha256').update(JSON.stringify([message.selfId,message.thread,message.id])).digest('hex');this.memory.reserveAction('qq-emoji-send',key,c.sendsPerDay,c.sendMinGapSeconds*1000);
   let confirmed=false;try{
-   const result=file?await qq.action(message.groupId?'send_group_msg':'send_private_msg',message.groupId?{group_id:message.groupId,message:[{type:'image',data:{file,sub_type:1,summary:'[动画表情]'}}]}:{user_id:message.userId,message:[{type:'image',data:{file,sub_type:1,summary:'[动画表情]'}}]}):await qq.action('send_custom_face',{emoji_id:entry.emoji_id,...(message.groupId?{group_id:message.groupId}:{user_id:message.userId})});
+   const destination=message.groupId?{group_id:message.groupId}:{user_id:message.userId},sendImage=(source:string)=>qq.action(message.groupId?'send_group_msg':'send_private_msg',{...destination,message:[{type:'image',data:{file:source,sub_type:1,summary:'[动画表情]'}}]});
+   let result;
+   if(file)result=await sendImage(file);else try{result=await qq.action('send_custom_face',{emoji_id:entry.emoji_id,...destination});}
+   catch(error){
+    // Only an explicit "unknown action" proves the native action did not run.
+    // A timeout, disconnect, generic error or missing receipt must never resend.
+    if(!(error instanceof QQActionError)||! /^(?:unknown action|unsupported action|action not found)$/i.test(error.wording.trim()))throw error;
+    const source=readEmojiSource(this.memory,entry.scope,entry.digest);if(!source?.url||source.account!==account.userId)throw new Error('当前 SnowLuma 不支持原生收藏发送，且没有同账号的原图地址；请同步收藏后再试');
+    guard();const same=await qq.check();guard();if(!same.online||same.userId!==account.userId)throw new Error('QQ 账号已变化，表情没有发送');result=await sendImage(source.url);
+   }
    if(!result||!/^\-?\d{1,24}$/.test(String(result.message_id??'')))throw new Error('QQ 没有返回表情消息 ID，请先核实，插件不会自动重发');confirmed=true;this.memory.settleAction(key,'sent',String(result.message_id));this.memory.recordReply(message.scope,'qq',message.thread,'[发送收藏表情] '+entry.summary,message.id,message.selfId,this.settings.displayName);this.notice('已发送真实表情，消息 ID '+result.message_id);onConfirmed?.({messageId:String(result.message_id),summary:entry.summary,emojiId:entry.emoji_id});return true;
   }catch(error){if(!confirmed)this.memory.settleAction(key,'unknown','表情发送结果待核实，不自动重发');this.notice(error instanceof Error?error.message:'表情未能发送');throw error;}
  }

@@ -5,13 +5,16 @@ import { randomUUID,createHash } from 'node:crypto';
 import type { Settings } from './config.js';
 
 export interface QQMessage {
-  sourceMessageId?:string;quoteReply?:boolean;quoted?:{id:string;speakerId:string;speakerName:string;text:string;media:QQMediaRef[]};id: string; selfId: string; userId: string; groupId?: string;
+  sourceMessageId?:string;taskRouted?:boolean;ownerWords?:string;quoteReply?:boolean;quoted?:{id:string;speakerId:string;speakerName:string;text:string;media:QQMediaRef[]};id: string; selfId: string; userId: string; groupId?: string;
   thread: string; scope: string; owner: boolean; text: string;
   poke?:{action:string;suffix:string};
   groupJoin?:boolean;ownerMessage?:boolean;memoryId?:string;receivedAt?:number;speakerName?:string;keyword?:string;keywordAwakened?:boolean;media?: QQMediaRef[]; replyId?: string;mentioned?:boolean;replyAllowed?:boolean;
 }
 export interface QQMediaRef { type: 'video' | 'image'; file?: string; url?: string;emoji?:boolean }
 type JsonObject = Record<string, unknown>;
+export class QQActionError extends Error {
+ constructor(readonly action:string,readonly retcode:unknown,readonly wording:string){super(`QQ 操作 ${action} 未成功，retcode=${String(retcode)}${wording?'；'+wording:''}；请检查 SnowLuma 日志`);}
+}
 function record(v: unknown): v is JsonObject { return !!v && typeof v === 'object' && !Array.isArray(v); }
 function id(v: unknown): string | null { return (typeof v === 'string' && /^\d+$/.test(v)) || (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) ? String(v) : null; }
 export function mediaSegments(segments: unknown): QQMediaRef[] {
@@ -73,7 +76,7 @@ export class OneBotClient {
   private state: 'connecting' | 'connected' | 'disconnected' = 'disconnected';
   private statusMessage = '尚未连接';
   private heartbeat?:NodeJS.Timeout;private lastPacketAt=0;private lastMessageAt=0;private connectedAt=0;private disconnectedAt=0;private closeCode=0;private reconnectAttempts=0;private nextRetryAt=0;private connectionError='';
-  private pending = new Map<string, { resolve: (v: JsonObject|unknown[]) => void; reject: (e: Error) => void; timer: ScheduledTimer }>();
+  private pending = new Map<string, { action:string;resolve: (v: JsonObject|unknown[]) => void; reject: (e: Error) => void; timer: ScheduledTimer }>();
   constructor(public config: Settings['qq'], public onMessage: (message: QQMessage) => void, readonly log: (message: string) => void, readonly token = () => process.env[config.tokenEnv] || '') {}
   status() { return {state:this.state,message:this.statusMessage,lastPacketAt:this.lastPacketAt,lastMessageAt:this.lastMessageAt,connectedAt:this.connectedAt,disconnectedAt:this.disconnectedAt,closeCode:this.closeCode,reconnectAttempts:this.reconnectAttempts,nextRetryAt:this.nextRetryAt,error:this.connectionError}; }
   configure(config:Settings['qq'],onMessage=this.onMessage){this.config=config;this.onMessage=onMessage;}
@@ -101,7 +104,7 @@ export class OneBotClient {
       if(typeof value.echo==='string'&&this.pending.has(value.echo)){
         const request=this.pending.get(value.echo)!;request.timer.clear();this.pending.delete(value.echo);
         if(value.status==='ok'&&value.retcode===0&&(record(value.data)||Array.isArray(value.data)))request.resolve(value.data);
-        else request.reject(new Error(`QQ 操作未成功，retcode=${String(value.retcode)}；请检查 SnowLuma 日志`));return;
+        else {const wording=typeof value.wording==='string'?value.wording.replace(/[\x00-\x1f\x7f]/g,' ').replace(/https?:\/\/\S+|Bearer\s+\S+|sk-[\w-]+/gi,'[已隐藏]').slice(0,160):'';request.reject(new QQActionError(request.action,value.retcode,wording));}return;
       }
       const message=parseMessage(value,this.config,true)||parsePoke(value,this.config);if(message){this.lastMessageAt=Date.now();this.onMessage(message);}
     });
@@ -126,7 +129,7 @@ export class OneBotClient {
       const timer = scheduleTimeout(() => {
         this.pending.delete(echo); reject(new Error('QQ 发送超时，结果未知；请到 QQ 核实，插件不会自动重发'));
       }, this.config.actionTimeoutMs);
-      this.pending.set(echo, { resolve:value=>resolve(value as T), reject, timer });
+      this.pending.set(echo, { action,resolve:value=>resolve(value as T), reject, timer });
       socket.send(JSON.stringify({ action, params, echo }), error => {
         if (error) { timer.clear(); this.pending.delete(echo); reject(new Error('QQ 写入失败，结果待核实；请检查连接')); }
       });
