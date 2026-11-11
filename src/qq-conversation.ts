@@ -32,6 +32,7 @@ export class QQConversation {
   void this.run(batch,abort.signal).catch(e=>{if(!abort.signal.aborted)this.log(e instanceof Error?e.message:'本轮 QQ 回复未完成');}).finally(()=>{this.active.delete(thread);if(this.stopped)return;const next=this.pending.get(thread);if(next)this.arm(next);else this.last={at:this.clock(),reason:'这一轮已处理，等待新消息'};});
  }
  status(){return {enabled:this.config.enabled,pending:this.pending.size,active:this.active.size,last:this.last,decisions:this.decisions,waiting:[...this.pending.values()].map(b=>({thread:b.thread,messages:b.messages.length,dueAt:b.dueAt}))};}
+ cancelAll(){for(const b of this.pending.values())b.timer?.clear();this.pending.clear();for(const a of this.active.values())a.abort(Error('已停止本轮QQ回复'));this.last={at:this.clock(),reason:'已停止本轮回复，原话已保存，等待新消息'};}
  stop(){this.stopped=true;for(const b of this.pending.values())b.timer?.clear();this.pending.clear();for(const a of this.active.values())a.abort();}
 }
 export function splitQQReply(text:string,config:Settings['qq']['chat']):string[]{

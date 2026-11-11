@@ -121,45 +121,41 @@ export class OneBotClient {
     try{while(!this.socket||this.socket.readyState!==WebSocket.OPEN){waiting.throwIfAborted();if(this.stopped)throw new Error('QQ 连接服务已停止');if(!this.nextRetryAt||Date.now()>=this.nextRetryAt)this.start();await cancellablePause(100,waiting);}}
     catch(error){signal.throwIfAborted();if(timeout.aborted)throw new Error('等待 QQ 重连超时，请确认 SnowLuma 仍在运行并已登录 QQ');throw error;}
   }
-  action<T extends JsonObject|unknown[]=JsonObject>(action: string, params: JsonObject): Promise<T> {
-    const socket = this.socket;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error('QQ 尚未连接，回复未发送'));
-    const echo = randomUUID();
-    return new Promise<T>((resolve, reject) => {
-      const timer = scheduleTimeout(() => {
-        this.pending.delete(echo); reject(new Error('QQ 发送超时，结果未知；请到 QQ 核实，插件不会自动重发'));
-      }, this.config.actionTimeoutMs);
-      this.pending.set(echo, { action,resolve:value=>resolve(value as T), reject, timer });
-      socket.send(JSON.stringify({ action, params, echo }), error => {
-        if (error) { timer.clear(); this.pending.delete(echo); reject(new Error('QQ 写入失败，结果待核实；请检查连接')); }
-      });
+  action<T extends JsonObject|unknown[]=JsonObject>(action:string,params:JsonObject,signal?:AbortSignal):Promise<T>{
+    const socket=this.socket;if(!socket||socket.readyState!==WebSocket.OPEN)return Promise.reject(new Error('QQ 尚未连接，回复未发送'));if(signal?.aborted)return Promise.reject(signal.reason);
+    const echo=randomUUID();return new Promise<T>((resolve,reject)=>{
+      let done=false;const finish=(error:unknown,value?:JsonObject|unknown[])=>{if(done)return;done=true;timer.clear();signal?.removeEventListener('abort',abort);this.pending.delete(echo);if(error!==undefined)reject(error);else resolve(value as T);};
+      const abort=()=>finish(new Error(/^(?:send_|add_)/.test(action)?'QQ 操作已停止，发送结果待核实；不会自动重发':'QQ 请求已取消'));
+      const timer=scheduleTimeout(()=>finish(new Error('QQ 发送超时，结果未知；请到 QQ 核实，插件不会自动重发')),this.config.actionTimeoutMs);
+      this.pending.set(echo,{action,resolve:value=>finish(undefined,value),reject:error=>finish(error),timer});signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted){abort();return;}
+      try{socket.send(JSON.stringify({action,params,echo}),error=>{if(error)finish(new Error('QQ 写入失败，结果待核实；请检查连接'));});}catch(error){finish(error);}
     });
   }
-  send(message: QQMessage, text: string, quote=false): Promise<JsonObject> {
+  send(message: QQMessage, text: string, quote=false,signal?:AbortSignal): Promise<JsonObject> {
     const params = message.groupId ? { group_id: message.groupId, message: [...(quote&&message.groupId&&message.sourceMessageId&&/^-?\d{1,24}$/.test(message.sourceMessageId)?[{type:'reply',data:{id:message.sourceMessageId}}]:[]),{ type: 'text', data: { text } }] } : { user_id: message.userId, message: [...(quote&&message.groupId&&message.sourceMessageId&&/^-?\d{1,24}$/.test(message.sourceMessageId)?[{type:'reply',data:{id:message.sourceMessageId}}]:[]),{ type: 'text', data: { text } }] };
-    return this.action(message.groupId ? 'send_group_msg' : 'send_private_msg', params);
+    return this.action(message.groupId ? 'send_group_msg' : 'send_private_msg', params,signal);
   }
-  sendVoice(message:QQMessage,bytes:Buffer):Promise<JsonObject>{
+  sendVoice(message:QQMessage,bytes:Buffer,signal?:AbortSignal):Promise<JsonObject>{
     if(!bytes.length||bytes.length>2*1024*1024)return Promise.reject(new Error('QQ 语音内容为空或超过 2 MB'));
     const record={type:'record',data:{file:'base64://'+bytes.toString('base64')}};
-    return this.action(message.groupId?'send_group_msg':'send_private_msg',message.groupId?{group_id:message.groupId,message:[record]}:{user_id:message.userId,message:[record]});
+    return this.action(message.groupId?'send_group_msg':'send_private_msg',message.groupId?{group_id:message.groupId,message:[record]}:{user_id:message.userId,message:[record]},signal);
   }
-  async quotedMessage(message:QQMessage){
+  async quotedMessage(message:QQMessage,signal?:AbortSignal){
     if(message.quoted)return message.quoted;if(!message.replyId)return;
-    const result=await this.action('get_msg',{message_id:message.replyId});
+    const result=await this.action('get_msg',{message_id:message.replyId},signal);
     const same=message.groupId?result.message_type==='group'&&String(result.group_id)===message.groupId:result.message_type==='private'&&String(result.user_id??(record(result.sender)?result.sender.user_id:''))===message.userId;
     if(!same)throw new Error('引用的消息不属于当前会话，无法读取');
     const sender=record(result.sender)?result.sender:{},speakerId=id(result.user_id??sender.user_id)||'',speakerName=String(sender.card||sender.nickname||speakerId||'未知发言人').slice(0,80);
     const text=Array.isArray(result.message)?result.message.flatMap(s=>record(s)&&record(s.data)&&s.type==='text'&&typeof s.data.text==='string'?[s.data.text]:[]).join('').slice(0,1600):typeof result.message==='string'?result.message.slice(0,1600):'';
     return {id:message.replyId,speakerId,speakerName,text,media:mediaSegments(result.message)};
   }
-  async quotedMedia(message: QQMessage): Promise<QQMediaRef[]> {return (await this.quotedMessage(message))?.media||[];}
-  async mediaInfo(media: QQMediaRef): Promise<JsonObject> {
+  async quotedMedia(message: QQMessage,signal?:AbortSignal): Promise<QQMediaRef[]> {return (await this.quotedMessage(message,signal))?.media||[];}
+  async mediaInfo(media: QQMediaRef,signal?:AbortSignal): Promise<JsonObject> {
     if(!media.file||/^(?:[a-z]:[\\/]|[\\/]|\.\.)/i.test(media.file)||media.file.includes('..')||media.file.length>1024||/[\r\n\0]/.test(media.file)||/^https?:\/\//i.test(media.file))return {};
-    return this.action(media.type==='image'?'get_image':'get_file',{file:media.file});
+    return this.action(media.type==='image'?'get_image':'get_file',{file:media.file},signal);
   }
-  async check(): Promise<{ online: boolean; nickname: string; userId: string }> {
-    const [status, info] = await Promise.all([this.action('get_status', {}), this.action('get_login_info', {})]);
+  async check(signal?:AbortSignal): Promise<{ online: boolean; nickname: string; userId: string }> {
+    const [status, info] = await Promise.all([this.action('get_status', {},signal), this.action('get_login_info', {},signal)]);
     return { online: status.online === true, nickname: typeof info.nickname === 'string' ? info.nickname : '', userId: id(info.user_id) || '' };
   }
   stop(): void {

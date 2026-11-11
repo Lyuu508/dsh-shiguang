@@ -1,3 +1,4 @@
+import {DatabaseSync} from 'node:sqlite';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -43,6 +44,10 @@ test('独立插件加载→OneBot 收消息→真实 DSH 循环→QQ 回执→�
     ctx.llm.registerAdapter(['deepseek-official'], new Adapter());
     const mounted = await ctx.plugin(plugin, { configPath: file });
     assert.equal(await sent, '你好，今天也记得练吉他。');
+    // The mock server receiving a write precedes the client's processing of its
+    // acknowledgement. Unload only after the confirmed reply is persisted.
+    const live=new DatabaseSync(join(f.dir,'memory.sqlite'),{readOnly:true});
+    try{const until=Date.now()+5000;while(!live.prepare("SELECT 1 FROM memories WHERE kind='assistant' AND body LIKE '%今天也记得练吉他%'").get()){assert.ok(Date.now()<until,'等待客户端确认回执并保存原文');await new Promise<void>(r=>setImmediate(r));}}finally{live.close();}
     await mounted.dispose();
     const memory = new MemoryStore(join(f.dir, 'memory.sqlite'), f.settings.roleId, f.settings.timezone, f.settings.memory);
     try {

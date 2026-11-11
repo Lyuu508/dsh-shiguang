@@ -88,7 +88,7 @@ export class MediaReader {
     throw new MediaError('QQ 媒体下载重定向过多，请重新发送');
   }
   private async source(media:QQMediaRef,qq:OneBotClient,signal:AbortSignal,limit=this.settings.media.maxFileMB*1048576):Promise<Buffer>{
-    let info:Record<string,unknown>={};try{info=await qq.mediaInfo(media);}catch{/* Try the bounded CDN URL carried by the event. */}
+    let info:Record<string,unknown>={};try{info=await qq.mediaInfo(media,signal);}catch{/* Try the bounded CDN URL carried by the event. */}
     signal.throwIfAborted();
     if(Number(info.file_size)>limit)throw new MediaError(`媒体超过 ${Math.ceil(limit/1048576)} MB，请先压缩`);
     const urls=[info.url,info.download_url,info.file,info.file_path,media.url,media.file].filter((u):u is string=>typeof u==='string'&&/^https?:\/\//i.test(u));

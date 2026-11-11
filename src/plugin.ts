@@ -18,14 +18,14 @@ export function apply(ctx: Context, config: Config): void {
     name: 'shiguang_chat', description: '以主人的身份与拾光角色对话，共用 QQ/B站记忆。普通聊天只加载今天的笔记，提到旧事再检索历史。',
     parameters: { text: { type: 'string', required: true } },
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
-    async execute(args) {
-      return runtime.enqueue(async () => {
+    async execute(args,exec) {
+      return runtime.enqueue(async signal => {
         const turnId=randomUUID();
-        const reply = await runtime.driver.reply({ scope: 'owner', thread: 'dsh:owner', owner: true, platform: 'dsh', text: args.text,turnId,speakerName:'主人（DSH）' });
+        const reply = await runtime.driver.reply({ scope: 'owner', thread: 'dsh:owner', owner: true, platform: 'dsh', text: args.text,turnId,speakerName:'主人（DSH）',signal });
         if (!reply) throw new Error('消息重复');
         runtime.memory.recordReply('owner','dsh','dsh:owner',reply,turnId,'',runtime.settings.displayName);
         return reply;
-      });
+      },{signal:exec.signal,label:'DSH角色对话'});
     },
   }));
 }

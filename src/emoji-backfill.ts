@@ -31,6 +31,7 @@ export class EmojiBackfill {
   this.task=this.run(signal).catch(error=>{if(this.stopped)return;if(signal.aborted)this.update({state:'paused',message:'整理已暂停，已保存的含义会保留'});else this.update({state:'error',message:'本轮整理未完成，请确认 QQ 在线、模型可用后继续',nextAt:this.memory.clock()+1800000});}).finally(()=>{this.active=false;});return this.status();}
  pause(){this.update({userPaused:true,wanted:false,state:'paused',message:this.active?'正在暂停，等待当前任务退出':'整理已暂停'});this.abort?.abort();return this.status();}
  retry(){if(this.active)return this.status();for(const row of this.memory.db.prepare("SELECT name FROM scheduler_state WHERE role=? AND name LIKE 'emoji:backfill:item:%'").all(this.memory.roleId))this.memory.db.prepare('DELETE FROM scheduler_state WHERE role=? AND name=?').run(this.memory.roleId,String(row.name));return this.start();}
+ cancelCurrent(){this.abort?.abort();}
  stop(){this.stopped=true;this.timer?.clear();this.abort?.abort();}
  async whenIdle(){await this.task;}
  private candidates(){return (this.memory.db.prepare("SELECT digest,scope,file,account,emoji_id,summary FROM emoji_collections WHERE role=? AND status='saved' ORDER BY time DESC,digest").all(this.memory.roleId) as unknown as Entry[]).filter(e=>!complete(readEmojiMeaning(this.memory,e.scope,e.digest))&&stateValue(this.memory,resultKey(e),{retryAt:0}).retryAt<=this.memory.clock());}

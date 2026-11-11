@@ -40,7 +40,7 @@ export class Proactive {
     const lastOwner=stateValue<number>(this.memory,'qq:last-owner',0),lastSent=stateValue<number>(this.memory,'qq:last-initiative',0);
     if(lastOwner&&now-lastOwner<10*60000||c.waitForReply&&lastSent>0&&lastSent>=lastOwner)return this.status();
     if(this.qq.status().state!=='connected')return this.status();
-    const info=await this.qq.check();if(!info.online||info.userId===q.ownerQQ)return this.status();
+    const info=await this.qq.check(this.abort.signal);if(!info.online||info.userId===q.ownerQQ)return this.status();
     this.later();const id=randomUUID(),thread='qq:private:'+q.ownerQQ;
     this.memory.db.prepare("INSERT INTO initiative_runs(id,role,day,time,kind,status) VALUES(?,?,?,?,?,'pending')").run(id,this.memory.roleId,this.memory.today(),now,'qq-proactive');
     const signal=AbortSignal.any([this.abort.signal,timeoutSignal(this.settings.replyTimeoutMs)]);
@@ -50,7 +50,7 @@ export class Proactive {
       const motive:Motive|null=isMotive(plan.motive)?plan.motive:null;if(motive&&plan.send)wantedContact(this.memory,this.settings,id,motive,plan.reason);
       signal.throwIfAborted();if(!this.canAct())throw new Error('已到睡眠时间，本次不主动联系');if(!plan.send){this.memory.db.prepare("UPDATE initiative_runs SET status='silent',summary=? WHERE id=?").run(`${motive?MOTIVES[motive]:'暂时安静'}：选择安静。${plan.reason}`,id);return this.status();}
       const text=plan.text.trim(),key=createHash('sha256').update(id).digest('hex');this.memory.reserveAction('qq-proactive',key,c.maxPerDay,c.minGapMinutes*60000);setState(this.memory,'qq:last-initiative',now);
-      try{await this.qq.send({id,selfId:info.userId,userId:q.ownerQQ,thread,scope:'owner',owner:true,text:''} satisfies QQMessage,text);this.memory.settleAction(key,'sent','QQ 已返回消息回执');}catch(error){this.memory.settleAction(key,'unknown','QQ 发送结果待核实，不自动重发');throw error;}
+      try{await this.qq.send({id,selfId:info.userId,userId:q.ownerQQ,thread,scope:'owner',owner:true,text:''} satisfies QQMessage,text,false,signal);this.memory.settleAction(key,'sent','QQ 已返回消息回执');}catch(error){this.memory.settleAction(key,'unknown','QQ 发送结果待核实，不自动重发');throw error;}
       this.memory.recordReply('owner','qq',thread,text,'proactive:'+id,info.userId,this.settings.displayName,'proactive:'+id);
       this.memory.db.prepare("UPDATE initiative_runs SET status='done',summary=? WHERE id=?").run(`${MOTIVES[motive!]}：已主动私聊。${plan.reason}`,id);
     }catch(error){this.memory.db.prepare("UPDATE initiative_runs SET status='failed',summary=? WHERE id=?").run((error instanceof Error?error.message:'主动私聊未完成').slice(0,500),id);throw error;}

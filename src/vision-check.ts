@@ -13,6 +13,7 @@ export class VisionCheck {
  private abort=new AbortController();
  state:VisionCheckState={busy:false,ok:false,at:0,stage:'尚未自检',message:'先确认模型能直接识别图片，再检查 QQ 下载或动图抽帧',provider:'',model:'',finish:'',diagnostic:''};
  constructor(readonly ctx:Context,readonly settings:Settings,readonly memory:MemoryStore){}
+ cancelCurrent(){this.abort.abort();this.abort=new AbortController();}
  stop(){this.abort.abort();}
  async run(){
   if(this.state.busy)return this.state;this.state={...this.state,busy:true,ok:false,at:this.memory.clock(),stage:'检查模型与附件',message:'正在测试',diagnostic:'',finish:''};const signal=AbortSignal.any([this.abort.signal,timeoutSignal(this.settings.replyTimeoutMs)]);

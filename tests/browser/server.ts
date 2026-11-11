@@ -72,6 +72,11 @@ const result=await build({entryPoints:['tests/browser/harness.tsx'],bundle:true,
 const script=result.outputFiles[0]!.contents;
 const server=createServer(async(req,res)=>{
  try{
+  if(req.method==='POST'&&req.url==='/fixture/queue-034'){
+   let ready!:()=>void;const started=new Promise<void>(r=>ready=r);void runtime.enqueue(async signal=>{ready();await new Promise<void>((_r,reject)=>{if(signal.aborted)reject(signal.reason);else signal.addEventListener('abort',()=>reject(signal.reason),{once:true});});},{label:'模拟长视频识别'}).catch(()=>{});await started;
+   for(let i=1;i<runtime.settings.maxQueue;i++)void runtime.enqueue(async()=>{throw Error('已清理的测试待办不应执行');},{label:'等待中的QQ任务'}).catch(()=>{});
+   const id=runtime.memory.append('owner','qq','qq:private:10001','user','队列忙时保存的测试原话','queue-fixture-'+Date.now());res.setHeader('Content-Type','application/json');res.end(JSON.stringify({queue:runtime.taskStatus(),memoryId:id}));return;
+  }
   if(req.method==='GET'&&req.url==='/fixture/sends-033'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(qqSent));return;}
   if(req.method==='GET'&&req.url==='/fixture/relationship-033'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(runtime.proactive.status().relationship));return;}
   if(req.method==='POST'&&req.url==='/fixture/owner-033'){for(const socket of qq.clients)socket.send(JSON.stringify({post_type:'message',message_type:'private',message_id:Date.now(),self_id:10002,user_id:10001,sender:{nickname:'主人'},message:[{type:'text',data:{text:'今天有点烦，陪我聊聊'}}]}));res.end('{}');return;}
